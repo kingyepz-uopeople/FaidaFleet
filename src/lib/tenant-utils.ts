@@ -15,16 +15,16 @@ export async function getUserTenants() {
     .from('memberships')
     .select(`
       *,
-      tenants (*)
+      tenants:tenant_id (*)
     `)
     .eq('is_active', true)
     .order('joined_at', { ascending: false })
 
   if (error) throw error
   
-  return memberships.map(m => ({
-    membership: m,
-    tenant: m.tenants as unknown as Tenant
+  return (memberships || []).map(m => ({
+    membership: m as Membership,
+    tenant: (m as any).tenants as Tenant
   }))
 }
 
@@ -39,10 +39,10 @@ export async function getUserRoleInTenant(tenantId: string): Promise<UserRole | 
     .select('role')
     .eq('tenant_id', tenantId)
     .eq('is_active', true)
-    .single()
+    .maybeSingle()
 
-  if (error) return null
-  return data.role as UserRole
+  if (error || !data) return null
+  return (data as any).role as UserRole
 }
 
 /**
@@ -84,7 +84,7 @@ export async function createTenant(data: {
   phone?: string
   email?: string
   plan?: 'starter' | 'pro' | 'enterprise'
-}) {
+}): Promise<Tenant> {
   const supabase = createBrowserClient()
   
   // Get current user
@@ -100,24 +100,24 @@ export async function createTenant(data: {
       phone: data.phone,
       email: data.email,
       plan: data.plan || 'starter'
-    })
+    } as any)
     .select()
     .single()
 
-  if (tenantError) throw tenantError
+  if (tenantError || !tenant) throw tenantError
 
   // Add user as owner
   const { error: membershipError } = await supabase
     .from('memberships')
     .insert({
       user_id: user.id,
-      tenant_id: tenant.id,
+      tenant_id: (tenant as any).id,
       role: 'owner'
-    })
+    } as any)
 
   if (membershipError) throw membershipError
 
-  return tenant
+  return tenant as Tenant
 }
 
 /**
@@ -178,10 +178,10 @@ export async function getUserRoleInTenantServer(tenantId: string): Promise<UserR
     .select('role')
     .eq('tenant_id', tenantId)
     .eq('is_active', true)
-    .single()
+    .maybeSingle()
 
-  if (error) return null
-  return data.role as UserRole
+  if (error || !data) return null
+  return (data as any).role as UserRole
 }
 
 /**
