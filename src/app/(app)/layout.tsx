@@ -56,18 +56,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <SidebarMenu>
             {menuItems.map(({ href, label, Icon }) => (
               <SidebarMenuItem key={href}>
-                <Link href={href} legacyBehavior passHref>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={pathname.startsWith(href)}
-                    tooltip={{ children: label, className: 'bg-sidebar-background text-sidebar-foreground border-sidebar-border' }}
-                  >
-                    <a>
-                      <Icon />
-                      <span>{label}</span>
-                    </a>
-                  </SidebarMenuButton>
-                </Link>
+                <SidebarMenuButton
+                  asChild
+                  isActive={pathname.startsWith(href)}
+                  tooltip={{ children: label, className: 'bg-sidebar-background text-sidebar-foreground border-sidebar-border' }}
+                >
+                  <Link href={href}>
+                    <Icon />
+                    <span>{label}</span>
+                  </Link>
+                </SidebarMenuButton>
               </SidebarMenuItem>
             ))}
           </SidebarMenu>
