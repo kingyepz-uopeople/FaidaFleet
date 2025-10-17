@@ -58,10 +58,10 @@ export default function SignUpPage() {
         setError(error.message)
       } else {
         setSuccess(true)
-        // Redirect to login after a short delay
+        // Redirect to onboarding to create fleet
         setTimeout(() => {
-          router.push('/login')
-        }, 3000)
+          router.push('/onboarding')
+        }, 2000)
       }
     } catch (err) {
       setError('An unexpected error occurred')
@@ -112,8 +112,7 @@ export default function SignUpPage() {
             {success && (
               <Alert className="bg-green-50 text-green-900 border-green-200">
                 <AlertDescription>
-                  Account created successfully! Please check your email to verify your account.
-                  Redirecting to login...
+                  Account created successfully! Redirecting to set up your fleet...
                 </AlertDescription>
               </Alert>
             )}
