@@ -49,9 +49,17 @@ export default function OnboardingPage() {
         .select()
         .single()
 
-      if (tenantError) {
+      if (tenantError || !tenant) {
         console.error('Tenant creation error:', tenantError)
-        setError(tenantError.message || 'Failed to create fleet')
+        
+        // Provide helpful error messages
+        if (tenantError?.code === '42P01') {
+          setError('Database not set up. Please run the migration in Supabase SQL Editor first. See QUICK_START.md for instructions.')
+        } else if (tenantError?.code === '42501') {
+          setError('Permission denied. Please check Row Level Security policies in Supabase.')
+        } else {
+          setError(tenantError?.message || 'Failed to create fleet. Please check console for details.')
+        }
         setLoading(false)
         return
       }
@@ -67,7 +75,15 @@ export default function OnboardingPage() {
 
       if (membershipError) {
         console.error('Membership creation error:', membershipError)
-        setError(membershipError.message || 'Failed to add you as owner')
+        
+        // Provide helpful error messages
+        if (membershipError.code === '42P01') {
+          setError('Memberships table not found. Please run the database migration. See QUICK_START.md')
+        } else if (membershipError.code === '23505') {
+          setError('You are already a member of this fleet.')
+        } else {
+          setError(membershipError.message || 'Failed to add you as owner. Please check console for details.')
+        }
         setLoading(false)
         return
       }
