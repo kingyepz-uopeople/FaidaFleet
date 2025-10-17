@@ -67,10 +67,9 @@ export function AppHeader() {
   };
 
   return (
-    <header className="sticky top-0 z-10 flex h-16 items-center gap-4 border-b bg-background/80 px-4 backdrop-blur-sm md:px-6">
+    <header className="sticky top-0 z-10 flex h-16 items-center gap-4 border-b bg-white/80 dark:bg-gray-900/80 px-6 backdrop-blur-sm">
       <div className="flex items-center gap-2">
-        <SidebarTrigger className="md:hidden" />
-        <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
+        <h1 className="text-xl font-semibold tracking-tight text-gray-900 dark:text-white">{title}</h1>
       </div>
       <div className="ml-auto flex items-center gap-4">
         <DropdownMenu>
