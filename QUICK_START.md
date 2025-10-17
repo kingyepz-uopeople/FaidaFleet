@@ -1,4 +1,26 @@
-# 🚀 FaidaFleet Quick Start Guide
+# 🚀 FaidaFleet ### 2. Run the Database Migrations
+
+#### **Migration 1: Initial Schema** (Required)
+
+1. Click **"+ New query"** button
+2. Open this file in VS Code: `supabase/migrations/001_initial_schema.sql`
+3. Copy **ALL 476 lines** of SQL code
+4. Paste it into the Supabase SQL Editor
+5. Click **"Run"** (or press Ctrl+Enter)
+6. Wait for "Success. No rows returned" ✅
+
+**Note**: If you get error "relation tenants already exists", this migration was already run. Skip to Migration 2.
+
+#### **Migration 2: Fix Onboarding** (Required for creating fleets)
+
+1. Click **"+ New query"** button again
+2. Open this file in VS Code: `supabase/migrations/002_fix_onboarding.sql`
+3. Copy **ALL** the SQL code
+4. Paste it into the Supabase SQL Editor
+5. Click **"Run"** (or press Ctrl+Enter)
+6. Wait for "Success. No rows returned" ✅
+
+This migration adds a special database function that handles tenant creation with proper permissions.art Guide
 
 ## ⚠️ Important: Database Setup Required
 

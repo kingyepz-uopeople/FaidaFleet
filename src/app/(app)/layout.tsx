@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -27,6 +27,8 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { AppHeader } from '@/components/app-header';
 import { PlaceHolderImages } from '@/lib/placeholder-images';
+import { createClient } from '@/lib/supabase/client';
+import type { User } from '@supabase/supabase-js';
 
 const menuItems = [
   { href: '/dashboard', label: 'Dashboard', Icon: LayoutDashboard },
@@ -38,6 +40,47 @@ const menuItems = [
 ];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
+  const [user, setUser] = useState<User | null>(null);
+  const [userRole, setUserRole] = useState<string>('Member');
+  const supabase = createClient();
+
+  useEffect(() => {
+    const getUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      setUser(user);
+
+      if (user) {
+        // Get user's role from memberships
+        const { data: membership } = await supabase
+          .from('memberships')
+          .select('role')
+          .eq('user_id', user.id)
+          .eq('is_active', true)
+          .single();
+
+        if (membership) {
+          // Capitalize role
+          setUserRole(membership.role.charAt(0).toUpperCase() + membership.role.slice(1));
+        }
+      }
+    };
+
+    getUser();
+  }, [supabase]);
+
+  const getUserInitials = () => {
+    if (!user) return 'U';
+    const name = user.user_metadata?.full_name || user.email || '';
+    const parts = name.split(' ');
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[1][0]).toUpperCase();
+    }
+    return name.slice(0, 2).toUpperCase();
+  };
+
+  const getUserDisplayName = () => {
+    return user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User';
+  };
   const pathname = usePathname();
 
   return (
@@ -87,12 +130,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 <Link href="/settings">
                   <div className="flex w-full items-center gap-2 rounded-md p-2 hover:bg-sidebar-accent">
                      <Avatar className="h-8 w-8">
-                       <AvatarImage src={PlaceHolderImages[0].imageUrl} data-ai-hint="man portrait"/>
-                       <AvatarFallback>JD</AvatarFallback>
+                       <AvatarImage src={user?.user_metadata?.avatar_url || PlaceHolderImages[0].imageUrl} />
+                       <AvatarFallback>{getUserInitials()}</AvatarFallback>
                      </Avatar>
                      <div className="flex flex-col text-sm">
-                       <span className="font-medium text-sidebar-foreground">John Kamau</span>
-                       <span className="text-xs text-muted-foreground">Owner</span>
+                       <span className="font-medium text-sidebar-foreground">{getUserDisplayName()}</span>
+                       <span className="text-xs text-muted-foreground">{userRole}</span>
                      </div>
                   </div>
                  </Link>

@@ -36,54 +36,34 @@ export default function OnboardingPage() {
         return
       }
 
-      // Create tenant
-      const { data: tenant, error: tenantError } = await supabase
-        .from('tenants')
-        .insert({
-          name: fleetName,
-          business_name: businessName || null,
-          phone: phone || null,
-          email: email || null,
-          plan: plan
-        })
-        .select()
-        .single()
+      // Use the database function to create tenant and membership atomically
+      const { data, error } = await supabase.rpc('create_tenant_with_owner', {
+        tenant_name: fleetName,
+        tenant_business_name: businessName || null,
+        tenant_phone: phone || null,
+        tenant_email: email || null,
+        tenant_plan: plan
+      })
 
-      if (tenantError || !tenant) {
-        console.error('Tenant creation error:', tenantError)
+      if (error) {
+        console.error('Fleet creation error:', error)
         
         // Provide helpful error messages
-        if (tenantError?.code === '42P01') {
-          setError('Database not set up. Please run the migration in Supabase SQL Editor first. See QUICK_START.md for instructions.')
-        } else if (tenantError?.code === '42501') {
-          setError('Permission denied. Please check Row Level Security policies in Supabase.')
+        if (error.code === '42883') {
+          setError('Database function missing. Please run migration 002_fix_onboarding.sql in Supabase. See instructions below.')
+        } else if (error.code === '42P01') {
+          setError('Database not set up. Please run migration 001_initial_schema.sql in Supabase SQL Editor first. See QUICK_START.md')
+        } else if (error.message?.includes('Not authenticated')) {
+          setError('You must be logged in. Please refresh the page and try again.')
         } else {
-          setError(tenantError?.message || 'Failed to create fleet. Please check console for details.')
+          setError(error.message || 'Failed to create fleet. Please check console for details.')
         }
         setLoading(false)
         return
       }
 
-      // Add user as owner
-      const { error: membershipError } = await supabase
-        .from('memberships')
-        .insert({
-          user_id: user.id,
-          tenant_id: tenant.id,
-          role: 'owner'
-        })
-
-      if (membershipError) {
-        console.error('Membership creation error:', membershipError)
-        
-        // Provide helpful error messages
-        if (membershipError.code === '42P01') {
-          setError('Memberships table not found. Please run the database migration. See QUICK_START.md')
-        } else if (membershipError.code === '23505') {
-          setError('You are already a member of this fleet.')
-        } else {
-          setError(membershipError.message || 'Failed to add you as owner. Please check console for details.')
-        }
+      if (!data) {
+        setError('Failed to create fleet. No data returned.')
         setLoading(false)
         return
       }
@@ -232,6 +212,19 @@ export default function OnboardingPage() {
               )}
             </Button>
           </form>
+
+          {error && error.includes('002_fix_onboarding.sql') && (
+            <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+              <h4 className="font-semibold text-yellow-900 mb-2">📋 Quick Fix Instructions:</h4>
+              <ol className="text-sm text-yellow-800 space-y-1 list-decimal list-inside">
+                <li>Go to <a href="https://supabase.com/dashboard" target="_blank" rel="noopener noreferrer" className="underline font-medium">Supabase Dashboard</a></li>
+                <li>Click <strong>SQL Editor</strong> → <strong>New Query</strong></li>
+                <li>Copy content from <code className="bg-yellow-100 px-1 rounded">supabase/migrations/002_fix_onboarding.sql</code></li>
+                <li>Paste and click <strong>Run</strong></li>
+                <li>Refresh this page and try again</li>
+              </ol>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

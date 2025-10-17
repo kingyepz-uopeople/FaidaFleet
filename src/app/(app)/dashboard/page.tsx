@@ -1,6 +1,6 @@
-'use client';
-
 import React from 'react';
+import { createClient } from '@/lib/supabase/server'
+import { redirect } from 'next/navigation'
 import {
   TrendingUp,
   Wallet,
@@ -17,62 +17,127 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import {
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-  ChartLegend,
-  ChartLegendContent,
-} from '@/components/ui/chart';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { StatCard } from '@/components/stat-card';
-import { collections } from '@/lib/data';
+import { WeeklyChart } from './weekly-chart';
 
-const chartData = [
-  { date: 'Mon', collections: 4000, expenses: 2400 },
-  { date: 'Tue', collections: 3000, expenses: 1398 },
-  { date: 'Wed', collections: 2000, expenses: 9800 },
-  { date: 'Thu', collections: 2780, expenses: 3908 },
-  { date: 'Fri', collections: 1890, expenses: 4800 },
-  { date: 'Sat', collections: 2390, expenses: 3800 },
-  { date: 'Sun', collections: 3490, expenses: 4300 },
-];
+export const dynamic = 'force-dynamic'
 
-const chartConfig = {
-  collections: {
-    label: "Collections",
-    color: "hsl(var(--primary))",
-  },
-  expenses: {
-    label: "Expenses",
-    color: "hsl(var(--destructive))",
-  },
-};
+export default async function DashboardPage() {
+  const supabase = await createClient()
+  
+  // Get current user
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) {
+    redirect('/login')
+  }
 
-export default function DashboardPage() {
-  const recentTransactions = collections.slice(0, 5);
+  // Get user's tenant membership
+  const { data: membership } = await supabase
+    .from('memberships')
+    .select('tenant_id')
+    .eq('user_id', user.id)
+    .eq('is_active', true)
+    .single()
+
+  if (!membership) {
+    redirect('/onboarding')
+  }
+
+  const tenantId = membership.tenant_id
+
+  // Fetch fleet data
+  const [
+    { data: vehicles },
+    { data: drivers },
+    { data: collections },
+    { data: expenses },
+    { data: tenant }
+  ] = await Promise.all([
+    supabase.from('vehicles').select('*').eq('tenant_id', tenantId),
+    supabase.from('drivers').select('*').eq('tenant_id', tenantId).eq('is_active', true),
+    supabase.from('collections').select('*, vehicles(registration_number)').eq('tenant_id', tenantId).order('collected_at', { ascending: false }).limit(50),
+    supabase.from('expenses').select('*').eq('tenant_id', tenantId).order('expense_date', { ascending: false }).limit(50),
+    supabase.from('tenants').select('name').eq('id', tenantId).single()
+  ])
+
+  // Calculate totals
+  const totalCollections = collections?.reduce((sum, c) => sum + (c.amount || 0), 0) || 0
+  const totalExpenses = expenses?.reduce((sum, e) => sum + (e.amount || 0), 0) || 0
+  const netProfit = totalCollections - totalExpenses
+
+  // Get reconciliation status for M-Pesa collections
+  const mpesaCollections = collections?.filter(c => c.payment_method === 'mpesa') || []
+  const reconciledCount = mpesaCollections.filter(c => c.mpesa_transaction_id).length
+  const pendingCount = mpesaCollections.length - reconciledCount
+
+  // Get last 7 days data for chart
+  const last7Days = Array.from({ length: 7 }, (_, i) => {
+    const date = new Date()
+    date.setDate(date.getDate() - (6 - i))
+    return date.toISOString().split('T')[0]
+  })
+
+  const chartData = last7Days.map((date, index) => {
+    const dayCollections = collections?.filter(c => 
+      c.collected_at?.startsWith(date)
+    ).reduce((sum, c) => sum + (c.amount || 0), 0) || 0
+    
+    const dayExpenses = expenses?.filter(e => 
+      e.expense_date?.startsWith(date)
+    ).reduce((sum, e) => sum + (e.amount || 0), 0) || 0
+
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+    const dayOfWeek = new Date(date).getDay()
+    
+    return {
+      date: days[dayOfWeek],
+      collections: dayCollections,
+      expenses: dayExpenses
+    }
+  })
+
+  // Get recent transactions (last 5)
+  const recentTransactions = collections?.slice(0, 5) || []
+
+  // Get user profile
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('full_name')
+    .eq('id', user.id)
+    .single()
+
+  const userName = profile?.full_name || user.email?.split('@')[0] || 'Fleet Owner'
+  const fleetName = tenant?.name || 'Your Fleet'
   
   return (
     <div className="flex flex-col gap-6">
+      {/* Welcome Header */}
+      <div className="flex flex-col gap-1">
+        <h1 className="text-3xl font-bold tracking-tight">Welcome back, {userName}!</h1>
+        <p className="text-muted-foreground">
+          Managing <span className="font-semibold text-foreground">{fleetName}</span>
+        </p>
+      </div>
+
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         <StatCard
           title="Total Collections"
-          value="KES 12,800"
-          description="+20.1% from last month"
+          value={`KES ${totalCollections.toLocaleString()}`}
+          description={collections && collections.length > 0 ? `${collections.length} transactions recorded` : 'No collections yet'}
           Icon={Wallet}
         />
         <StatCard
           title="Total Expenses"
-          value="KES 8,000"
-          description="+18.1% from last month"
+          value={`KES ${totalExpenses.toLocaleString()}`}
+          description={expenses && expenses.length > 0 ? `${expenses.length} expenses recorded` : 'No expenses yet'}
           Icon={Receipt}
         />
         <StatCard
           title="Net Profit"
-          value="KES 4,800"
-          description="+25.3% from last month"
+          value={`KES ${netProfit.toLocaleString()}`}
+          description={netProfit >= 0 ? 'Positive cash flow' : 'Negative cash flow'}
           Icon={TrendingUp}
         />
       </div>
@@ -88,14 +153,14 @@ export default function DashboardPage() {
                  <Truck className="h-8 w-8 text-primary" />
                  <div>
                     <p className="text-sm text-muted-foreground">Total Vehicles</p>
-                    <p className="text-2xl font-bold">4</p>
+                    <p className="text-2xl font-bold">{vehicles?.length || 0}</p>
                  </div>
               </div>
               <div className="flex items-center gap-4 rounded-lg border p-4">
                  <Users className="h-8 w-8 text-primary" />
                  <div>
                     <p className="text-sm text-muted-foreground">Active Drivers</p>
-                    <p className="text-2xl font-bold">3</p>
+                    <p className="text-2xl font-bold">{drivers?.length || 0}</p>
                  </div>
               </div>
             </CardContent>
@@ -110,7 +175,7 @@ export default function DashboardPage() {
                <div>
                   <p className="text-sm text-muted-foreground">Reconciled / Pending</p>
                   <p className="text-2xl font-bold">
-                    <span className="text-green-500">2</span> / <span className="text-amber-500">2</span>
+                    <span className="text-green-500">{reconciledCount}</span> / <span className="text-amber-500">{pendingCount}</span>
                   </p>
                </div>
             </CardContent>
@@ -118,27 +183,13 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
-        <Card className="lg:col-span-4">
-          <CardHeader>
-            <CardTitle>Weekly Overview</CardTitle>
-            <CardDescription>Collections vs Expenses for the last 7 days.</CardDescription>
-          </CardHeader>
-          <CardContent className="pl-2">
-             <ChartContainer config={chartConfig} className="h-[300px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} margin={{ top: 20, right: 20, left: -10, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={8} />
-                  <YAxis tickLine={false} axisLine={false} tickMargin={8} width={70} tickFormatter={(value) => `KES ${value/1000}k`}/>
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                  <ChartLegend content={<ChartLegendContent />} />
-                  <Bar dataKey="collections" fill="var(--color-collections)" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="expenses" fill="var(--color-expenses)" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </ChartContainer>
-          </CardContent>
-        </Card>
+        <div className="lg:col-span-4">
+          <WeeklyChart data={chartData.map(d => ({
+            day: d.date,
+            collections: d.collections,
+            expenses: d.expenses
+          }))} />
+        </div>
 
         <Card className="lg:col-span-3">
           <CardHeader>
@@ -155,23 +206,31 @@ export default function DashboardPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {recentTransactions.map((tx) => (
-                  <TableRow key={tx.id}>
-                    <TableCell>
-                      <div className="font-medium">{tx.vehicleReg}</div>
-                      <div className="text-sm text-muted-foreground">{tx.paymentMethod}</div>
-                    </TableCell>
-                    <TableCell>KES {tx.amount.toLocaleString()}</TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={tx.reconciled ? 'default' : 'secondary'}
-                        className={tx.reconciled ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'}
-                      >
-                        {tx.reconciled ? 'Reconciled' : 'Pending'}
-                      </Badge>
+                {recentTransactions.length > 0 ? (
+                  recentTransactions.map((tx: any) => (
+                    <TableRow key={tx.id}>
+                      <TableCell>
+                        <div className="font-medium">{tx.vehicles?.registration_number || 'N/A'}</div>
+                        <div className="text-sm text-muted-foreground capitalize">{tx.payment_method || 'Cash'}</div>
+                      </TableCell>
+                      <TableCell>KES {tx.amount?.toLocaleString() || 0}</TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={tx.mpesa_transaction_id ? 'default' : 'secondary'}
+                          className={tx.mpesa_transaction_id ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'}
+                        >
+                          {tx.mpesa_transaction_id ? 'Reconciled' : 'Pending'}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={3} className="text-center text-muted-foreground">
+                      No collections yet. Start by adding your first collection.
                     </TableCell>
                   </TableRow>
-                ))}
+                )}
               </TableBody>
             </Table>
           </CardContent>
