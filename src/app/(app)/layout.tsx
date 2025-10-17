@@ -44,9 +44,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [userRole, setUserRole] = useState<string>('Member');
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
   const [isDark, setIsDark] = useState(true);
   const supabase = createClient();
   const pathname = usePathname();
+
+  // Sidebar should be expanded when NOT collapsed OR when hovered (even if collapsed)
+  const isExpanded = !isCollapsed || isHovered;
 
   useEffect(() => {
     const getUser = async () => {
@@ -92,12 +96,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <aside
         className={cn(
           'relative flex flex-col bg-gradient-to-b from-[#1a1d29] to-[#12141d] text-white transition-all duration-300 ease-in-out',
-          isCollapsed ? 'w-16' : 'w-64'
+          isExpanded ? 'w-64' : 'w-16'
         )}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
       >
         {/* Header */}
         <div className="flex h-16 items-center justify-between px-4 border-b border-white/10">
-          {!isCollapsed && (
+          {isExpanded && (
             <Link href="/dashboard" className="flex items-center gap-3 transition-opacity">
               <div className="rounded-lg bg-blue-500 p-1.5">
                 <Car className="h-5 w-5" />
@@ -105,7 +111,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               <span className="text-lg font-bold">FaidaFleet</span>
             </Link>
           )}
-          {isCollapsed && (
+          {!isExpanded && (
             <Link href="/dashboard" className="flex w-full justify-center">
               <div className="rounded-lg bg-blue-500 p-1.5">
                 <Car className="h-5 w-5" />
@@ -130,14 +136,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                         isActive
                           ? 'bg-blue-500/20 text-blue-400'
                           : 'text-gray-400 hover:bg-white/5 hover:text-white',
-                        isCollapsed && 'justify-center'
+                        !isExpanded && 'justify-center'
                       )}
                     >
-                      <Icon className={cn('h-5 w-5', isCollapsed ? '' : 'flex-shrink-0')} />
-                      {!isCollapsed && <span>{label}</span>}
+                      <Icon className={cn('h-5 w-5', !isExpanded ? '' : 'flex-shrink-0')} />
+                      {isExpanded && <span>{label}</span>}
                     </Link>
                   </TooltipTrigger>
-                  {isCollapsed && (
+                  {!isExpanded && (
                     <TooltipContent side="right" className="bg-gray-800 text-white border-gray-700">
                       {label}
                     </TooltipContent>
@@ -159,14 +165,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     href="/help"
                     className={cn(
                       'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-400 transition-all hover:bg-white/5 hover:text-white',
-                      isCollapsed && 'justify-center'
+                      !isExpanded && 'justify-center'
                     )}
                   >
                     <CircleHelp className="h-5 w-5 flex-shrink-0" />
-                    {!isCollapsed && <span>Help & Support</span>}
+                    {isExpanded && <span>Help & Support</span>}
                   </Link>
                 </TooltipTrigger>
-                {isCollapsed && (
+                {!isExpanded && (
                   <TooltipContent side="right" className="bg-gray-800 text-white border-gray-700">
                     Help & Support
                   </TooltipContent>
@@ -181,7 +187,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               href="/settings"
               className={cn(
                 'flex items-center gap-3 rounded-lg p-2 transition-all hover:bg-white/5',
-                isCollapsed && 'justify-center'
+                !isExpanded && 'justify-center'
               )}
             >
               <Avatar className="h-8 w-8 flex-shrink-0">
@@ -190,7 +196,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   {getUserInitials()}
                 </AvatarFallback>
               </Avatar>
-              {!isCollapsed && (
+              {isExpanded && (
                 <div className="flex flex-col overflow-hidden">
                   <span className="truncate text-sm font-medium">{getUserDisplayName()}</span>
                   <span className="truncate text-xs text-gray-400">{userRole}</span>
@@ -203,9 +209,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <div className="px-3 pb-3">
             <div className={cn(
               'flex items-center gap-2 rounded-lg bg-white/5 p-1',
-              isCollapsed && 'justify-center'
+              !isExpanded && 'justify-center'
             )}>
-              {!isCollapsed ? (
+              {isExpanded ? (
                 <>
                   <button
                     onClick={() => setIsDark(true)}
