@@ -122,31 +122,31 @@ export default function LoginPage() {
 
       {/* Right side - Login Form */}
       <div className="flex-1 flex items-center justify-center p-8 bg-gradient-to-br from-slate-50 to-slate-100">
-        <Card className="w-full max-w-md shadow-2xl border-0 bg-white/80 backdrop-blur-sm">
-          <CardHeader className="space-y-1 pb-6">
+        <Card className="w-full max-w-md shadow-2xl border-0 bg-white">
+          <CardHeader className="space-y-2 pb-6">
             <div className="flex lg:hidden items-center justify-center gap-2 mb-4">
               <div className="p-2 bg-blue-600 rounded-xl">
                 <Car className="h-6 w-6 text-white" />
               </div>
               <span className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">FaidaFleet</span>
             </div>
-            <CardTitle className="text-3xl font-bold text-center bg-gradient-to-r from-gray-900 to-gray-700 bg-clip-text text-transparent">
+            <CardTitle className="text-3xl font-bold text-center text-gray-900">
               Welcome back
             </CardTitle>
-            <CardDescription className="text-center text-base">
-              Sign in to manage your fleet
+            <CardDescription className="text-center text-gray-600">
+              Enter your credentials to access your fleet dashboard
             </CardDescription>
           </CardHeader>
         <CardContent className="pt-0">
           <form onSubmit={handleLogin} className="space-y-5">
             {error && (
-              <Alert variant="destructive" className="animate-in slide-in-from-top">
-                <AlertDescription>{error}</AlertDescription>
+              <Alert variant="destructive" className="border-red-200 bg-red-50">
+                <AlertDescription className="text-red-800">{error}</AlertDescription>
               </Alert>
             )}
 
-            <div className="space-y-2">
-              <Label htmlFor="email" className="text-sm font-medium text-gray-700">
+            <div className="space-y-3">
+              <Label htmlFor="email" className="text-sm font-semibold text-gray-700">
                 Email Address
               </Label>
               <div className="relative">
@@ -154,8 +154,8 @@ export default function LoginPage() {
                 <Input
                   id="email"
                   type="email"
-                  placeholder="john@example.com"
-                  className="pl-10 h-11 border-gray-200 focus:border-blue-500 focus:ring-blue-500 transition-all"
+                  placeholder="your.email@example.com"
+                  className="pl-10 h-12 border border-gray-300 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
@@ -164,16 +164,16 @@ export default function LoginPage() {
               </div>
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <Label htmlFor="password" className="text-sm font-medium text-gray-700">
+                <Label htmlFor="password" className="text-sm font-semibold text-gray-700">
                   Password
                 </Label>
                 <Link 
                   href="/reset-password" 
                   className="text-sm text-blue-600 hover:text-blue-700 font-medium transition-colors"
                 >
-                  Forgot?
+                  Forgot password?
                 </Link>
               </div>
               <div className="relative">
@@ -182,7 +182,7 @@ export default function LoginPage() {
                   id="password"
                   type="password"
                   placeholder="••••••••"
-                  className="pl-10 h-11 border-gray-200 focus:border-blue-500 focus:ring-blue-500 transition-all"
+                  className="pl-10 h-12 border border-gray-300 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
@@ -193,7 +193,7 @@ export default function LoginPage() {
 
             <Button 
               type="submit" 
-              className="w-full h-11 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-medium shadow-lg shadow-blue-500/30 transition-all hover:shadow-xl hover:shadow-blue-500/40" 
+              className="w-full h-12 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition-all shadow-md hover:shadow-lg" 
               disabled={loading}
             >
               {loading ? (
@@ -203,21 +203,43 @@ export default function LoginPage() {
                 </>
               ) : (
                 <>
-                  <span>Sign In</span>
-                  <Sparkles className="ml-2 h-4 w-4" />
+                  Sign In
                 </>
               )}
             </Button>
           </form>
 
+          <div className="relative my-6">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-gray-300"></div>
+            </div>
+            <div className="relative flex justify-center text-sm">
+              <span className="px-2 bg-white text-gray-600">Or continue with</span>
+            </div>
+          </div>
+
+          <Button 
+            type="button"
+            onClick={handleGoogleLogin}
+            disabled={loading}
+            className="w-full h-12 border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 font-medium rounded-lg transition-all"
+          >
+            <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
+              <image href="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTIyLjU2IDEyLjI1QzIyLjU2IDExLjQyIDIyLjQ5IDEwLjYzIDIyLjM2IDkuODZIMTJWMTQuNDVIMTcuODZDMTcuNjUgMTUuNjQgMTYuODkgMTYuNjMgMTUuNzcgMTcuMzFWMTkuNDhIMTkuMjJDMjAuODEgMTguMjUgMjIuNTYgMTUuNzYgMjIuNTYgMTIuMjVaIiBmaWxsPSIjNDI4NUY0Ii8+CjxwYXRoIGQ9Ik0xMiAyMS41QzE1LjEgMjEuNSAxNy43IDIwLjMzIDE5LjIyIDE4LjQ4TDE3Ljc3IDE3LjMxQzE2Ljk2IDE3LjkzIDE1LjkyIDE4LjMzIDE0Ljk5IDE4LjMzQzEzLjE5IDE4LjMzIDExLjY0IDE3LjI2IDExLjA1IDE1LjcxSDE5LjUyVjE1LjA1SDE1LjkzQzE1Ljg2IDE0LjE1IDE1LjczIDEzLjM1IDE1LjQ4IDEyLjYySDEyWiIgZmlsbD0iIzM0QTg1MyIvPgo8L3N2Zz4=" width="24" height="24" />
+            </svg>
+            Google
+          </Button>
 
         </CardContent>
-        <CardFooter className="flex-col space-y-2">
+        <CardFooter className="flex-col space-y-4 pt-6 border-t border-gray-200">
           <p className="text-sm text-center w-full text-gray-600">
             Don&apos;t have an account?{' '}
             <Link href="/signup" className="text-blue-600 hover:text-blue-700 font-semibold transition-colors">
-              Sign up for free
+              Sign up now
             </Link>
+          </p>
+          <p className="text-xs text-center text-gray-500">
+            By signing in, you agree to our Terms of Service and Privacy Policy
           </p>
         </CardFooter>
         </Card>
