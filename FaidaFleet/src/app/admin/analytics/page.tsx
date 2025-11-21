@@ -35,7 +35,7 @@ export default function AnalyticsPage() {
         supabase.from('tenants').select('plan'),
       ]);
 
-      const totalCollections = collections.data?.reduce((sum, c) => sum + (c.amount || 0), 0) || 0;
+      const totalCollections = (collections.data as any[])?.reduce((sum, c: any) => sum + (c.amount || 0), 0) || 0;
 
       setStats({
         totalFleets: fleets.count || 0,
