@@ -319,27 +319,35 @@ $$;
 -- 11. TRIGGERS FOR UPDATED_AT
 -- ============================================
 
+DROP TRIGGER IF EXISTS set_updated_at ON public.tenants;
 CREATE TRIGGER set_updated_at BEFORE UPDATE ON public.tenants
   FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 
+DROP TRIGGER IF EXISTS set_updated_at ON public.profiles;
 CREATE TRIGGER set_updated_at BEFORE UPDATE ON public.profiles
   FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 
+DROP TRIGGER IF EXISTS set_updated_at ON public.drivers;
 CREATE TRIGGER set_updated_at BEFORE UPDATE ON public.drivers
   FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 
+DROP TRIGGER IF EXISTS set_updated_at ON public.vehicles;
 CREATE TRIGGER set_updated_at BEFORE UPDATE ON public.vehicles
   FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 
+DROP TRIGGER IF EXISTS set_updated_at ON public.collections;
 CREATE TRIGGER set_updated_at BEFORE UPDATE ON public.collections
   FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 
+DROP TRIGGER IF EXISTS set_updated_at ON public.expenses;
 CREATE TRIGGER set_updated_at BEFORE UPDATE ON public.expenses
   FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 
+DROP TRIGGER IF EXISTS set_updated_at ON public.maintenance_logs;
 CREATE TRIGGER set_updated_at BEFORE UPDATE ON public.maintenance_logs
   FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 
+DROP TRIGGER IF EXISTS set_updated_at ON public.trips;
 CREATE TRIGGER set_updated_at BEFORE UPDATE ON public.trips
   FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 
@@ -388,95 +396,113 @@ ALTER TABLE public.maintenance_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.mpesa_transactions ENABLE ROW LEVEL SECURITY;
 
 -- Tenants RLS
+DROP POLICY IF EXISTS "Users can view their tenants" ON public.tenants;
 CREATE POLICY "Users can view their tenants" ON public.tenants
   FOR SELECT USING (
     id IN (SELECT tenant_id FROM public.memberships WHERE user_id = auth.uid() AND is_active = true)
   );
 
 -- Profiles RLS
+DROP POLICY IF EXISTS "Users can view their profile" ON public.profiles;
 CREATE POLICY "Users can view their profile" ON public.profiles
   FOR SELECT USING (id = auth.uid());
 
+DROP POLICY IF EXISTS "Users can update their profile" ON public.profiles;
 CREATE POLICY "Users can update their profile" ON public.profiles
   FOR UPDATE USING (id = auth.uid());
 
 -- Memberships RLS
+DROP POLICY IF EXISTS "Users can view their memberships" ON public.memberships;
 CREATE POLICY "Users can view their memberships" ON public.memberships
   FOR SELECT USING (user_id = auth.uid() OR invited_by = auth.uid());
 
 -- Vehicles RLS
+DROP POLICY IF EXISTS "Users can view tenant vehicles" ON public.vehicles;
 CREATE POLICY "Users can view tenant vehicles" ON public.vehicles
   FOR SELECT USING (
     tenant_id IN (SELECT tenant_id FROM public.memberships WHERE user_id = auth.uid() AND is_active = true)
   );
 
+DROP POLICY IF EXISTS "Admins can manage vehicles" ON public.vehicles;
 CREATE POLICY "Admins can manage vehicles" ON public.vehicles
   FOR ALL USING (
     tenant_id IN (SELECT tenant_id FROM public.memberships WHERE user_id = auth.uid() AND role IN ('owner', 'admin') AND is_active = true)
   );
 
 -- Drivers RLS
+DROP POLICY IF EXISTS "Users can view tenant drivers" ON public.drivers;
 CREATE POLICY "Users can view tenant drivers" ON public.drivers
   FOR SELECT USING (
     tenant_id IN (SELECT tenant_id FROM public.memberships WHERE user_id = auth.uid() AND is_active = true)
   );
 
+DROP POLICY IF EXISTS "Admins can manage drivers" ON public.drivers;
 CREATE POLICY "Admins can manage drivers" ON public.drivers
   FOR ALL USING (
     tenant_id IN (SELECT tenant_id FROM public.memberships WHERE user_id = auth.uid() AND role IN ('owner', 'admin') AND is_active = true)
   );
 
 -- Driver Assignments RLS
+DROP POLICY IF EXISTS "Users can view assignments" ON public.driver_assignments;
 CREATE POLICY "Users can view assignments" ON public.driver_assignments
   FOR SELECT USING (
     tenant_id IN (SELECT tenant_id FROM public.memberships WHERE user_id = auth.uid() AND is_active = true)
   );
 
 -- Collections RLS
+DROP POLICY IF EXISTS "Users can view collections" ON public.collections;
 CREATE POLICY "Users can view collections" ON public.collections
   FOR SELECT USING (
     tenant_id IN (SELECT tenant_id FROM public.memberships WHERE user_id = auth.uid() AND is_active = true)
   );
 
+DROP POLICY IF EXISTS "Team can record collections" ON public.collections;
 CREATE POLICY "Team can record collections" ON public.collections
   FOR INSERT WITH CHECK (
     tenant_id IN (SELECT tenant_id FROM public.memberships WHERE user_id = auth.uid() AND role IN ('owner', 'admin', 'accountant') AND is_active = true)
   );
 
 -- Expenses RLS
+DROP POLICY IF EXISTS "Users can view expenses" ON public.expenses;
 CREATE POLICY "Users can view expenses" ON public.expenses
   FOR SELECT USING (
     tenant_id IN (SELECT tenant_id FROM public.memberships WHERE user_id = auth.uid() AND is_active = true)
   );
 
+DROP POLICY IF EXISTS "Team can record expenses" ON public.expenses;
 CREATE POLICY "Team can record expenses" ON public.expenses
   FOR INSERT WITH CHECK (
     tenant_id IN (SELECT tenant_id FROM public.memberships WHERE user_id = auth.uid() AND role IN ('owner', 'admin', 'accountant') AND is_active = true)
   );
 
 -- Trips RLS
+DROP POLICY IF EXISTS "Users can view trips" ON public.trips;
 CREATE POLICY "Users can view trips" ON public.trips
   FOR SELECT USING (
     tenant_id IN (SELECT tenant_id FROM public.memberships WHERE user_id = auth.uid() AND is_active = true)
   );
 
+DROP POLICY IF EXISTS "Team can record trips" ON public.trips;
 CREATE POLICY "Team can record trips" ON public.trips
   FOR INSERT WITH CHECK (
     tenant_id IN (SELECT tenant_id FROM public.memberships WHERE user_id = auth.uid() AND role IN ('owner', 'admin', 'accountant') AND is_active = true)
   );
 
 -- Maintenance RLS
+DROP POLICY IF EXISTS "Users can view maintenance" ON public.maintenance_logs;
 CREATE POLICY "Users can view maintenance" ON public.maintenance_logs
   FOR SELECT USING (
     tenant_id IN (SELECT tenant_id FROM public.memberships WHERE user_id = auth.uid() AND is_active = true)
   );
 
+DROP POLICY IF EXISTS "Team can record maintenance" ON public.maintenance_logs;
 CREATE POLICY "Team can record maintenance" ON public.maintenance_logs
   FOR INSERT WITH CHECK (
     tenant_id IN (SELECT tenant_id FROM public.memberships WHERE user_id = auth.uid() AND role IN ('owner', 'admin', 'accountant') AND is_active = true)
   );
 
 -- M-Pesa Transactions RLS
+DROP POLICY IF EXISTS "Users can view mpesa transactions" ON public.mpesa_transactions;
 CREATE POLICY "Users can view mpesa transactions" ON public.mpesa_transactions
   FOR SELECT USING (
     tenant_id IN (SELECT tenant_id FROM public.memberships WHERE user_id = auth.uid() AND is_active = true)
