@@ -1,0 +1,192 @@
+================================================================================
+                    FAIDAFLEET DATABASE TABLES SUMMARY
+================================================================================
+
+FEATURE 1: VEHICLES MANAGEMENT
+────────────────────────────────────────────────────────────────────────────
+TABLE: vehicles
+COLUMNS:
+  • id (UUID) - Primary key
+  • tenant_id (UUID) - Multi-tenant reference
+  • registration_number (TEXT) - Vehicle license plate
+  • make, model, year (TEXT, INTEGER) - Vehicle details
+  • capacity (INTEGER) - Passenger/cargo capacity
+  • vehicle_type (TEXT) - PSV, Cargo, Pickup, Other
+  • insurance_expiry (DATE) - Compliance date ✓ NEW
+  • mot_expiry (DATE) - Compliance date ✓ NEW
+  • is_active (BOOLEAN) - Soft delete flag
+  • created_at, updated_at (TIMESTAMPTZ) - Audit
+
+STATUS: ✅ READY - Already in database, columns added via migration 004
+
+
+FEATURE 2: FINANCIAL ANALYTICS & REPORTS
+────────────────────────────────────────────────────────────────────────────
+TABLE 1: collections (Revenue)
+COLUMNS:
+  • id (UUID) - Primary key
+  • tenant_id (UUID) - Multi-tenant
+  • vehicle_id (UUID) - Which vehicle collected
+  • driver_id (UUID) - Which driver
+  • date (DATE) - Collection date
+  • shift (TEXT) - morning/afternoon/evening/night
+  • amount (NUMERIC) - Revenue amount
+  • payment_method (TEXT) - cash/mpesa/pochi
+  • mpesa_receipt (TEXT) - Transaction reference
+  • reconciled (BOOLEAN) - Verified status
+  • notes (TEXT) - Optional notes
+
+STATUS: ✅ READY - Already in database
+
+TABLE 2: expenses (Costs)
+COLUMNS:
+  • id (UUID) - Primary key
+  • tenant_id (UUID) - Multi-tenant
+  • vehicle_id (UUID) - Associated vehicle
+  • date (DATE) - Expense date
+  • category (TEXT) - fuel/maintenance/insurance/license/parking/other
+  • amount (NUMERIC) - Cost amount
+  • description (TEXT) - What was purchased
+  • receipt_url (TEXT) - Proof of expense
+
+STATUS: ✅ READY - Already in database
+
+VIEW: kpi_daily (Materialized View)
+PURPOSE: Auto-calculate daily P&L metrics
+CALCULATES:
+  • total_collections (SUM of all collections)
+  • total_expenses (SUM of all expenses)
+  • net_profit (collections - expenses)
+  • reconciled_count (verified transactions)
+
+STATUS: ✅ READY - Already in database
+
+
+FEATURE 3: TRIPS & ROUTE TRACKING
+────────────────────────────────────────────────────────────────────────────
+TABLE: trips
+COLUMNS:
+  • id (UUID) - Primary key
+  • tenant_id (UUID) - Multi-tenant
+  • vehicle_id (UUID) - Which vehicle
+  • driver_id (UUID) - Which driver
+  • trip_date (DATE) - Date of trip
+  • start_time, end_time (TIME) - Trip duration
+  • start_location, end_location (TEXT) - Route details
+  • distance_km (NUMERIC) - Distance traveled
+  • fuel_consumed (NUMERIC) - Fuel used
+  • earnings (NUMERIC) - Trip revenue
+  • expenses (NUMERIC) - Trip costs
+  • status (TEXT) - planned/in_progress/completed/cancelled
+  • notes (TEXT) - Optional notes
+
+STATUS: ✅ READY - Created in migration 004_add_trips_table.sql
+
+
+FEATURE 4: MAINTENANCE SCHEDULER
+────────────────────────────────────────────────────────────────────────────
+TABLE: maintenance_logs
+COLUMNS:
+  • id (UUID) - Primary key
+  • tenant_id (UUID) - Multi-tenant
+  • vehicle_id (UUID) - Which vehicle
+  • date (DATE) - Service date
+  • type (TEXT) - service/repair/inspection/other
+  • description (TEXT) - What was done
+  • cost (NUMERIC) - Amount spent
+  • odometer_reading (INTEGER) - Vehicle mileage
+  • next_service_date (DATE) - When to service again
+  • garage_name (TEXT) - Service provider
+
+STATUS: ✅ READY - Already in database
+
+
+FEATURE 5: DRIVER PERFORMANCE & ANALYTICS
+────────────────────────────────────────────────────────────────────────────
+TABLE 1: drivers
+COLUMNS:
+  • id (UUID) - Primary key
+  • tenant_id (UUID) - Multi-tenant
+  • user_id (UUID) - Link to auth user
+  • full_name (TEXT) - Driver name
+  • phone (TEXT) - Contact number
+  • license_number (TEXT) - Driver license
+  • license_expiry (DATE) - License validity
+  • id_number (TEXT) - National ID
+  • is_active (BOOLEAN) - Active status
+
+STATUS: ✅ READY - Already in database
+
+TABLE 2: driver_assignments
+COLUMNS:
+  • id (UUID) - Primary key
+  • tenant_id (UUID) - Multi-tenant
+  • driver_id (UUID) - Which driver
+  • vehicle_id (UUID) - Which vehicle
+  • start_date (DATE) - Assignment start
+  • end_date (DATE) - Assignment end
+  • is_current (BOOLEAN) - Current assignment
+  • notes (TEXT) - Assignment notes
+
+PURPOSE: Track driver-vehicle assignments over time
+STATUS: ✅ READY - Already in database
+
+
+================================================================================
+                            DATABASE QUERIES USED
+================================================================================
+
+FEATURE 1: VEHICLES
+  SELECT * FROM vehicles WHERE tenant_id = ? AND is_active = true
+  UPDATE vehicles SET insurance_expiry = ?, mot_expiry = ? WHERE id = ?
+
+FEATURE 2: ANALYTICS
+  SELECT * FROM kpi_daily WHERE tenant_id = ? AND date >= ?
+  SELECT SUM(amount) FROM collections WHERE tenant_id = ? AND date >= ?
+  SELECT SUM(amount) FROM expenses WHERE tenant_id = ? AND date >= ?
+
+FEATURE 3: TRIPS
+  SELECT * FROM trips WHERE tenant_id = ? ORDER BY trip_date DESC
+  INSERT INTO trips (...) VALUES (...)
+  SELECT SUM(earnings) - SUM(expenses) FROM trips WHERE tenant_id = ?
+
+FEATURE 4: MAINTENANCE
+  SELECT * FROM maintenance_logs WHERE tenant_id = ? ORDER BY date DESC
+  SELECT * FROM maintenance_logs WHERE vehicle_id = ? AND next_service_date > NOW()
+
+FEATURE 5: DRIVER STATS
+  SELECT drivers.*, 
+         COALESCE(SUM(collections.amount), 0) as total_earnings,
+         COALESCE(SUM(expenses.amount), 0) as total_expenses,
+         COUNT(trips.id) as trip_count
+  FROM drivers
+  LEFT JOIN collections ON collections.driver_id = drivers.id
+  LEFT JOIN expenses ON expenses.driver_id = drivers.id
+  LEFT JOIN trips ON trips.driver_id = drivers.id
+  WHERE drivers.tenant_id = ?
+  GROUP BY drivers.id
+  ORDER BY total_earnings DESC
+
+================================================================================
+                                MIGRATION STATUS
+================================================================================
+
+✅ Migration 001_initial_schema.sql
+   - vehicles, drivers, collections, expenses, maintenance_logs
+   - tenants, profiles, memberships
+
+✅ Migration 002_fix_onboarding.sql
+   - Onboarding improvements
+
+✅ Migration 003_admin_tables.sql
+   - Admin features
+
+✅ Migration 004_add_trips_table.sql (NEW)
+   - trips table
+   - vehicle columns: insurance_expiry, mot_expiry, vehicle_type
+   - Indexes for performance
+   - Triggers for updated_at
+
+================================================================================
+                                ALL SYSTEMS GO! 🚀
+================================================================================
