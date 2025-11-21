@@ -10,6 +10,7 @@ import {
   ChevronLeft,
   LogOut,
   Shield,
+  Package,
 } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -27,6 +28,7 @@ const adminMenuItems = [
   { href: '/admin', label: 'Overview', Icon: LayoutDashboard },
   { href: '/admin/fleet-owners', label: 'Fleet Owners', Icon: Users },
   { href: '/admin/drivers', label: 'All Drivers', Icon: Car },
+  { href: '/admin/plans', label: 'Plans', Icon: Package },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
