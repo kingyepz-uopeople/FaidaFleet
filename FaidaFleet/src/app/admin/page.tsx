@@ -74,26 +74,26 @@ export default function AdminOverviewPage() {
         <StatCard
           title="Active Tenants"
           value={stats.activeTenants.toString()}
-          icon={Building2}
-          trend="+2.5%"
+          description="Fleet companies"
+          Icon={Building2}
         />
         <StatCard
           title="Fleet Owners"
           value={stats.fleetOwners.toString()}
-          icon={Users}
-          trend="+5.2%"
+          description="Active owners"
+          Icon={Users}
         />
         <StatCard
           title="Total Drivers"
           value={stats.totalDrivers.toString()}
-          icon={Truck}
-          trend="+12.1%"
+          description="All drivers"
+          Icon={Truck}
         />
         <StatCard
           title="Total Vehicles"
           value={stats.totalVehicles.toString()}
-          icon={BarChart3}
-          trend="+8.3%"
+          description="Active vehicles"
+          Icon={BarChart3}
         />
       </div>
 
