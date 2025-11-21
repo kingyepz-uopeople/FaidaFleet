@@ -31,12 +31,18 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 
+import { BarChart3, Zap, TrendingUp, Wrench } from 'lucide-react';
+
 const menuItems = [
   { href: '/dashboard', label: 'Dashboard', Icon: LayoutDashboard },
   { href: '/vehicles', label: 'Vehicles', Icon: Truck },
   { href: '/drivers', label: 'Drivers', Icon: Users },
   { href: '/collections', label: 'Collections', Icon: Wallet },
   { href: '/expenses', label: 'Expenses', Icon: Receipt },
+  { href: '/trips', label: 'Trips', Icon: Zap },
+  { href: '/analytics', label: 'Analytics', Icon: BarChart3 },
+  { href: '/maintenance', label: 'Maintenance', Icon: Wrench },
+  { href: '/driver-analytics', label: 'Driver Stats', Icon: TrendingUp },
   { href: '/settings', label: 'Settings', Icon: Settings },
 ];
 
