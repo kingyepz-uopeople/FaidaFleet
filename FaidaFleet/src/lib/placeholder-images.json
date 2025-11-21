@@ -1,0 +1,34 @@
+{
+  "placeholderImages": [
+    {
+      "id": "driver-1",
+      "description": "Portrait of a male driver",
+      "imageUrl": "https://picsum.photos/seed/1/100/100",
+      "imageHint": "man portrait"
+    },
+    {
+      "id": "driver-2",
+      "description": "Portrait of a female driver",
+      "imageUrl": "https://picsum.photos/seed/2/100/100",
+      "imageHint": "woman portrait"
+    },
+    {
+      "id": "driver-3",
+      "description": "Portrait of a driver",
+      "imageUrl": "https://picsum.photos/seed/3/100/100",
+      "imageHint": "person portrait"
+    },
+    {
+      "id": "driver-4",
+      "description": "Portrait of a driver",
+      "imageUrl": "https://picsum.photos/seed/4/100/100",
+      "imageHint": "driver portrait"
+    },
+    {
+      "id": "driver-5",
+      "description": "Portrait of a driver",
+      "imageUrl": "https://picsum.photos/seed/5/100/100",
+      "imageHint": "professional portrait"
+    }
+  ]
+}
