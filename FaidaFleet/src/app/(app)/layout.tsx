@@ -49,7 +49,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const supabase = createClient();
   const pathname = usePathname();
 
-  // Sidebar should be expanded when NOT collapsed OR when hovered (even if collapsed)
   const isExpanded = !isCollapsed || isHovered;
 
   useEffect(() => {
@@ -58,7 +57,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       setUser(user);
 
       if (user) {
-        // Get user's role from memberships
         const { data: membership } = await supabase
           .from('memberships')
           .select('role')
@@ -67,7 +65,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           .single();
 
         if (membership) {
-          // Capitalize role
           setUserRole(membership.role.charAt(0).toUpperCase() + membership.role.slice(1));
         }
       }
@@ -92,28 +89,111 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex h-screen overflow-hidden bg-gray-100 dark:bg-gray-900">
+      <style>{`
+        @keyframes slideInLeft {
+          from {
+            opacity: 0;
+            transform: translateX(-10px);
+          }
+          to {
+            opacity: 1;
+            transform: translateX(0);
+          }
+        }
+        
+        @keyframes slideInUp {
+          from {
+            opacity: 0;
+            transform: translateY(10px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        
+        @keyframes activeIndicator {
+          from {
+            width: 0;
+            opacity: 0;
+          }
+          to {
+            width: 4px;
+            opacity: 1;
+          }
+        }
+
+        .menu-item {
+          position: relative;
+          animation: slideInLeft 0.4s ease-out forwards;
+        }
+        
+        .menu-item:nth-child(1) { animation-delay: 0.05s; }
+        .menu-item:nth-child(2) { animation-delay: 0.1s; }
+        .menu-item:nth-child(3) { animation-delay: 0.15s; }
+        .menu-item:nth-child(4) { animation-delay: 0.2s; }
+        .menu-item:nth-child(5) { animation-delay: 0.25s; }
+        .menu-item:nth-child(6) { animation-delay: 0.3s; }
+
+        .menu-item.active::before {
+          content: '';
+          position: absolute;
+          left: 0;
+          top: 50%;
+          transform: translateY(-50%);
+          width: 4px;
+          height: 24px;
+          background: linear-gradient(to bottom, rgb(59, 130, 246), rgb(37, 99, 235));
+          border-radius: 0 2px 2px 0;
+          animation: activeIndicator 0.3s ease-out;
+        }
+
+        .user-section {
+          animation: slideInUp 0.5s ease-out;
+        }
+
+        .help-support {
+          animation: slideInUp 0.55s ease-out;
+        }
+
+        .theme-toggle {
+          animation: slideInUp 0.6s ease-out;
+        }
+
+        .nav-item {
+          transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        .nav-item:hover {
+          transform: translateX(4px);
+        }
+      `}</style>
+
       {/* Collapsible Sidebar */}
       <aside
         className={cn(
-          'relative flex flex-col bg-gradient-to-b from-[#1a1d29] to-[#12141d] text-white transition-all duration-300 ease-in-out',
+          'relative flex flex-col bg-gradient-to-b from-[#1a1d29] to-[#12141d] text-white transition-all duration-400 ease-out shadow-2xl',
           isExpanded ? 'w-64' : 'w-16'
         )}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >
         {/* Header */}
-        <div className="flex h-16 items-center justify-between px-4 border-b border-white/10">
+        <div className={cn(
+          'flex h-16 items-center justify-between px-4 border-b border-white/10 transition-all duration-400',
+          isExpanded ? 'px-4' : 'px-0'
+        )}>
           {isExpanded && (
-            <Link href="/dashboard" className="flex items-center gap-3 transition-opacity">
-              <div className="rounded-lg bg-blue-500 p-1.5">
+            <Link href="/dashboard" className="flex items-center gap-3 transition-all hover:opacity-80 group">
+              <div className="rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 p-1.5 shadow-lg group-hover:shadow-blue-500/50 transition-all">
                 <Car className="h-5 w-5" />
               </div>
-              <span className="text-lg font-bold">FaidaFleet</span>
+              <span className="text-lg font-bold bg-gradient-to-r from-blue-400 to-blue-300 bg-clip-text text-transparent">FaidaFleet</span>
             </Link>
           )}
           {!isExpanded && (
-            <Link href="/dashboard" className="flex w-full justify-center">
-              <div className="rounded-lg bg-blue-500 p-1.5">
+            <Link href="/dashboard" className="flex w-full justify-center group transition-all">
+              <div className="rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 p-1.5 shadow-lg group-hover:shadow-blue-500/50 transition-all">
                 <Car className="h-5 w-5" />
               </div>
             </Link>
@@ -121,9 +201,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
+        <nav className="flex-1 space-y-1.5 overflow-y-auto px-3 py-4">
           <TooltipProvider delayDuration={0}>
-            {menuItems.map(({ href, label, Icon }) => {
+            {menuItems.map(({ href, label, Icon }, index) => {
               const isActive = pathname === href || pathname.startsWith(href + '/');
               
               return (
@@ -132,19 +212,23 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     <Link
                       href={href}
                       className={cn(
-                        'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all',
+                        'nav-item menu-item flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-300',
                         isActive
-                          ? 'bg-blue-500/20 text-blue-400'
-                          : 'text-gray-400 hover:bg-white/5 hover:text-white',
-                        !isExpanded && 'justify-center'
+                          ? 'active bg-gradient-to-r from-blue-500/15 to-transparent text-blue-300 shadow-md'
+                          : 'text-gray-400 hover:text-gray-200 hover:bg-white/5',
+                        'relative overflow-hidden group'
                       )}
                     >
-                      <Icon className={cn('h-5 w-5', !isExpanded ? '' : 'flex-shrink-0')} />
-                      {isExpanded && <span>{label}</span>}
+                      <div className="absolute inset-0 bg-gradient-to-r from-blue-500/0 to-transparent opacity-0 group-hover:opacity-10 transition-opacity duration-300" />
+                      <Icon className={cn(
+                        'h-5 w-5 flex-shrink-0 transition-all duration-300',
+                        isActive && 'text-blue-400'
+                      )} />
+                      {isExpanded && <span className="relative z-10">{label}</span>}
                     </Link>
                   </TooltipTrigger>
                   {!isExpanded && (
-                    <TooltipContent side="right" className="bg-gray-800 text-white border-gray-700">
+                    <TooltipContent side="right" className="bg-gray-900 text-white border-gray-700 font-medium">
                       {label}
                     </TooltipContent>
                   )}
@@ -155,25 +239,27 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </nav>
 
         {/* Footer */}
-        <div className="border-t border-white/10">
+        <div className="border-t border-white/10 space-y-3 p-3">
           {/* Help & Support */}
-          <div className="px-3 py-2">
+          <div className="help-support">
             <TooltipProvider delayDuration={0}>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Link
                     href="/help"
                     className={cn(
-                      'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-400 transition-all hover:bg-white/5 hover:text-white',
+                      'nav-item flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-400 transition-all duration-300',
+                      'hover:text-gray-200 hover:bg-white/5 relative overflow-hidden group',
                       !isExpanded && 'justify-center'
                     )}
                   >
+                    <div className="absolute inset-0 bg-gradient-to-r from-purple-500/0 to-transparent opacity-0 group-hover:opacity-10 transition-opacity duration-300" />
                     <CircleHelp className="h-5 w-5 flex-shrink-0" />
-                    {isExpanded && <span>Help & Support</span>}
+                    {isExpanded && <span className="relative z-10">Help & Support</span>}
                   </Link>
                 </TooltipTrigger>
                 {!isExpanded && (
-                  <TooltipContent side="right" className="bg-gray-800 text-white border-gray-700">
+                  <TooltipContent side="right" className="bg-gray-900 text-white border-gray-700 font-medium">
                     Help & Support
                   </TooltipContent>
                 )}
@@ -182,23 +268,24 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </div>
 
           {/* User Profile */}
-          <div className="p-3">
+          <div className="user-section">
             <Link
               href="/settings"
               className={cn(
-                'flex items-center gap-3 rounded-lg p-2 transition-all hover:bg-white/5',
+                'flex items-center gap-3 rounded-lg p-2.5 transition-all duration-300 group',
+                'hover:bg-gradient-to-r hover:from-blue-500/10 hover:to-transparent',
                 !isExpanded && 'justify-center'
               )}
             >
-              <Avatar className="h-8 w-8 flex-shrink-0">
+              <Avatar className="h-8 w-8 flex-shrink-0 ring-2 ring-blue-500/30 group-hover:ring-blue-500/50 transition-all">
                 <AvatarImage src={user?.user_metadata?.avatar_url || PlaceHolderImages[0].imageUrl} />
-                <AvatarFallback className="bg-blue-500 text-white text-xs">
+                <AvatarFallback className="bg-gradient-to-br from-blue-500 to-blue-600 text-white text-xs font-semibold">
                   {getUserInitials()}
                 </AvatarFallback>
               </Avatar>
               {isExpanded && (
-                <div className="flex flex-col overflow-hidden">
-                  <span className="truncate text-sm font-medium">{getUserDisplayName()}</span>
+                <div className="flex flex-col overflow-hidden min-w-0 flex-1 animate-in fade-in slide-in-from-left">
+                  <span className="truncate text-sm font-semibold text-white">{getUserDisplayName()}</span>
                   <span className="truncate text-xs text-gray-400">{userRole}</span>
                 </div>
               )}
@@ -206,9 +293,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </div>
 
           {/* Theme Toggle */}
-          <div className="px-3 pb-3">
+          <div className="theme-toggle">
             <div className={cn(
-              'flex items-center gap-2 rounded-lg bg-white/5 p-1',
+              'flex items-center gap-1.5 rounded-lg bg-white/5 backdrop-blur-sm p-1 border border-white/10',
+              'hover:bg-white/10 transition-all duration-300',
               !isExpanded && 'justify-center'
             )}>
               {isExpanded ? (
@@ -216,8 +304,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   <button
                     onClick={() => setIsDark(true)}
                     className={cn(
-                      'flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-all',
-                      isDark ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-white'
+                      'flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-all duration-300',
+                      'hover:scale-105 active:scale-95',
+                      isDark 
+                        ? 'bg-gradient-to-r from-blue-500/20 to-blue-400/10 text-blue-300 shadow-md' 
+                        : 'text-gray-500 hover:text-gray-300'
                     )}
                   >
                     <Moon className="mx-auto h-4 w-4" />
@@ -225,8 +316,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   <button
                     onClick={() => setIsDark(false)}
                     className={cn(
-                      'flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-all',
-                      !isDark ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-white'
+                      'flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-all duration-300',
+                      'hover:scale-105 active:scale-95',
+                      !isDark 
+                        ? 'bg-gradient-to-r from-yellow-500/20 to-yellow-400/10 text-yellow-300 shadow-md' 
+                        : 'text-gray-500 hover:text-gray-300'
                     )}
                   >
                     <Sun className="mx-auto h-4 w-4" />
@@ -235,9 +329,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               ) : (
                 <button
                   onClick={() => setIsDark(!isDark)}
-                  className="rounded-md p-1.5 text-gray-400 transition-all hover:text-white"
+                  className="flex-1 rounded-md p-1.5 text-gray-400 transition-all hover:text-white hover:bg-white/10 hover:scale-105 active:scale-95"
                 >
-                  {isDark ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
+                  {isDark ? <Moon className="mx-auto h-4 w-4" /> : <Sun className="mx-auto h-4 w-4" />}
                 </button>
               )}
             </div>
@@ -247,7 +341,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         {/* Collapse Toggle Button */}
         <button
           onClick={() => setIsCollapsed(!isCollapsed)}
-          className="absolute -right-3 top-20 z-50 flex h-6 w-6 items-center justify-center rounded-full border border-white/10 bg-[#1a1d29] text-gray-400 transition-all hover:bg-white/5 hover:text-white"
+          className={cn(
+            'absolute -right-3 top-20 z-50 flex h-6 w-6 items-center justify-center rounded-full',
+            'border border-blue-500/30 bg-[#1a1d29] text-gray-400 transition-all duration-300',
+            'hover:bg-blue-500/20 hover:text-blue-400 hover:border-blue-500/50 hover:scale-110 active:scale-95',
+            'shadow-lg hover:shadow-blue-500/30'
+          )}
+          style={{
+            transform: isCollapsed ? 'rotate(180deg)' : 'rotate(0deg)',
+            transition: 'all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)',
+          }}
         >
           {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
         </button>
