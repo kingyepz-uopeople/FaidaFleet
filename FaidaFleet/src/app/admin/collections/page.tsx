@@ -35,6 +35,7 @@ export default function CollectionsPage() {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [totalAmount, setTotalAmount] = useState(0);
+  const [paymentMethodStats, setPaymentMethodStats] = useState<Record<string, number>>({});
   const supabase = createClient();
 
   useEffect(() => {
@@ -52,9 +53,16 @@ export default function CollectionsPage() {
         .from('collections')
         .select('*, drivers(full_name), tenants(name)')
         .order('date', { ascending: false })
-        .limit(500);
+        .limit(1000);
 
       setCollections(data || []);
+
+      // Calculate payment method stats
+      const stats: Record<string, number> = {};
+      data?.forEach((c: any) => {
+        stats[c.payment_method] = (stats[c.payment_method] || 0) + c.amount;
+      });
+      setPaymentMethodStats(stats);
     } catch (error) {
       console.error('Error fetching collections:', error);
     } finally {
@@ -85,6 +93,24 @@ export default function CollectionsPage() {
     setTotalAmount(filtered.reduce((sum, c) => sum + c.amount, 0));
   };
 
+  const getPaymentMethodColor = (method: string) => {
+    switch (method) {
+      case 'mpesa':
+        return 'bg-green-100 text-green-800';
+      case 'cash':
+        return 'bg-blue-100 text-blue-800';
+      case 'pochi':
+        return 'bg-purple-100 text-purple-800';
+      default:
+        return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const reconcileStats = {
+    reconciled: filteredCollections.filter((c) => c.reconciled).length,
+    pending: filteredCollections.filter((c) => !c.reconciled).length,
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -96,6 +122,46 @@ export default function CollectionsPage() {
           <Download className="h-4 w-4 mr-2" />
           Export Report
         </Button>
+      </div>
+
+      {/* Summary Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Total Collections</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-3xl font-bold">KES {totalAmount.toLocaleString()}</p>
+            <p className="text-sm text-gray-500">{filteredCollections.length} records</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Reconciled</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-3xl font-bold text-green-600">{reconcileStats.reconciled}</p>
+            <p className="text-sm text-gray-500">{filteredCollections.length > 0 ? Math.round((reconcileStats.reconciled / filteredCollections.length) * 100) : 0}%</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Pending</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-3xl font-bold text-yellow-600">{reconcileStats.pending}</p>
+            <p className="text-sm text-gray-500">Awaiting reconciliation</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Avg Collection</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-3xl font-bold">KES {filteredCollections.length > 0 ? Math.round(totalAmount / filteredCollections.length) : 0}</p>
+            <p className="text-sm text-gray-500">Per transaction</p>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Filters */}
@@ -126,38 +192,27 @@ export default function CollectionsPage() {
         </CardContent>
       </Card>
 
-      {/* Summary */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Total Collections</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-3xl font-bold">KES {totalAmount.toLocaleString()}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Records</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-3xl font-bold">{filteredCollections.length}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Avg Per Record</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-3xl font-bold">KES {filteredCollections.length > 0 ? (totalAmount / filteredCollections.length).toFixed(0) : 0}</p>
-          </CardContent>
-        </Card>
-      </div>
+      {/* Payment Method Breakdown */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Payment Method Breakdown</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {Object.entries(paymentMethodStats).map(([method, amount]) => (
+              <div key={method} className={`p-4 rounded-lg border ${getPaymentMethodColor(method)}`}>
+                <p className="text-sm font-medium capitalize">{method}</p>
+                <p className="text-2xl font-bold mt-2">KES {(amount as number).toLocaleString()}</p>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Collections Table */}
       <Card>
         <CardHeader>
-          <CardTitle>Recent Collections</CardTitle>
+          <CardTitle>Collection Records</CardTitle>
           <CardDescription>{filteredCollections.length} records found</CardDescription>
         </CardHeader>
         <CardContent>
@@ -168,11 +223,11 @@ export default function CollectionsPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Date</TableHead>
                     <TableHead>Driver</TableHead>
                     <TableHead>Fleet</TableHead>
                     <TableHead>Amount</TableHead>
-                    <TableHead>Payment Method</TableHead>
+                    <TableHead>Method</TableHead>
+                    <TableHead>Date</TableHead>
                     <TableHead>Status</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -186,15 +241,23 @@ export default function CollectionsPage() {
                   ) : (
                     filteredCollections.map((collection) => (
                       <TableRow key={collection.id}>
-                        <TableCell>{new Date(collection.date).toLocaleDateString()}</TableCell>
-                        <TableCell>{collection.drivers?.full_name}</TableCell>
+                        <TableCell className="font-medium">{collection.drivers?.full_name}</TableCell>
                         <TableCell>{collection.tenants?.name}</TableCell>
                         <TableCell className="font-semibold">KES {collection.amount.toLocaleString()}</TableCell>
                         <TableCell>
-                          <Badge variant="outline">{collection.payment_method.toUpperCase()}</Badge>
+                          <Badge className={getPaymentMethodColor(collection.payment_method)}>
+                            {collection.payment_method.charAt(0).toUpperCase() + collection.payment_method.slice(1)}
+                          </Badge>
                         </TableCell>
+                        <TableCell>{new Date(collection.date).toLocaleDateString()}</TableCell>
                         <TableCell>
-                          <Badge className={collection.reconciled ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}>
+                          <Badge
+                            className={
+                              collection.reconciled
+                                ? 'bg-green-100 text-green-800'
+                                : 'bg-yellow-100 text-yellow-800'
+                            }
+                          >
                             {collection.reconciled ? 'Reconciled' : 'Pending'}
                           </Badge>
                         </TableCell>
