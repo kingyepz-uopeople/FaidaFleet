@@ -90,50 +90,77 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-screen overflow-hidden bg-gray-100 dark:bg-gray-900">
       <style>{`
-        @keyframes slideInLeft {
-          from {
+        @keyframes slideInLeftSpring {
+          0% {
             opacity: 0;
-            transform: translateX(-10px);
+            transform: translateX(-20px);
           }
-          to {
+          60% {
             opacity: 1;
+            transform: translateX(8px);
+          }
+          80% {
+            transform: translateX(-2px);
+          }
+          100% {
             transform: translateX(0);
           }
         }
         
-        @keyframes slideInUp {
-          from {
+        @keyframes slideInUpSpring {
+          0% {
             opacity: 0;
-            transform: translateY(10px);
+            transform: translateY(15px);
           }
-          to {
+          60% {
             opacity: 1;
+            transform: translateY(-4px);
+          }
+          80% {
+            transform: translateY(1px);
+          }
+          100% {
             transform: translateY(0);
           }
         }
         
-        @keyframes activeIndicator {
-          from {
+        @keyframes activeIndicatorPulse {
+          0% {
             width: 0;
             opacity: 0;
+            box-shadow: 0 0 0 rgba(59, 130, 246, 0.5);
           }
-          to {
+          50% {
+            opacity: 1;
+            box-shadow: 0 0 8px rgba(59, 130, 246, 0.6);
+          }
+          100% {
             width: 4px;
             opacity: 1;
+            box-shadow: 0 0 0 rgba(59, 130, 246, 0);
+          }
+        }
+
+        @keyframes hoverGlow {
+          0% {
+            background-color: rgba(255, 255, 255, 0.02);
+          }
+          100% {
+            background-color: rgba(59, 130, 246, 0.1);
           }
         }
 
         .menu-item {
           position: relative;
-          animation: slideInLeft 0.4s ease-out forwards;
+          animation: slideInLeftSpring 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
         }
         
-        .menu-item:nth-child(1) { animation-delay: 0.05s; }
-        .menu-item:nth-child(2) { animation-delay: 0.1s; }
-        .menu-item:nth-child(3) { animation-delay: 0.15s; }
-        .menu-item:nth-child(4) { animation-delay: 0.2s; }
-        .menu-item:nth-child(5) { animation-delay: 0.25s; }
-        .menu-item:nth-child(6) { animation-delay: 0.3s; }
+        .menu-item:nth-child(1) { animation-delay: 0.08s; }
+        .menu-item:nth-child(2) { animation-delay: 0.14s; }
+        .menu-item:nth-child(3) { animation-delay: 0.2s; }
+        .menu-item:nth-child(4) { animation-delay: 0.26s; }
+        .menu-item:nth-child(5) { animation-delay: 0.32s; }
+        .menu-item:nth-child(6) { animation-delay: 0.38s; }
 
         .menu-item.active::before {
           content: '';
@@ -145,27 +172,31 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           height: 24px;
           background: linear-gradient(to bottom, rgb(59, 130, 246), rgb(37, 99, 235));
           border-radius: 0 2px 2px 0;
-          animation: activeIndicator 0.3s ease-out;
+          animation: activeIndicatorPulse 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
         }
 
         .user-section {
-          animation: slideInUp 0.5s ease-out;
+          animation: slideInUpSpring 0.7s cubic-bezier(0.34, 1.56, 0.64, 1);
         }
 
         .help-support {
-          animation: slideInUp 0.55s ease-out;
+          animation: slideInUpSpring 0.65s cubic-bezier(0.34, 1.56, 0.64, 1);
         }
 
         .theme-toggle {
-          animation: slideInUp 0.6s ease-out;
+          animation: slideInUpSpring 0.75s cubic-bezier(0.34, 1.56, 0.64, 1);
         }
 
         .nav-item {
-          transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+          transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
         }
 
         .nav-item:hover {
-          transform: translateX(4px);
+          transform: translateX(6px) scale(1.02);
+        }
+
+        .nav-item:active {
+          transform: translateX(2px) scale(0.98);
         }
       `}</style>
 

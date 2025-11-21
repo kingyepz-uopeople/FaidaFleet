@@ -112,34 +112,105 @@ export default async function DashboardPage() {
   const fleetName = tenant?.name || 'Your Fleet'
   
   return (
-    <div className="flex flex-col gap-6">
-      {/* Welcome Header */}
-      <div className="flex flex-col gap-1">
-        <h1 className="text-3xl font-bold tracking-tight">Welcome back, {userName}!</h1>
-        <p className="text-muted-foreground">
-          Managing <span className="font-semibold text-foreground">{fleetName}</span>
+    <div className="flex flex-col gap-6 p-6">
+      {/* Welcome Header with Gradient */}
+      <div className="bg-gradient-to-r from-blue-600/10 to-purple-600/10 rounded-lg p-6 border border-blue-200/20 dark:border-blue-800/30">
+        <h1 className="text-4xl font-bold tracking-tight bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">Welcome back, {userName}! 👋</h1>
+        <p className="text-muted-foreground mt-2">
+          Managing <span className="font-bold text-foreground text-lg">{fleetName}</span> • {vehicles?.length || 0} vehicles • {drivers?.length || 0} drivers
         </p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        <StatCard
-          title="Total Collections"
-          value={`KES ${totalCollections.toLocaleString()}`}
-          description={collections && collections.length > 0 ? `${collections.length} transactions recorded` : 'No collections yet'}
-          Icon={Wallet}
-        />
-        <StatCard
-          title="Total Expenses"
-          value={`KES ${totalExpenses.toLocaleString()}`}
-          description={expenses && expenses.length > 0 ? `${expenses.length} expenses recorded` : 'No expenses yet'}
-          Icon={Receipt}
-        />
-        <StatCard
-          title="Net Profit"
-          value={`KES ${netProfit.toLocaleString()}`}
-          description={netProfit >= 0 ? 'Positive cash flow' : 'Negative cash flow'}
-          Icon={TrendingUp}
-        />
+      {/* Key Metrics with Enhanced Design */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 rounded-lg p-6 border border-green-200/50 dark:border-green-800/30 hover:shadow-lg transition-all">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm text-green-600 dark:text-green-400 font-medium">Total Collections</p>
+              <p className="text-3xl font-bold text-green-700 dark:text-green-200 mt-2">KES {(totalCollections / 1000).toFixed(1)}K</p>
+              <p className="text-xs text-green-600 dark:text-green-400 mt-1">{collections?.length || 0} transactions</p>
+            </div>
+            <Wallet className="h-8 w-8 text-green-500 opacity-20" />
+          </div>
+        </div>
+
+        <div className="bg-gradient-to-br from-red-50 to-orange-50 dark:from-red-900/20 dark:to-orange-900/20 rounded-lg p-6 border border-red-200/50 dark:border-red-800/30 hover:shadow-lg transition-all">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm text-red-600 dark:text-red-400 font-medium">Total Expenses</p>
+              <p className="text-3xl font-bold text-red-700 dark:text-red-200 mt-2">KES {(totalExpenses / 1000).toFixed(1)}K</p>
+              <p className="text-xs text-red-600 dark:text-red-400 mt-1">{expenses?.length || 0} expenses</p>
+            </div>
+            <Receipt className="h-8 w-8 text-red-500 opacity-20" />
+          </div>
+        </div>
+
+        <div className={`bg-gradient-to-br ${netProfit >= 0 ? 'from-blue-50 to-cyan-50 dark:from-blue-900/20 dark:to-cyan-900/20' : 'from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20'} rounded-lg p-6 border ${netProfit >= 0 ? 'border-blue-200/50 dark:border-blue-800/30' : 'border-amber-200/50 dark:border-amber-800/30'} hover:shadow-lg transition-all`}>
+          <div className="flex items-start justify-between">
+            <div>
+              <p className={`text-sm font-medium ${netProfit >= 0 ? 'text-blue-600 dark:text-blue-400' : 'text-amber-600 dark:text-amber-400'}`}>Net Profit</p>
+              <p className={`text-3xl font-bold mt-2 ${netProfit >= 0 ? 'text-blue-700 dark:text-blue-200' : 'text-amber-700 dark:text-amber-200'}`}>KES {(netProfit / 1000).toFixed(1)}K</p>
+              <p className={`text-xs mt-1 ${netProfit >= 0 ? 'text-blue-600 dark:text-blue-400' : 'text-amber-600 dark:text-amber-400'}`}>{netProfit >= 0 ? '📈 Positive' : '📉 Negative'}</p>
+            </div>
+            <TrendingUp className={`h-8 w-8 opacity-20 ${netProfit >= 0 ? 'text-blue-500' : 'text-amber-500'}`} />
+          </div>
+        </div>
+
+        <div className="bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 rounded-lg p-6 border border-purple-200/50 dark:border-purple-800/30 hover:shadow-lg transition-all">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm text-purple-600 dark:text-purple-400 font-medium">Reconciliation Rate</p>
+              <p className="text-3xl font-bold text-purple-700 dark:text-purple-200 mt-2">{mpesaCollections.length > 0 ? Math.round((reconciledCount / mpesaCollections.length) * 100) : 0}%</p>
+              <p className="text-xs text-purple-600 dark:text-purple-400 mt-1">{reconciledCount} of {mpesaCollections.length} M-Pesa</p>
+            </div>
+            <BadgeCheck className="h-8 w-8 text-purple-500 opacity-20" />
+          </div>
+        </div>
+      </div>
+
+      {/* Quick Actions */}
+      <div className="grid gap-3 md:grid-cols-3">
+        <Link href="/collections" className="group">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700 hover:border-blue-400 dark:hover:border-blue-500 hover:shadow-md transition-all group">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center group-hover:bg-blue-200 dark:group-hover:bg-blue-800/50 transition-colors">
+                <Wallet className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+              </div>
+              <div>
+                <p className="font-semibold text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400">Record Collection</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">Log today's revenue</p>
+              </div>
+            </div>
+          </div>
+        </Link>
+        
+        <Link href="/expenses" className="group">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700 hover:border-orange-400 dark:hover:border-orange-500 hover:shadow-md transition-all">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-lg bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center group-hover:bg-orange-200 dark:group-hover:bg-orange-800/50 transition-colors">
+                <Receipt className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+              </div>
+              <div>
+                <p className="font-semibold text-gray-900 dark:text-white group-hover:text-orange-600 dark:group-hover:text-orange-400">Log Expense</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">Track expenditures</p>
+              </div>
+            </div>
+          </div>
+        </Link>
+
+        <Link href="/drivers" className="group">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700 hover:border-purple-400 dark:hover:border-purple-500 hover:shadow-md transition-all">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-lg bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center group-hover:bg-purple-200 dark:group-hover:bg-purple-800/50 transition-colors">
+                <Users className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+              </div>
+              <div>
+                <p className="font-semibold text-gray-900 dark:text-white group-hover:text-purple-600 dark:group-hover:text-purple-400">Manage Drivers</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">View & update drivers</p>
+              </div>
+            </div>
+          </div>
+        </Link>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
