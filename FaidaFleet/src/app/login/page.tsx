@@ -43,27 +43,6 @@ export default function LoginPage() {
     }
   }
 
-  const handleGoogleLogin = async () => {
-    setLoading(true)
-    setError(null)
-
-    try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
-        },
-      })
-
-      if (error) {
-        setError(error.message)
-        setLoading(false)
-      }
-    } catch (err) {
-      setError('An unexpected error occurred')
-      setLoading(false)
-    }
-  }
 
   return (
     <div className="min-h-screen flex">
@@ -208,28 +187,6 @@ export default function LoginPage() {
               )}
             </Button>
           </form>
-
-          <div className="relative my-6">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-gray-300"></div>
-            </div>
-            <div className="relative flex justify-center text-sm">
-              <span className="px-2 bg-white text-gray-600">Or continue with</span>
-            </div>
-          </div>
-
-          <Button 
-            type="button"
-            onClick={handleGoogleLogin}
-            disabled={loading}
-            className="w-full h-12 border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 font-medium rounded-lg transition-all"
-          >
-            <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
-              <image href="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTIyLjU2IDEyLjI1QzIyLjU2IDExLjQyIDIyLjQ5IDEwLjYzIDIyLjM2IDkuODZIMTJWMTQuNDVIMTcuODZDMTcuNjUgMTUuNjQgMTYuODkgMTYuNjMgMTUuNzcgMTcuMzFWMTkuNDhIMTkuMjJDMjAuODEgMTguMjUgMjIuNTYgMTUuNzYgMjIuNTYgMTIuMjVaIiBmaWxsPSIjNDI4NUY0Ii8+CjxwYXRoIGQ9Ik0xMiAyMS41QzE1LjEgMjEuNSAxNy43IDIwLjMzIDE5LjIyIDE4LjQ4TDE3Ljc3IDE3LjMxQzE2Ljk2IDE3LjkzIDE1LjkyIDE4LjMzIDE0Ljk5IDE4LjMzQzEzLjE5IDE4LjMzIDExLjY0IDE3LjI2IDExLjA1IDE1LjcxSDE5LjUyVjE1LjA1SDE1LjkzQzE1Ljg2IDE0LjE1IDE1LjczIDEzLjM1IDE1LjQ4IDEyLjYySDEyWiIgZmlsbD0iIzM0QTg1MyIvPgo8L3N2Zz4=" width="24" height="24" />
-            </svg>
-            Google
-          </Button>
-
         </CardContent>
         <CardFooter className="flex-col space-y-4 pt-6 border-t border-gray-200">
           <p className="text-sm text-center w-full text-gray-600">
