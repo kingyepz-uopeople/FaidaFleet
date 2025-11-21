@@ -1,0 +1,222 @@
+# FaidaFleet - Fleet Management System
+
+## Overview
+
+FaidaFleet is a comprehensive fleet management web application designed specifically for matatu and logistics operators in Kenya. The system provides digital tracking of vehicles, drivers, daily collections (both cash and M-Pesa), expenses, and maintenance records. Built as a multi-tenant SaaS platform, it enables multiple fleet owners to manage their operations independently while maintaining complete data isolation.
+
+The application focuses on solving critical pain points in the Kenyan transport industry: manual record-keeping, M-Pesa transaction reconciliation, and profitability tracking across vehicles and routes.
+
+## User Preferences
+
+Preferred communication style: Simple, everyday language.
+
+## System Architecture
+
+### Frontend Architecture
+
+**Framework**: Next.js 15 with App Router
+- Server-side rendering for auth-protected routes
+- Client-side components for interactive UI elements
+- TypeScript for type safety across the application
+- React 18 with Server Components pattern
+
+**UI Components**: shadcn/ui + Tailwind CSS
+- Design system based on Radix UI primitives
+- Custom theme with PT Sans typography
+- Color scheme: Deep blue primary (#3F51B5), soft teal accent (#80CBC4)
+- Responsive layouts optimized for both desktop and mobile
+- Dark/light mode support
+
+**State Management**:
+- React hooks for local component state
+- Supabase real-time subscriptions for live data updates
+- Server actions for mutations
+- No global state management library (React Context only)
+
+**Routing Strategy**:
+- `/login`, `/signup`, `/reset-password` - Public authentication routes
+- `/onboarding` - New user fleet setup
+- `/(app)/*` - Protected application routes with shared layout
+- Middleware-based authentication checks on all routes
+
+### Backend Architecture
+
+**Backend-as-a-Service**: Supabase (PostgreSQL + Auth + Realtime)
+- Eliminates need for custom API layer
+- Database-first architecture with Row Level Security (RLS)
+- Auto-generated REST and GraphQL APIs
+- Real-time subscriptions for live updates
+
+**Authentication System**:
+- Supabase Auth with email/password and Google OAuth
+- Session-based authentication using cookies
+- Server-side session validation via middleware
+- Automatic profile creation on signup (database trigger)
+- Password reset flow with email templates
+
+**Multi-Tenancy Pattern**:
+- Tenant isolation via `tenant_id` foreign keys on all tables
+- RLS policies enforce data access based on user memberships
+- Users can belong to multiple tenants with different roles
+- Helper functions: `current_tenant_ids()`, `has_tenant_role()`
+
+**Role-Based Access Control**:
+- Four roles: Owner, Admin, Accountant, Driver
+- Permissions enforced at database level via RLS
+- Owner: Full access to tenant data
+- Admin: Manage drivers, vehicles, view all financial data
+- Accountant: View and reconcile collections/expenses
+- Driver: View assigned vehicle and submit collections
+
+### Database Design
+
+**Schema Structure** (10 core tables):
+
+1. **tenants** - Fleet company/organization records
+   - Subscription plans: starter, pro, enterprise
+   - Business metadata (name, phone, email)
+   - Active/inactive status
+
+2. **profiles** - User profiles (extends auth.users)
+   - One-to-one with Supabase auth users
+   - Stores full_name, phone, avatar_url
+
+3. **memberships** - User-tenant relationships with roles
+   - Junction table linking users to tenants
+   - Tracks role and active status
+   - Enables multi-tenant access per user
+
+4. **drivers** - Driver management
+   - License info, contact details
+   - Tenant-scoped with RLS
+
+5. **vehicles** - Vehicle/matatu tracking
+   - Registration, make, model, year
+   - Current status (operational, maintenance, out of service)
+   - Tenant-scoped with RLS
+
+6. **driver_assignments** - Historical driver-vehicle assignments
+   - Tracks which driver drove which vehicle and when
+   - Enables shift management and accountability
+
+7. **collections** - Daily revenue records
+   - Cash and M-Pesa collections per vehicle
+   - Reconciliation status for M-Pesa transactions
+   - Timestamp-based for daily reporting
+
+8. **mpesa_transactions** - Raw M-Pesa webhook data
+   - Stores Safaricom Daraja API callbacks
+   - Used for automated reconciliation with collections
+
+9. **expenses** - Vehicle expense tracking
+   - Categories: fuel, maintenance, fines, other
+   - Linked to specific vehicles and dates
+
+10. **maintenance_logs** - Maintenance history
+    - Service records per vehicle
+    - Cost and description tracking
+
+**Performance Optimizations**:
+- Indexes on all foreign keys and commonly queried fields
+- Materialized view (`kpi_daily`) for dashboard metrics aggregation
+- Automatic `updated_at` timestamp triggers on all tables
+- Composite indexes on tenant_id + frequently filtered columns
+
+**Data Integrity**:
+- Foreign key constraints with CASCADE deletes
+- CHECK constraints on enums (role, status, plan)
+- NOT NULL constraints on required fields
+- Unique constraints on business keys (license numbers, registration numbers per tenant)
+
+### AI/Automation Layer
+
+**M-Pesa Reconciliation Engine**:
+- Google Genkit AI flows for intelligent transaction matching
+- Input: amount, MSISDN, vehicle code, timestamp
+- Matching algorithm considers tolerance for timing and amount variations
+- Outputs reconciliation status (matched, not_matched, error)
+- Designed to handle edge cases (partial payments, multiple vehicles)
+
+**Implementation Pattern**:
+- Server actions in `/app/actions.ts` invoke Genkit flows
+- Flows defined in `/ai/flows/mpesa-reconciliation.ts`
+- Uses Gemini 2.5 Flash model for inference
+- Future expansion planned for expense categorization and anomaly detection
+
+## External Dependencies
+
+### Third-Party Services
+
+**Supabase** (Backend Platform)
+- PostgreSQL database hosting
+- Authentication service (email, OAuth)
+- Real-time subscriptions
+- Row Level Security enforcement
+- Storage for avatars/documents (planned)
+- Project reference: `fohshifanqdhzbzhddkq`
+
+**Google Gemini AI** (via Genkit)
+- AI model: gemini-2.5-flash
+- Used for M-Pesa transaction reconciliation
+- Requires `GOOGLE_GENAI_API_KEY` environment variable
+- Future use cases: expense categorization, fraud detection
+
+**Safaricom Daraja API** (Planned)
+- M-Pesa B2C and C2B webhooks
+- STK Push for driver payments
+- Transaction validation
+- Requires: Consumer Key, Consumer Secret, Paybill/Till number
+
+**Vercel** (Deployment Platform)
+- Next.js hosting and CI/CD
+- Edge functions for middleware
+- Environment variable management
+- Preview deployments on PR
+
+### NPM Packages (Key Dependencies)
+
+**Core Framework**:
+- `next@15.3.3` - React framework
+- `react@18.3.1`, `react-dom@18.3.1` - UI library
+- `typescript@5.x` - Type safety
+
+**UI Components**:
+- `@radix-ui/*` - Headless component primitives
+- `tailwindcss@3.x` - Utility-first CSS
+- `lucide-react` - Icon library
+- `class-variance-authority`, `clsx`, `tailwind-merge` - Styling utilities
+
+**Backend Integration**:
+- `@supabase/supabase-js@2.75.0` - Supabase client
+- `@supabase/ssr@0.7.0` - Server-side rendering support
+
+**AI & Automation**:
+- `genkit@1.20.0` - Firebase Genkit framework
+- `@genkit-ai/google-genai@1.20.0` - Google AI plugin
+- `@genkit-ai/next@1.20.0` - Next.js integration
+
+**Forms & Validation**:
+- `react-hook-form@7.54.2` - Form state management
+- `@hookform/resolvers@4.1.3` - Validation integration
+- `zod` (via Genkit) - Schema validation
+
+**Utilities**:
+- `date-fns@3.6.0` - Date manipulation
+- `dotenv@16.5.0` - Environment variables
+
+### Environment Variables Required
+
+```
+NEXT_PUBLIC_SUPABASE_URL=<supabase-project-url>
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<supabase-anon-key>
+GOOGLE_GENAI_API_KEY=<google-ai-api-key>
+```
+
+### Database Migrations
+
+Two critical migrations must be run in Supabase SQL Editor:
+
+1. **001_initial_schema.sql** - Creates all tables, RLS policies, indexes, triggers, and helper functions
+2. **002_fix_onboarding.sql** - Adds `create_tenant_with_owner()` function for atomic tenant creation
+
+These migrations establish the complete database schema and security model that the application depends on.

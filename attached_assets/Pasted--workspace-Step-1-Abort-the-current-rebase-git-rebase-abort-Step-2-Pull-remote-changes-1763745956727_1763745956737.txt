@@ -1,0 +1,78 @@
+~/workspace$ # Step 1: Abort the current rebase
+git rebase --abort
+
+# Step 2: Pull remote changes with merge (not rebase)
+git pull origin main
+
+# Step 3: If there are still conflicts in package files, keep YOUR versions:
+git checkout --ours package.json package-lock.json
+
+# Step 4: Mark conflicts as resolved
+git add package.json package-lock.json
+
+# Step 5: Complete the merge
+git commit -m "Merge remote changes"
+
+# Step 6: Push to remote
+git push origin main
+error: The following untracked working tree files would be overwritten by reset:
+    replit.md
+Please move or remove them before you reset.
+Aborting
+fatal: could not move back to 7f96b295ce7a5a9627f1735d1b5f1514ed22b02d
+error: Pulling is not possible because you have unmerged files.
+hint: Fix them up in the work tree, and then use 'git add/rm <file>'
+hint: as appropriate to mark resolution and make a commit.
+fatal: Exiting because of an unresolved conflict.
+Updated 2 paths from the index
+[detached HEAD 3a886af] Merge remote changes
+ 4 files changed, 105 insertions(+), 22 deletions(-)
+ create mode 100644 attached_assets/Pasted-Error-Hydration-failed-because-the-server-rendered-HTML-didn-t-match-the-client-As-a-result-this-t-1763731240237_1763731240239.txt
+Everything up-to-date
+~/workspace$ eslint: {
+  // ... remove this
+}
+bash: eslint:: command not found
+bash: //: Is a directory
+bash: syntax error near unexpected token `}'
+~/workspace$ ^C
+~/workspace$ cd FaidaFleet
+npx supabase gen types --lang=typescript --project-id=your-project-id > src/lib/database.types.ts
+
+
+npm warn deprecated node-domexception@1.0.0: Use your platform's native DOMException instead
+Invalid project ref format. Must be like `abcdefghijklmnopqrst`.
+Try rerunning the command with --debug to troubleshoot the error.
+~/workspace/FaidaFleet$ 
+~/workspace/FaidaFleet$ npm run build
+git add .
+git commit -m "Fix build errors and Supabase types"
+git push origin main --force
+
+> FaidaFleet@0.1.0 build
+> NODE_ENV=production next build
+
+ ⚠ Warning: Next.js inferred your workspace root, but it may not be correct.
+ We detected multiple lockfiles and selected the directory of /home/runner/workspace/package-lock.json as the root directory.
+ To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.
+   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.
+ Detected additional lockfiles: 
+   * /home/runner/workspace/FaidaFleet/package-lock.json
+
+ ⨯ Unable to acquire lock at /home/runner/workspace/FaidaFleet/.next/lock, is another instance of next build running?
+   Suggestion: If you intended to restart next build, terminate the other process, and then try again.
+fatal: Unable to create '/home/runner/workspace/.git/index.lock': File exists.
+
+Another git process seems to be running in this repository, e.g.
+an editor opened by 'git commit'. Please make sure all processes
+are terminated then try again. If it still fails, a git process
+may have crashed in this repository earlier:
+remove the file manually to continue.
+fatal: Unable to create '/home/runner/workspace/.git/index.lock': File exists.
+
+Another git process seems to be running in this repository, e.g.
+an editor opened by 'git commit'. Please make sure all processes
+are terminated then try again. If it still fails, a git process
+may have crashed in this repository earlier:
+remove the file manually to continue.
+Everything up-to-date
