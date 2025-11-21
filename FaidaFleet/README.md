@@ -4,6 +4,14 @@ FaidaFleet is a comprehensive fleet management web application designed for mata
 
 ## 🎯 Core Features
 
+### Fleet Owner Features
+- **🚗 Vehicles Management** - Register vehicles, track insurance/MOT expiry, compliance monitoring
+- **💰 Financial Analytics** - Revenue vs expenses dashboard, P&L statements, profit margin tracking
+- **🛣️ Trip & Route Tracking** - Record individual trips, calculate per-trip profitability
+- **🔧 Maintenance Scheduler** - Schedule vehicle maintenance, track service history and costs
+- **👥 Driver Performance Analytics** - Earnings leaderboard, trip count, profit per driver
+
+### Platform Features
 - **Multi-Tenant Architecture** - Support multiple fleet owners with isolated data
 - **Role-Based Access Control** - Owner, Admin, Accountant, and Driver roles
 - **Vehicle & Driver Management** - Track fleet assets and assignments
@@ -76,10 +84,14 @@ FaidaFleet/
 │   ├── app/                    # Next.js app router
 │   │   ├── (app)/             # Protected app routes
 │   │   │   ├── dashboard/     # Main dashboard
-│   │   │   ├── vehicles/      # Vehicle management
-│   │   │   ├── drivers/       # Driver management
-│   │   │   ├── collections/   # Revenue tracking
-│   │   │   ├── expenses/      # Expense tracking
+│   │   │   ├── vehicles/      # Vehicle management with compliance tracking
+│   │   │   ├── drivers/       # Driver management & assignments
+│   │   │   ├── collections/   # Revenue tracking with reconciliation
+│   │   │   ├── expenses/      # Expense tracking by category
+│   │   │   ├── analytics/     # Financial analytics & P&L dashboard
+│   │   │   ├── trips/         # Trip/route tracking & profitability
+│   │   │   ├── maintenance/   # Maintenance scheduler
+│   │   │   ├── driver-analytics/ # Driver performance leaderboard
 │   │   │   └── settings/      # App settings
 │   │   ├── auth/              # Auth callbacks & errors
 │   │   ├── login/             # Login page
@@ -96,9 +108,18 @@ FaidaFleet/
 │   └── middleware.ts          # Auth middleware
 ├── supabase/
 │   ├── migrations/            # Database migrations
+│   │   ├── 001_initial_schema.sql
+│   │   ├── 002_fix_onboarding.sql
+│   │   ├── 003_admin_tables.sql
+│   │   ├── 004_add_trips_table.sql
+│   │   └── 005_add_vehicle_compliance_columns.sql
 │   └── DATABASE_SETUP.md      # Setup guide
 ├── docs/
 │   └── blueprint.md           # Project blueprint
+├── COMPLETE_SCHEMA.sql        # Full database schema
+├── DATABASE_SCHEMA.md         # Schema documentation
+├── SQL_QUICK_REFERENCE.md     # SQL query examples
+├── FEATURE_TABLES.txt         # Feature table reference
 └── SUPABASE_AUTH_SETUP.md     # Auth setup guide
 ```
 
@@ -122,25 +143,38 @@ FaidaFleet/
 
 ## 🗄️ Database Schema
 
-### Core Tables
+### Core Tables (10 Tables)
 
-- **tenants** - Fleet companies
-- **profiles** - User profiles (extends auth.users)
-- **memberships** - User-tenant relationships with roles
-- **vehicles** - Vehicle/matatu records
-- **drivers** - Driver information
-- **driver_assignments** - Driver-vehicle assignments
-- **collections** - Daily revenue records
-- **mpesa_transactions** - M-Pesa webhook data
-- **expenses** - Daily expenses
-- **maintenance_logs** - Vehicle maintenance history
+| Table | Purpose | Feature |
+|-------|---------|---------|
+| **vehicles** | Vehicle registration, type, compliance | Vehicles Management |
+| **collections** | Daily revenue tracking | Financial Analytics |
+| **expenses** | Daily costs by category | Financial Analytics |
+| **trips** | Individual trip records | Trip Tracking |
+| **maintenance_logs** | Service history | Maintenance Scheduler |
+| **drivers** | Driver information | Driver Management |
+| **driver_assignments** | Driver-vehicle history | Driver Management |
+| **tenants** | Fleet companies | Multi-tenancy |
+| **profiles** | User profiles (extends auth.users) | Authentication |
+| **memberships** | User-tenant relationships | Multi-tenancy |
+
+### Key Columns
+- **vehicles**: registration_number, insurance_expiry, mot_expiry, vehicle_type (compliance tracking)
+- **trips**: trip_date, vehicle_id, driver_id, earnings, expenses, distance_km
+- **maintenance_logs**: vehicle_id, type, cost, next_service_date
+- **collections**: date, driver_id, amount, payment_method, reconciled
+- **expenses**: category, amount, description, vehicle_id
+
+### Materialized View
+- **kpi_daily** - Pre-calculated daily metrics (collections, expenses, profit, reconciliation counts)
 
 ### Security
 
 - Row Level Security (RLS) enabled on all tables
 - Helper functions for tenant access control
-- Policies enforce role-based permissions
+- 18+ policies enforce role-based permissions
 - All queries scoped by tenant_id
+- Triggers for automatic audit trail (created_at, updated_at)
 
 ## 💳 M-Pesa Integration
 
@@ -233,32 +267,37 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-production-key
 
 ## 🗺️ Roadmap
 
-### Phase 1 (MVP) ✅
+### Phase 1 (MVP) ✅ COMPLETE
 - [x] Authentication system
 - [x] Multi-tenant database
 - [x] Basic UI components
-- [ ] Vehicle management
-- [ ] Driver management
-- [ ] Collections tracking
-- [ ] Expenses tracking
-- [ ] Dashboard with KPIs
+- [x] Vehicle management with compliance tracking
+- [x] Driver management
+- [x] Collections tracking with reconciliation
+- [x] Expenses tracking
+- [x] Dashboard with KPIs
+- [x] Financial Analytics & P&L Dashboard
+- [x] Trip/Route Tracking & Profitability
+- [x] Maintenance Scheduler
+- [x] Driver Performance Analytics
 
-### Phase 2
-- [ ] Maintenance logs
-- [ ] M-Pesa Daraja integration
-- [ ] Automatic reconciliation
-- [ ] Shift analytics
+### Phase 2 (In Progress)
+- [ ] M-Pesa Daraja integration (ready for setup)
+- [ ] Automatic transaction reconciliation
+- [ ] Shift-based analytics
+- [ ] Export reports (PDF/Excel)
 
 ### Phase 3
 - [ ] SMS/Push notifications
 - [ ] Invoice generation
-- [ ] Export reports
-- [ ] Advanced analytics
+- [ ] Advanced forecasting
+- [ ] Email alerts
 
 ### Phase 4
 - [ ] AI-powered insights
 - [ ] Predictive maintenance
 - [ ] Route optimization
+- [ ] Mobile app (React Native)
 
 ## 🤝 Contributing
 
