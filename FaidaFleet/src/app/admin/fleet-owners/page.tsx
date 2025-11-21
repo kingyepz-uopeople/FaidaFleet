@@ -13,7 +13,17 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Search, Eye, MoreHorizontal } from 'lucide-react';
+import { Label } from '@/components/ui/label';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
+import { Search, MoreHorizontal, Trash2, Edit, Plus } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
@@ -34,12 +44,25 @@ type Tenant = {
   created_at: string;
 };
 
+const PLANS = ['starter', 'pro', 'enterprise'];
+
 export default function FleetOwnersPage() {
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [filteredTenants, setFilteredTenants] = useState<Tenant[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [formData, setFormData] = useState({
+    name: '',
+    business_name: '',
+    email: '',
+    phone: '',
+    plan: 'starter',
+  });
   const supabase = createClient();
 
   useEffect(() => {
@@ -72,17 +95,104 @@ export default function FleetOwnersPage() {
     }
   };
 
+  const handleOpenDialog = (tenant?: Tenant) => {
+    if (tenant) {
+      setEditingId(tenant.id);
+      setFormData({
+        name: tenant.name,
+        business_name: tenant.business_name || '',
+        email: tenant.email || '',
+        phone: tenant.phone || '',
+        plan: tenant.plan,
+      });
+    } else {
+      setEditingId(null);
+      setFormData({
+        name: '',
+        business_name: '',
+        email: '',
+        phone: '',
+        plan: 'starter',
+      });
+    }
+    setDialogOpen(true);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitting(true);
+    setError(null);
+
+    try {
+      if (editingId) {
+        const { error: err } = await supabase
+          .from('tenants')
+          .update({
+            name: formData.name,
+            business_name: formData.business_name || null,
+            email: formData.email || null,
+            phone: formData.phone || null,
+            plan: formData.plan,
+          } as Record<string, unknown>)
+          .eq('id', editingId);
+
+        if (err) throw err;
+        setSuccess('Fleet owner updated successfully');
+      } else {
+        const { error: err } = await supabase
+          .from('tenants')
+          .insert([{
+            name: formData.name,
+            business_name: formData.business_name || null,
+            email: formData.email || null,
+            phone: formData.phone || null,
+            plan: formData.plan,
+            is_active: true,
+          }] as Record<string, unknown>[]);
+
+        if (err) throw err;
+        setSuccess('Fleet owner created successfully');
+      }
+
+      setDialogOpen(false);
+      await fetchTenants();
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save fleet owner');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDelete = async (tenantId: string) => {
+    if (!window.confirm('Are you sure you want to delete this fleet owner? This action cannot be undone.')) return;
+    
+    try {
+      const { error: err } = await supabase
+        .from('tenants')
+        .delete()
+        .eq('id', tenantId);
+
+      if (err) throw err;
+      setSuccess('Fleet owner deleted successfully');
+      await fetchTenants();
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete fleet owner');
+    }
+  };
+
   const toggleTenantStatus = async (tenantId: string, currentStatus: boolean) => {
     try {
       const { error: err } = await supabase
         .from('tenants')
-        .update({ is_active: !currentStatus } as any)
+        .update({ is_active: !currentStatus } as Record<string, unknown>)
         .eq('id', tenantId);
 
       if (err) throw err;
-      fetchTenants();
+      await fetchTenants();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update tenant');
+      setError(err instanceof Error ? err.message : 'Failed to update fleet owner');
     }
   };
 
@@ -99,14 +209,102 @@ export default function FleetOwnersPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Fleet Owners</h1>
-        <p className="text-gray-600 dark:text-gray-400">Manage all fleet companies in the system</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Fleet Owners</h1>
+          <p className="text-gray-600 dark:text-gray-400">Manage all fleet companies in the system</p>
+        </div>
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <DialogTrigger asChild>
+            <Button onClick={() => handleOpenDialog()} className="bg-red-600 hover:bg-red-700">
+              <Plus className="h-4 w-4 mr-2" />
+              Add Fleet Owner
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>{editingId ? 'Edit Fleet Owner' : 'Create Fleet Owner'}</DialogTitle>
+              <DialogDescription>
+                {editingId ? 'Update fleet owner information' : 'Add a new fleet company to the system'}
+              </DialogDescription>
+            </DialogHeader>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <Label htmlFor="name">Company Name *</Label>
+                <Input
+                  id="name"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  placeholder="Acme Fleet Ltd"
+                  required
+                />
+              </div>
+              <div>
+                <Label htmlFor="business_name">Business Name</Label>
+                <Input
+                  id="business_name"
+                  value={formData.business_name}
+                  onChange={(e) => setFormData({ ...formData, business_name: e.target.value })}
+                  placeholder="Official business name"
+                />
+              </div>
+              <div>
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  placeholder="owner@company.com"
+                />
+              </div>
+              <div>
+                <Label htmlFor="phone">Phone</Label>
+                <Input
+                  id="phone"
+                  value={formData.phone}
+                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  placeholder="+254 700 000000"
+                />
+              </div>
+              <div>
+                <Label htmlFor="plan">Plan *</Label>
+                <select
+                  id="plan"
+                  value={formData.plan}
+                  onChange={(e) => setFormData({ ...formData, plan: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md dark:bg-gray-800 dark:border-gray-600"
+                  required
+                >
+                  {PLANS.map((p) => (
+                    <option key={p} value={p}>
+                      {p.charAt(0).toUpperCase() + p.slice(1)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={submitting} className="bg-red-600 hover:bg-red-700">
+                  {submitting ? 'Saving...' : editingId ? 'Update' : 'Create'}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
       </div>
 
       {error && (
         <Alert variant="destructive">
           <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      {success && (
+        <Alert className="bg-green-50 text-green-800 border-green-200 dark:bg-green-900/20 dark:border-green-800">
+          <AlertDescription>{success}</AlertDescription>
         </Alert>
       )}
 
@@ -166,7 +364,6 @@ export default function FleetOwnersPage() {
                         </TableCell>
                         <TableCell>
                           <Badge
-                            variant={tenant.is_active ? 'default' : 'secondary'}
                             className={
                               tenant.is_active
                                 ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
@@ -187,15 +384,25 @@ export default function FleetOwnersPage() {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem className="cursor-pointer">
-                                <Eye className="h-4 w-4 mr-2" />
-                                View Details
+                              <DropdownMenuItem
+                                onClick={() => handleOpenDialog(tenant)}
+                                className="cursor-pointer"
+                              >
+                                <Edit className="h-4 w-4 mr-2" />
+                                Edit
                               </DropdownMenuItem>
                               <DropdownMenuItem
                                 onClick={() => toggleTenantStatus(tenant.id, tenant.is_active)}
                                 className="cursor-pointer"
                               >
                                 {tenant.is_active ? 'Deactivate' : 'Activate'}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => handleDelete(tenant.id)}
+                                className="cursor-pointer text-red-600"
+                              >
+                                <Trash2 className="h-4 w-4 mr-2" />
+                                Delete
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
