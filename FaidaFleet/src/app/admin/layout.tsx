@@ -11,6 +11,12 @@ import {
   LogOut,
   Shield,
   Package,
+  TrendingUp,
+  Wallet,
+  User,
+  Settings,
+  BarChart3,
+  AlertCircle,
 } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -26,9 +32,15 @@ import {
 
 const adminMenuItems = [
   { href: '/admin', label: 'Overview', Icon: LayoutDashboard },
+  { href: '/admin/analytics', label: 'Analytics', Icon: TrendingUp },
+  { href: '/admin/collections', label: 'Collections', Icon: Wallet },
+  { href: '/admin/billing', label: 'Billing', Icon: BarChart3 },
   { href: '/admin/fleet-owners', label: 'Fleet Owners', Icon: Users },
   { href: '/admin/drivers', label: 'All Drivers', Icon: Car },
+  { href: '/admin/users', label: 'Admin Users', Icon: User },
   { href: '/admin/plans', label: 'Plans', Icon: Package },
+  { href: '/admin/settings', label: 'Settings', Icon: Settings },
+  { href: '/admin/support', label: 'Support', Icon: AlertCircle },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
