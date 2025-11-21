@@ -25,6 +25,7 @@ import {
 } from '@/components/ui/dialog';
 import { Search, MoreHorizontal, Trash2, Edit, Plus } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { createClient } from '@/lib/supabase/client';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -43,12 +44,6 @@ type AdminUser = {
   last_login: string | null;
 };
 
-const ROLE_DESCRIPTIONS: Record<string, string> = {
-  super_admin: 'Full system access',
-  admin: 'Manage fleets and drivers',
-  moderator: 'View and support only',
-};
-
 const PERMISSION_OPTIONS = [
   { id: 'manage_fleets', label: 'Manage Fleet Owners' },
   { id: 'manage_drivers', label: 'Manage Drivers' },
@@ -59,19 +54,9 @@ const PERMISSION_OPTIONS = [
 ];
 
 export default function AdminUsersPage() {
-  const [users, setUsers] = useState<AdminUser[]>([
-    {
-      id: '1',
-      email: 'admin@faidafleet.com',
-      full_name: 'System Admin',
-      role: 'super_admin',
-      permissions: PERMISSION_OPTIONS.map((p) => p.id),
-      is_active: true,
-      created_at: '2024-01-01',
-      last_login: '2024-11-21',
-    },
-  ]);
-  const [filteredUsers, setFilteredUsers] = useState<AdminUser[]>(users);
+  const [users, setUsers] = useState<AdminUser[]>([]);
+  const [filteredUsers, setFilteredUsers] = useState<AdminUser[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -84,6 +69,11 @@ export default function AdminUsersPage() {
     role: 'admin' as const,
     permissions: [] as string[],
   });
+  const supabase = createClient();
+
+  useEffect(() => {
+    fetchUsers();
+  }, []);
 
   useEffect(() => {
     const filtered = users.filter((user) =>
@@ -93,6 +83,23 @@ export default function AdminUsersPage() {
     setFilteredUsers(filtered);
   }, [searchQuery, users]);
 
+  const fetchUsers = async () => {
+    try {
+      setLoading(true);
+      const { data, error: err } = await supabase
+        .from('admin_users')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (err) throw err;
+      setUsers(data || []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch users');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleOpenDialog = (user?: AdminUser) => {
     if (user) {
       setEditingId(user.id);
@@ -100,7 +107,7 @@ export default function AdminUsersPage() {
         email: user.email,
         full_name: user.full_name,
         role: user.role,
-        permissions: user.permissions,
+        permissions: user.permissions || [],
       });
     } else {
       setEditingId(null);
@@ -125,36 +132,35 @@ export default function AdminUsersPage() {
       }
 
       if (editingId) {
-        setUsers(
-          users.map((u) =>
-            u.id === editingId
-              ? {
-                  ...u,
-                  email: formData.email,
-                  full_name: formData.full_name,
-                  role: formData.role,
-                  permissions: formData.permissions,
-                }
-              : u
-          )
-        );
+        const { error: err } = await supabase
+          .from('admin_users')
+          .update({
+            email: formData.email,
+            full_name: formData.full_name,
+            role: formData.role,
+            permissions: formData.permissions,
+          } as any)
+          .eq('id', editingId);
+
+        if (err) throw err;
         setSuccess('Admin user updated successfully');
       } else {
-        const newUser: AdminUser = {
-          id: Date.now().toString(),
-          email: formData.email,
-          full_name: formData.full_name,
-          role: formData.role,
-          permissions: formData.permissions,
-          is_active: true,
-          created_at: new Date().toISOString().split('T')[0],
-          last_login: null,
-        };
-        setUsers([newUser, ...users]);
+        const { error: err } = await supabase
+          .from('admin_users')
+          .insert([{
+            email: formData.email,
+            full_name: formData.full_name,
+            role: formData.role,
+            permissions: formData.permissions,
+            is_active: true,
+          }] as any);
+
+        if (err) throw err;
         setSuccess('Admin user created successfully');
       }
 
       setDialogOpen(false);
+      await fetchUsers();
       setTimeout(() => setSuccess(null), 3000);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save user');
@@ -163,30 +169,36 @@ export default function AdminUsersPage() {
     }
   };
 
-  const handleDelete = (userId: string) => {
-    if (userId === '1') {
-      setError('Cannot delete the system admin account');
-      setTimeout(() => setError(null), 3000);
-      return;
-    }
-
+  const handleDelete = async (userId: string) => {
     if (!window.confirm('Are you sure you want to delete this admin user?')) return;
 
-    setUsers(users.filter((u) => u.id !== userId));
-    setSuccess('Admin user deleted successfully');
-    setTimeout(() => setSuccess(null), 3000);
+    try {
+      const { error: err } = await supabase
+        .from('admin_users')
+        .delete()
+        .eq('id', userId);
+
+      if (err) throw err;
+      setSuccess('Admin user deleted successfully');
+      await fetchUsers();
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete user');
+    }
   };
 
-  const toggleUserStatus = (userId: string) => {
-    if (userId === '1') {
-      setError('Cannot deactivate the system admin account');
-      setTimeout(() => setError(null), 3000);
-      return;
-    }
+  const toggleUserStatus = async (userId: string, currentStatus: boolean) => {
+    try {
+      const { error: err } = await supabase
+        .from('admin_users')
+        .update({ is_active: !currentStatus } as any)
+        .eq('id', userId);
 
-    setUsers(
-      users.map((u) => (u.id === userId ? { ...u, is_active: !u.is_active } : u))
-    );
+      if (err) throw err;
+      await fetchUsers();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update user');
+    }
   };
 
   const getRoleColor = (role: string) => {
@@ -207,28 +219,23 @@ export default function AdminUsersPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Admin Users</h1>
-          <p className="text-gray-600 dark:text-gray-400">Manage system admin accounts and permissions</p>
+          <p className="text-gray-600 dark:text-gray-400">Manage system admin accounts</p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
             <Button onClick={() => handleOpenDialog()} className="bg-red-600 hover:bg-red-700">
               <Plus className="h-4 w-4 mr-2" />
-              Add Admin User
+              Add Admin
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>{editingId ? 'Edit Admin User' : 'Create Admin User'}</DialogTitle>
-              <DialogDescription>
-                {editingId ? 'Update admin user details' : 'Add a new system administrator'}
-              </DialogDescription>
+              <DialogTitle>{editingId ? 'Edit Admin' : 'Create Admin'}</DialogTitle>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <Label htmlFor="email">Email *</Label>
+                <Label>Email *</Label>
                 <Input
-                  id="email"
-                  type="email"
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                   placeholder="admin@company.com"
@@ -236,9 +243,8 @@ export default function AdminUsersPage() {
                 />
               </div>
               <div>
-                <Label htmlFor="full_name">Full Name *</Label>
+                <Label>Full Name *</Label>
                 <Input
-                  id="full_name"
                   value={formData.full_name}
                   onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
                   placeholder="John Doe"
@@ -246,52 +252,22 @@ export default function AdminUsersPage() {
                 />
               </div>
               <div>
-                <Label htmlFor="role">Role *</Label>
+                <Label>Role</Label>
                 <select
-                  id="role"
                   value={formData.role}
                   onChange={(e) => setFormData({ ...formData, role: e.target.value as any })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md dark:bg-gray-800 dark:border-gray-600"
-                  required
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md dark:bg-gray-800"
                 >
-                  <option value="super_admin">Super Admin - Full Access</option>
-                  <option value="admin">Admin - Manage Fleets & Drivers</option>
-                  <option value="moderator">Moderator - View & Support Only</option>
+                  <option value="super_admin">Super Admin</option>
+                  <option value="admin">Admin</option>
+                  <option value="moderator">Moderator</option>
                 </select>
-              </div>
-              <div>
-                <Label>Permissions</Label>
-                <div className="space-y-2 mt-2">
-                  {PERMISSION_OPTIONS.map((perm) => (
-                    <label key={perm.id} className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={formData.permissions.includes(perm.id)}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setFormData({
-                              ...formData,
-                              permissions: [...formData.permissions, perm.id],
-                            });
-                          } else {
-                            setFormData({
-                              ...formData,
-                              permissions: formData.permissions.filter((p) => p !== perm.id),
-                            });
-                          }
-                        }}
-                        className="w-4 h-4"
-                      />
-                      <span className="text-sm">{perm.label}</span>
-                    </label>
-                  ))}
-                </div>
               </div>
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
                   Cancel
                 </Button>
-                <Button type="submit" disabled={submitting} className="bg-red-600 hover:bg-red-700">
+                <Button type="submit" disabled={submitting} className="bg-red-600">
                   {submitting ? 'Saving...' : editingId ? 'Update' : 'Create'}
                 </Button>
               </DialogFooter>
@@ -300,19 +276,9 @@ export default function AdminUsersPage() {
         </Dialog>
       </div>
 
-      {error && (
-        <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
+      {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
+      {success && <Alert className="bg-green-50 text-green-800 border-green-200"><AlertDescription>{success}</AlertDescription></Alert>}
 
-      {success && (
-        <Alert className="bg-green-50 text-green-800 border-green-200 dark:bg-green-900/20 dark:border-green-800">
-          <AlertDescription>{success}</AlertDescription>
-        </Alert>
-      )}
-
-      {/* Search Bar */}
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
         <Input
@@ -323,35 +289,28 @@ export default function AdminUsersPage() {
         />
       </div>
 
-      {/* Users Table */}
       <Card>
         <CardHeader>
           <CardTitle>Admin Users</CardTitle>
-          <CardDescription>Total: {filteredUsers.length} users</CardDescription>
+          <CardDescription>{filteredUsers.length} users</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Role</TableHead>
-                  <TableHead>Permissions</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Last Login</TableHead>
-                  <TableHead className="w-10">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredUsers.length === 0 ? (
+          {loading ? (
+            <div className="text-center py-8">Loading...</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8 text-gray-500">
-                      No admin users found
-                    </TableCell>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Email</TableHead>
+                    <TableHead>Role</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="w-10">Actions</TableHead>
                   </TableRow>
-                ) : (
-                  filteredUsers.map((user) => (
+                </TableHeader>
+                <TableBody>
+                  {filteredUsers.map((user) => (
                     <TableRow key={user.id}>
                       <TableCell className="font-medium">{user.full_name}</TableCell>
                       <TableCell className="text-sm">{user.email}</TableCell>
@@ -360,20 +319,10 @@ export default function AdminUsersPage() {
                           {user.role.replace('_', ' ').toUpperCase()}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-sm">{user.permissions.length} permissions</TableCell>
                       <TableCell>
-                        <Badge
-                          className={
-                            user.is_active
-                              ? 'bg-green-100 text-green-800'
-                              : 'bg-gray-100 text-gray-800'
-                          }
-                        >
+                        <Badge className={user.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}>
                           {user.is_active ? 'Active' : 'Inactive'}
                         </Badge>
-                      </TableCell>
-                      <TableCell className="text-sm text-gray-500">
-                        {user.last_login ? new Date(user.last_login).toLocaleDateString() : 'Never'}
                       </TableCell>
                       <TableCell>
                         <DropdownMenu>
@@ -383,56 +332,26 @@ export default function AdminUsersPage() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              onClick={() => handleOpenDialog(user)}
-                              className="cursor-pointer"
-                            >
+                            <DropdownMenuItem onClick={() => handleOpenDialog(user)} className="cursor-pointer">
                               <Edit className="h-4 w-4 mr-2" />
                               Edit
                             </DropdownMenuItem>
-                            {user.id !== '1' && (
-                              <DropdownMenuItem
-                                onClick={() => toggleUserStatus(user.id)}
-                                className="cursor-pointer"
-                              >
-                                {user.is_active ? 'Deactivate' : 'Activate'}
-                              </DropdownMenuItem>
-                            )}
-                            {user.id !== '1' && (
-                              <DropdownMenuItem
-                                onClick={() => handleDelete(user.id)}
-                                className="cursor-pointer text-red-600"
-                              >
-                                <Trash2 className="h-4 w-4 mr-2" />
-                                Delete
-                              </DropdownMenuItem>
-                            )}
+                            <DropdownMenuItem onClick={() => toggleUserStatus(user.id, user.is_active)} className="cursor-pointer">
+                              {user.is_active ? 'Deactivate' : 'Activate'}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleDelete(user.id)} className="cursor-pointer text-red-600">
+                              <Trash2 className="h-4 w-4 mr-2" />
+                              Delete
+                            </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>
                     </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Role Reference */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Role Reference</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {Object.entries(ROLE_DESCRIPTIONS).map(([role, desc]) => (
-            <div key={role} className="flex items-start gap-3 pb-3 border-b last:pb-0 last:border-0">
-              <Badge className={getRoleColor(role)}>
-                {role.replace('_', ' ').toUpperCase()}
-              </Badge>
-              <p className="text-sm text-gray-600 dark:text-gray-400">{desc}</p>
+                  ))}
+                </TableBody>
+              </Table>
             </div>
-          ))}
+          )}
         </CardContent>
       </Card>
     </div>

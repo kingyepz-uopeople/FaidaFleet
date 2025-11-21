@@ -25,6 +25,7 @@ import {
 } from '@/components/ui/dialog';
 import { Search, MoreHorizontal, Trash2, Edit, Plus } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { createClient } from '@/lib/supabase/client';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -44,42 +45,10 @@ type Plan = {
   created_at: string;
 };
 
-const DEFAULT_PLANS = [
-  {
-    id: 'starter',
-    name: 'Starter',
-    price: 0,
-    description: 'Perfect for small operations',
-    max_vehicles: 10,
-    max_drivers: 15,
-    features: ['Basic dashboard', 'Driver management', 'Vehicle tracking'],
-    is_active: true,
-  },
-  {
-    id: 'pro',
-    name: 'Pro',
-    price: 99,
-    description: 'For growing fleets',
-    max_vehicles: 100,
-    max_drivers: 150,
-    features: ['Advanced analytics', 'Real-time tracking', 'Expense management', 'M-Pesa integration'],
-    is_active: true,
-  },
-  {
-    id: 'enterprise',
-    name: 'Enterprise',
-    price: 299,
-    description: 'For large operations',
-    max_vehicles: 1000,
-    max_drivers: 5000,
-    features: ['Custom integrations', 'Priority support', 'API access', 'White-label options'],
-    is_active: true,
-  },
-];
-
 export default function PlansPage() {
-  const [plans, setPlans] = useState<Plan[]>(DEFAULT_PLANS);
-  const [filteredPlans, setFilteredPlans] = useState<Plan[]>(DEFAULT_PLANS);
+  const [plans, setPlans] = useState<Plan[]>([]);
+  const [filteredPlans, setFilteredPlans] = useState<Plan[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -94,6 +63,11 @@ export default function PlansPage() {
     max_drivers: '',
     features: '',
   });
+  const supabase = createClient();
+
+  useEffect(() => {
+    fetchPlans();
+  }, []);
 
   useEffect(() => {
     const filtered = plans.filter((plan) =>
@@ -103,16 +77,33 @@ export default function PlansPage() {
     setFilteredPlans(filtered);
   }, [searchQuery, plans]);
 
+  const fetchPlans = async () => {
+    try {
+      setLoading(true);
+      const { data, error: err } = await supabase
+        .from('plans')
+        .select('*')
+        .order('price', { ascending: true });
+
+      if (err) throw err;
+      setPlans(data || []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch plans');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleOpenDialog = (plan?: Plan) => {
     if (plan) {
       setEditingId(plan.id);
       setFormData({
         name: plan.name,
         price: plan.price.toString(),
-        description: plan.description,
+        description: plan.description || '',
         max_vehicles: plan.max_vehicles.toString(),
         max_drivers: plan.max_drivers.toString(),
-        features: plan.features.join(', '),
+        features: (plan.features || []).join(', '),
       });
     } else {
       setEditingId(null);
@@ -135,36 +126,40 @@ export default function PlansPage() {
 
     try {
       const features = formData.features.split(',').map((f) => f.trim()).filter((f) => f);
-      
+
       if (editingId) {
-        const updatedPlan = {
-          ...plans.find((p) => p.id === editingId),
-          name: formData.name,
-          price: parseFloat(formData.price),
-          description: formData.description,
-          max_vehicles: parseInt(formData.max_vehicles),
-          max_drivers: parseInt(formData.max_drivers),
-          features,
-        };
-        setPlans(plans.map((p) => (p.id === editingId ? updatedPlan as Plan : p)));
+        const { error: err } = await supabase
+          .from('plans')
+          .update({
+            name: formData.name,
+            price: parseFloat(formData.price),
+            description: formData.description,
+            max_vehicles: parseInt(formData.max_vehicles),
+            max_drivers: parseInt(formData.max_drivers),
+            features,
+          } as any)
+          .eq('id', editingId);
+
+        if (err) throw err;
         setSuccess('Plan updated successfully');
       } else {
-        const newPlan: Plan = {
-          id: formData.name.toLowerCase().replace(/\s+/g, '-'),
-          name: formData.name,
-          price: parseFloat(formData.price),
-          description: formData.description,
-          max_vehicles: parseInt(formData.max_vehicles),
-          max_drivers: parseInt(formData.max_drivers),
-          features,
-          is_active: true,
-          created_at: new Date().toISOString(),
-        };
-        setPlans([newPlan, ...plans]);
+        const { error: err } = await supabase
+          .from('plans')
+          .insert([{
+            name: formData.name,
+            price: parseFloat(formData.price),
+            description: formData.description,
+            max_vehicles: parseInt(formData.max_vehicles),
+            max_drivers: parseInt(formData.max_drivers),
+            features,
+          }] as any);
+
+        if (err) throw err;
         setSuccess('Plan created successfully');
       }
 
       setDialogOpen(false);
+      await fetchPlans();
       setTimeout(() => setSuccess(null), 3000);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save plan');
@@ -173,17 +168,36 @@ export default function PlansPage() {
     }
   };
 
-  const handleDelete = (planId: string) => {
+  const handleDelete = async (planId: string) => {
     if (!window.confirm('Are you sure you want to delete this plan?')) return;
-    setPlans(plans.filter((p) => p.id !== planId));
-    setSuccess('Plan deleted successfully');
-    setTimeout(() => setSuccess(null), 3000);
+    
+    try {
+      const { error: err } = await supabase
+        .from('plans')
+        .delete()
+        .eq('id', planId);
+
+      if (err) throw err;
+      setSuccess('Plan deleted successfully');
+      await fetchPlans();
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete plan');
+    }
   };
 
-  const togglePlanStatus = (planId: string) => {
-    setPlans(
-      plans.map((p) => (p.id === planId ? { ...p, is_active: !p.is_active } : p))
-    );
+  const togglePlanStatus = async (planId: string, currentStatus: boolean) => {
+    try {
+      const { error: err } = await supabase
+        .from('plans')
+        .update({ is_active: !currentStatus } as any)
+        .eq('id', planId);
+
+      if (err) throw err;
+      await fetchPlans();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update plan');
+    }
   };
 
   return (
@@ -316,82 +330,86 @@ export default function PlansPage() {
           <CardDescription>Total: {filteredPlans.length} plans</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Plan Name</TableHead>
-                  <TableHead>Price (KES)</TableHead>
-                  <TableHead>Max Vehicles</TableHead>
-                  <TableHead>Max Drivers</TableHead>
-                  <TableHead>Features</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="w-10">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredPlans.length === 0 ? (
+          {loading ? (
+            <div className="flex items-center justify-center h-32">Loading...</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8 text-gray-500">
-                      No plans found
-                    </TableCell>
+                    <TableHead>Plan Name</TableHead>
+                    <TableHead>Price (KES)</TableHead>
+                    <TableHead>Max Vehicles</TableHead>
+                    <TableHead>Max Drivers</TableHead>
+                    <TableHead>Features</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="w-10">Actions</TableHead>
                   </TableRow>
-                ) : (
-                  filteredPlans.map((plan) => (
-                    <TableRow key={plan.id}>
-                      <TableCell className="font-medium">{plan.name}</TableCell>
-                      <TableCell>{plan.price === 0 ? 'Free' : `KES ${plan.price}`}</TableCell>
-                      <TableCell>{plan.max_vehicles}</TableCell>
-                      <TableCell>{plan.max_drivers}</TableCell>
-                      <TableCell className="text-sm">{plan.features.slice(0, 2).join(', ')}...</TableCell>
-                      <TableCell>
-                        <Badge
-                          className={
-                            plan.is_active
-                              ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
-                              : 'bg-gray-100 text-gray-800 dark:bg-gray-800/30 dark:text-gray-300'
-                          }
-                        >
-                          {plan.is_active ? 'Active' : 'Inactive'}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="sm">
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              onClick={() => handleOpenDialog(plan)}
-                              className="cursor-pointer"
-                            >
-                              <Edit className="h-4 w-4 mr-2" />
-                              Edit
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => togglePlanStatus(plan.id)}
-                              className="cursor-pointer"
-                            >
-                              {plan.is_active ? 'Deactivate' : 'Activate'}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => handleDelete(plan.id)}
-                              className="cursor-pointer text-red-600"
-                            >
-                              <Trash2 className="h-4 w-4 mr-2" />
-                              Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                </TableHeader>
+                <TableBody>
+                  {filteredPlans.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center py-8 text-gray-500">
+                        No plans found
                       </TableCell>
                     </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
+                  ) : (
+                    filteredPlans.map((plan) => (
+                      <TableRow key={plan.id}>
+                        <TableCell className="font-medium">{plan.name}</TableCell>
+                        <TableCell>{plan.price === 0 ? 'Free' : `KES ${plan.price}`}</TableCell>
+                        <TableCell>{plan.max_vehicles}</TableCell>
+                        <TableCell>{plan.max_drivers}</TableCell>
+                        <TableCell className="text-sm">{(plan.features || []).slice(0, 2).join(', ')}...</TableCell>
+                        <TableCell>
+                          <Badge
+                            className={
+                              plan.is_active
+                                ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
+                                : 'bg-gray-100 text-gray-800 dark:bg-gray-800/30 dark:text-gray-300'
+                            }
+                          >
+                            {plan.is_active ? 'Active' : 'Inactive'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="sm">
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={() => handleOpenDialog(plan)}
+                                className="cursor-pointer"
+                              >
+                                <Edit className="h-4 w-4 mr-2" />
+                                Edit
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => togglePlanStatus(plan.id, plan.is_active)}
+                                className="cursor-pointer"
+                              >
+                                {plan.is_active ? 'Deactivate' : 'Activate'}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => handleDelete(plan.id)}
+                                className="cursor-pointer text-red-600"
+                              >
+                                <Trash2 className="h-4 w-4 mr-2" />
+                                Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -420,7 +438,7 @@ export default function PlansPage() {
               <div className="space-y-2">
                 <p className="text-sm font-semibold">Features:</p>
                 <ul className="text-sm space-y-1 text-gray-600 dark:text-gray-400">
-                  {plan.features.map((feature) => (
+                  {(plan.features || []).map((feature) => (
                     <li key={feature}>✓ {feature}</li>
                   ))}
                 </ul>
