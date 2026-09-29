@@ -3,7 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Loader2 } from 'lucide-react';
+import { Loader2 } from '@/components/icons';
 import { createClient } from '@/lib/supabase/client';
 import { driverLeaderboard, type DriverCollection, type DriverInput, type DriverTrip } from '@/lib/fleet-metrics';
 import { Alert, AlertDescription } from '@/components/ui/alert';

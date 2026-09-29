@@ -16,7 +16,7 @@ import {
   ChevronRight,
   Sun,
   Moon,
-} from 'lucide-react';
+} from '@/components/icons';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { AppHeader } from '@/components/app-header';
 import { PlaceHolderImages } from '@/lib/placeholder-images';
@@ -31,7 +31,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 
-import { BarChart3, Zap, TrendingUp, Wrench } from 'lucide-react';
+import { BarChart3, Zap, TrendingUp, Wrench } from '@/components/icons';
 
 const menuItems = [
   { href: '/dashboard', label: 'Dashboard', Icon: LayoutDashboard },

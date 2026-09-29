@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Loader2, Car, Mail, Lock, User, CheckCircle2, Sparkles, Users, BarChart3, Shield } from 'lucide-react'
+import { Loader2, Car, Mail, Lock, User, CheckCircle2, Sparkles, Users, BarChart3, Shield } from '@/components/icons'
 
 export default function SignUpPage() {
   const [email, setEmail] = useState('')

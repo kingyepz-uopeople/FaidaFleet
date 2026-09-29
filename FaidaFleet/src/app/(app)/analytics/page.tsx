@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Loader2, TrendingUp, TrendingDown, DollarSign, Percent } from 'lucide-react';
+import { Loader2, TrendingUp, TrendingDown, DollarSign, Percent } from '@/components/icons';
 import { createClient } from '@/lib/supabase/client';
 import { lastNDateKeys } from '@/lib/dates';
 import { groupFinancials, profitBreakdown, type MoneyRow } from '@/lib/fleet-metrics';

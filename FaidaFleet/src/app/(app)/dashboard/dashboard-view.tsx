@@ -7,7 +7,7 @@ import {
   Users,
   BadgeCheck,
   AlertTriangle,
-} from 'lucide-react'
+} from '@/components/icons'
 import {
   Table,
   TableBody,
