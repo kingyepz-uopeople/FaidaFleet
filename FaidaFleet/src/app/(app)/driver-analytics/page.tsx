@@ -3,8 +3,9 @@ import React, { useEffect, useState } from 'react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, TrendingUp } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import { driverLeaderboard, type DriverCollection, type DriverInput, type DriverTrip } from '@/lib/fleet-metrics';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
 type DriverStats = { driverId: string; driverName: string; collections: number; expenses: number; profit: number; trips: number };
@@ -26,36 +27,21 @@ export default function DriverAnalyticsPage() {
       const membership: any = membershipResp.data;
       if (!membership) throw new Error('No tenant found');
 
-      const [driversRes, collectionsRes, expensesRes, tripsRes] = await Promise.all([
+      const [driversRes, collectionsRes, tripsRes] = await Promise.all([
         supabase.from('drivers').select('id, full_name').eq('tenant_id', membership.tenant_id).eq('is_active', true),
         supabase.from('collections').select('driver_id, amount').eq('tenant_id', membership.tenant_id),
-        supabase.from('expenses').select('*').eq('tenant_id', membership.tenant_id),
-        supabase.from('trips').select('driver_id').eq('tenant_id', membership.tenant_id)
+        supabase.from('trips').select('driver_id, expenses').eq('tenant_id', membership.tenant_id)
       ]);
 
-      const driversList: any[] = driversRes.data || [];
-      const collections: any[] = collectionsRes.data || [];
-      const allExpenses: any[] = expensesRes.data || [];
-      const tripsList: any[] = tripsRes.data || [];
+      if (driversRes.error) throw driversRes.error;
+      if (collectionsRes.error) throw collectionsRes.error;
+      if (tripsRes.error) throw tripsRes.error;
 
-      const driverMap = new Map<string, DriverStats>();
-      driversList.forEach(d => driverMap.set(d.id, { driverId: d.id, driverName: d.full_name, collections: 0, expenses: 0, profit: 0, trips: 0 }));
-
-      collections.forEach(c => {
-        const stats = driverMap.get(c.driver_id);
-        if (stats) {
-          stats.collections += parseFloat(c.amount);
-          stats.profit = stats.collections - stats.expenses;
-        }
-      });
-
-      tripsList.forEach(t => {
-        const stats = driverMap.get(t.driver_id);
-        if (stats) stats.trips += 1;
-      });
-
-      const driverStats = Array.from(driverMap.values()).sort((a, b) => b.profit - a.profit);
-      setDrivers(driverStats);
+      setDrivers(driverLeaderboard(
+        (driversRes.data || []) as DriverInput[],
+        (collectionsRes.data || []) as DriverCollection[],
+        (tripsRes.data || []) as DriverTrip[]
+      ));
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -70,7 +56,7 @@ export default function DriverAnalyticsPage() {
 
   return (
     <div className="flex flex-col gap-6 p-6">
-      <div><h1 className="text-3xl font-bold">Driver Performance</h1><p className="text-gray-600 dark:text-gray-400">Analytics on driver earnings and productivity</p></div>
+      <div><h1 className="text-3xl font-bold">Driver Performance</h1><p className="text-gray-600 dark:text-gray-400">Collections minus the costs recorded on each driver&apos;s trips</p></div>
 
       {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
 

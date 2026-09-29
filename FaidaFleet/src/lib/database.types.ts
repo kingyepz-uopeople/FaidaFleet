@@ -145,6 +145,9 @@ export interface Database {
           year: number | null
           capacity: number | null
           route: string | null
+          vehicle_type: 'psv' | 'cargo' | 'pickup' | 'other' | null
+          insurance_expiry: string | null
+          mot_expiry: string | null
           is_active: boolean
           created_at: string
           updated_at: string
@@ -158,6 +161,9 @@ export interface Database {
           year?: number | null
           capacity?: number | null
           route?: string | null
+          vehicle_type?: 'psv' | 'cargo' | 'pickup' | 'other' | null
+          insurance_expiry?: string | null
+          mot_expiry?: string | null
           is_active?: boolean
           created_at?: string
           updated_at?: string
@@ -171,6 +177,9 @@ export interface Database {
           year?: number | null
           capacity?: number | null
           route?: string | null
+          vehicle_type?: 'psv' | 'cargo' | 'pickup' | 'other' | null
+          insurance_expiry?: string | null
+          mot_expiry?: string | null
           is_active?: boolean
           created_at?: string
           updated_at?: string

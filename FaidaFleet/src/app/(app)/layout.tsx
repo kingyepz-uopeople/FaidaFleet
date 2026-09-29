@@ -51,7 +51,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [userRole, setUserRole] = useState<string>('Member');
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
-  const [isDark, setIsDark] = useState(true);
+  const [isDark, setIsDark] = useState(false);
   const supabase = createClient();
   const pathname = usePathname();
 
@@ -78,6 +78,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
     getUser();
   }, [supabase]);
+
+  useEffect(() => {
+    setIsDark(document.documentElement.classList.contains('dark'));
+  }, []);
+
+  const setTheme = (dark: boolean) => {
+    setIsDark(dark);
+    document.documentElement.classList.toggle('dark', dark);
+    localStorage.setItem('faidafleet-theme', dark ? 'dark' : 'light');
+  };
 
   const getUserInitials = () => {
     if (!user) return 'U';
@@ -339,7 +349,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               {isExpanded ? (
                 <>
                   <button
-                    onClick={() => setIsDark(true)}
+                    onClick={() => setTheme(true)}
                     className={cn(
                       'flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-all duration-300',
                       'hover:scale-105 active:scale-95',
@@ -351,7 +361,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     <Moon className="mx-auto h-4 w-4" />
                   </button>
                   <button
-                    onClick={() => setIsDark(false)}
+                    onClick={() => setTheme(false)}
                     className={cn(
                       'flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-all duration-300',
                       'hover:scale-105 active:scale-95',
@@ -365,7 +375,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 </>
               ) : (
                 <button
-                  onClick={() => setIsDark(!isDark)}
+                  onClick={() => setTheme(!isDark)}
                   className="flex-1 rounded-md p-1.5 text-gray-400 transition-all hover:text-white hover:bg-white/10 hover:scale-105 active:scale-95"
                 >
                   {isDark ? <Moon className="mx-auto h-4 w-4" /> : <Sun className="mx-auto h-4 w-4" />}

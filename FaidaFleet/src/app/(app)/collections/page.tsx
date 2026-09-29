@@ -25,7 +25,8 @@ import { Badge } from '@/components/ui/badge';
 import { PlusCircle, Loader2, Trash, Edit, Download } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { format } from 'date-fns';
+import { formatDateOnly } from '@/lib/dates';
+import { collectionStatus } from '@/lib/fleet-metrics';
 import {
   Select,
   SelectContent,
@@ -494,7 +495,7 @@ export default function CollectionsPage() {
                 <TableBody>
                   {filteredCollections.map((collection) => (
                     <TableRow key={collection.id}>
-                      <TableCell>{format(new Date(collection.date), 'MMM dd, yyyy')}</TableCell>
+                      <TableCell>{formatDateOnly(collection.date)}</TableCell>
                       <TableCell className="font-medium">{collection.vehicles?.registration_number}</TableCell>
                       <TableCell>{collection.drivers?.full_name}</TableCell>
                       <TableCell className="font-bold">KES {collection.amount.toLocaleString()}</TableCell>
@@ -505,8 +506,8 @@ export default function CollectionsPage() {
                       </TableCell>
                       <TableCell className="capitalize">{collection.shift}</TableCell>
                       <TableCell>
-                        <Badge className={collection.reconciled ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}>
-                          {collection.reconciled ? 'Verified' : 'Pending'}
+                        <Badge className={collectionStatus(collection) === 'Pending' ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'}>
+                          {collectionStatus(collection)}
                         </Badge>
                       </TableCell>
                       <TableCell>
