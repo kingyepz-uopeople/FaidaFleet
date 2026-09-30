@@ -1,7 +1,7 @@
 # FaidaFleet SQL Quick Reference
 
 ## Schema
-Apply `supabase/migrations/001_initial_schema.sql` through `007_schema_fixes.sql` in order. `COMPLETE_SCHEMA.sql` is not a schema and refuses to run.
+Apply `supabase/migrations/001_initial_schema.sql` through `007_schema_fixes.sql` in order. `supabase/COMPLETE_SCHEMA.sql` is not a schema and refuses to run.
 
 ---
 

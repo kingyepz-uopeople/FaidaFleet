@@ -24,7 +24,7 @@ Keep the service role key on the server. It is used when a fleet owner adds a dr
 
 ## 2. Database
 
-Run `supabase/migrations/001_initial_schema.sql` through `007_schema_fixes.sql` in order. Do not run `COMPLETE_SCHEMA.sql`. Migration 006 stores the phone on new profiles, locks `admin_users` to system administrators, and adds `provision_driver_login`. Migration 007 lets system administrators read fleet data, records fine expenses, and keeps daily totals from counting the same collection more than once.
+Run `supabase/migrations/001_initial_schema.sql` through `007_schema_fixes.sql` in order. Do not run `supabase/COMPLETE_SCHEMA.sql`. Migration 006 stores the phone on new profiles, locks `admin_users` to system administrators, and adds `provision_driver_login`. Migration 007 lets system administrators read fleet data, records fine expenses, and keeps daily totals from counting the same collection more than once.
 
 ## 3. Auth settings
 

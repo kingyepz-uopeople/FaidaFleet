@@ -158,7 +158,7 @@ After completing onboarding, you'll have:
 
 **Solution:** 
 - Complete the onboarding process at `/onboarding`
-- Or manually create tenant using SQL (see DATABASE_SETUP.md)
+- Or manually create tenant using SQL (see `../supabase/DATABASE_SETUP.md`)
 
 ### Email Verification Required
 
@@ -204,7 +204,7 @@ For issues during sign up:
 1. Check browser console (F12) for errors
 2. Verify database migration is complete
 3. Check `SUPABASE_AUTH_SETUP.md` for configuration
-4. Review `DATABASE_SETUP.md` for database setup
+4. Review `../supabase/DATABASE_SETUP.md` for database setup
 
 ---
 

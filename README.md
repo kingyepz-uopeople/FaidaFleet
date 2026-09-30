@@ -129,22 +129,19 @@ FaidaFleet/
 │   │   └── utils.ts           # Helper functions
 │   └── middleware.ts          # Auth middleware
 ├── supabase/
-│   ├── migrations/            # Database migrations
-│   │   ├── 001_initial_schema.sql
-│   │   ├── 002_fix_onboarding.sql
-│   │   ├── 003_admin_tables.sql
-│   │   ├── 004_add_trips_table.sql
-│   │   ├── 005_add_vehicle_compliance_columns.sql
-│   │   ├── 006_phone_pin_auth.sql
-│   │   └── 007_schema_fixes.sql
-│   └── DATABASE_SETUP.md      # Setup guide
-├── docs/
-│   └── blueprint.md           # Project blueprint
-├── COMPLETE_SCHEMA.sql        # Refuses to run; use supabase/migrations
-├── DATABASE_SCHEMA.md         # Schema documentation
-├── SQL_QUICK_REFERENCE.md     # SQL query examples
-├── FEATURE_TABLES.txt         # Feature table reference
-└── SUPABASE_AUTH_SETUP.md     # Auth setup guide
+│   ├── migrations/            # Database migrations, 001 through 007
+│   ├── DATABASE_SETUP.md      # Setup guide
+│   ├── COMPLETE_SCHEMA.sql    # Refuses to run; use migrations
+│   └── RUN_THIS_FIRST.sql     # Idempotent column check after migrations
+└── docs/
+    ├── blueprint.md           # Project blueprint
+    ├── DATABASE_SCHEMA.md     # Schema documentation
+    ├── SQL_QUICK_REFERENCE.md # SQL query examples
+    ├── FEATURE_TABLES.txt     # Feature table reference
+    ├── QUICK_START.md         # Short setup checklist
+    ├── SUPABASE_AUTH_SETUP.md # Auth setup guide
+    ├── FLEET_OWNER_SIGNUP_GUIDE.md
+    └── IMPLEMENTATION_STATUS.md
 ```
 
 ## Multi-Tenancy & Roles
@@ -271,7 +268,8 @@ npm run typecheck    # TypeScript type checking
 ## Documentation
 
 - [Database Setup Guide](supabase/DATABASE_SETUP.md)
-- [Authentication Setup](SUPABASE_AUTH_SETUP.md)
+- [Authentication Setup](docs/SUPABASE_AUTH_SETUP.md)
+- [Quick Start](docs/QUICK_START.md)
 - [Project Blueprint](docs/blueprint.md)
 
 ## Deployment
