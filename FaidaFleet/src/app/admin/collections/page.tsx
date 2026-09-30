@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { createClient } from '@/lib/supabase/client';
-import { Search, Download } from 'lucide-react';
+import { Search, Download } from '@/components/icons';
 import { Badge } from '@/components/ui/badge';
 import {
   Table,

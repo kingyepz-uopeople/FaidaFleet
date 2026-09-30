@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Loader2, Car, Mail, Lock, Sparkles, TrendingUp, Shield } from 'lucide-react'
+import { Loader2, Car, Mail, Lock, Sparkles, TrendingUp, Shield } from '@/components/icons'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')

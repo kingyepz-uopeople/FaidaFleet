@@ -23,7 +23,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { Search, MoreHorizontal, Trash2, Edit, Plus } from 'lucide-react';
+import { Search, MoreHorizontal, Trash2, Edit, Plus } from '@/components/icons';
 import { createClient } from '@/lib/supabase/client';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {

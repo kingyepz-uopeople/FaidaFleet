@@ -17,7 +17,7 @@ import {
   Settings,
   BarChart3,
   AlertCircle,
-} from 'lucide-react';
+} from '@/components/icons';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { createClient } from '@/lib/supabase/client';

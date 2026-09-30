@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { reconcileTransactionAction } from '@/app/actions';
 import type { Collection } from '@/lib/types';
-import { WandSparkles } from 'lucide-react';
+import { WandSparkles } from '@/components/icons';
 import { drivers } from '@/lib/data';
 
 interface ReconciliationButtonProps {

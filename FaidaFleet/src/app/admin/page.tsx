@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { StatCard } from '@/components/stat-card';
 import { createClient } from '@/lib/supabase/client';
-import { Building2, Users, Truck, BarChart3 } from 'lucide-react';
+import { Building2, Users, Truck, BarChart3 } from '@/components/icons';
 
 export default function AdminOverviewPage() {
   const [stats, setStats] = useState({

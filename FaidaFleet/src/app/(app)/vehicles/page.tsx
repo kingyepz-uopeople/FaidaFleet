@@ -8,10 +8,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { PlusCircle, Loader2, Trash, Edit, AlertTriangle } from 'lucide-react';
+import { PlusCircle, Loader2, Trash, Edit, AlertTriangle } from '@/components/icons';
 import { createClient } from '@/lib/supabase/client';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { format } from 'date-fns';
+import { formatDateOnly, isDateBeforeToday } from '@/lib/dates';
+import { vehicleComplianceStatus } from '@/lib/fleet-metrics';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 type Vehicle = { id: string; registration_number: string; make: string; model: string; year: number; capacity: number; vehicle_type: string; insurance_expiry: string | null; mot_expiry: string | null; is_active: boolean };
@@ -101,9 +102,8 @@ export default function VehiclesPage() {
     }
   };
 
-  const isExpired = (date: string | null) => date && new Date(date) < new Date();
-  const isExpiringSoon = (date: string | null, days = 30) => date && Math.floor((new Date(date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)) <= days && Math.floor((new Date(date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)) >= 0;
-  const getStatus = (v: Vehicle) => isExpired(v.insurance_expiry) || isExpired(v.mot_expiry) ? 'Expired' : isExpiringSoon(v.insurance_expiry) || isExpiringSoon(v.mot_expiry) ? 'Warning' : 'Active';
+  const isExpired = (date: string | null) => Boolean(date && isDateBeforeToday(date));
+  const getStatus = (v: Vehicle) => vehicleComplianceStatus(v);
 
   const totalVehicles = vehicles.length;
   const activeVehicles = vehicles.filter(v => v.is_active).length;
@@ -148,7 +148,7 @@ export default function VehiclesPage() {
       <Card>
         <CardHeader><CardTitle>Fleet Vehicles</CardTitle><CardDescription>{vehicles.length} vehicles in your fleet</CardDescription></CardHeader>
         <CardContent>
-          {loading ? <div className="flex justify-center py-8"><Loader2 className="h-8 w-8 animate-spin text-blue-600" /></div> : vehicles.length === 0 ? <div className="text-center py-8 text-gray-500"><p>No vehicles yet</p><Button onClick={() => handleOpenDialog()} className="mt-4"><PlusCircle className="mr-2 h-4 w-4" />Add Your First Vehicle</Button></div> : <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Registration</TableHead><TableHead>Make/Model</TableHead><TableHead>Type</TableHead><TableHead>Insurance</TableHead><TableHead>MOT</TableHead><TableHead>Status</TableHead><TableHead>Actions</TableHead></TableRow></TableHeader><TableBody>{vehicles.map((vehicle) => { const status = getStatus(vehicle); const statusColor = status === 'Active' ? 'bg-green-100 text-green-800' : status === 'Warning' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'; return (<TableRow key={vehicle.id}><TableCell className="font-bold">{vehicle.registration_number}</TableCell><TableCell>{vehicle.make && vehicle.model ? `${vehicle.make} ${vehicle.model}` : '—'}</TableCell><TableCell className="capitalize">{vehicle.vehicle_type || '—'}</TableCell><TableCell>{vehicle.insurance_expiry ? (<div className="flex items-center gap-1">{isExpired(vehicle.insurance_expiry) && <AlertTriangle className="h-4 w-4 text-red-600" />}{format(new Date(vehicle.insurance_expiry), 'MMM dd, yy')}</div>) : '—'}</TableCell><TableCell>{vehicle.mot_expiry ? (<div className="flex items-center gap-1">{isExpired(vehicle.mot_expiry) && <AlertTriangle className="h-4 w-4 text-red-600" />}{format(new Date(vehicle.mot_expiry), 'MMM dd, yy')}</div>) : '—'}</TableCell><TableCell><Badge className={statusColor}>{status}</Badge></TableCell><TableCell><div className="flex gap-2"><Button variant="ghost" size="sm" onClick={() => handleOpenDialog(vehicle)}><Edit className="h-4 w-4" /></Button><Button variant="ghost" size="sm" onClick={() => handleDelete(vehicle.id)}><Trash className="h-4 w-4 text-red-600" /></Button></div></TableCell></TableRow>); })}</TableBody></Table></div>}
+          {loading ? <div className="flex justify-center py-8"><Loader2 className="h-8 w-8 animate-spin text-blue-600" /></div> : vehicles.length === 0 ? <div className="text-center py-8 text-gray-500"><p>No vehicles yet</p><Button onClick={() => handleOpenDialog()} className="mt-4"><PlusCircle className="mr-2 h-4 w-4" />Add Your First Vehicle</Button></div> : <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Registration</TableHead><TableHead>Make/Model</TableHead><TableHead>Type</TableHead><TableHead>Insurance</TableHead><TableHead>MOT</TableHead><TableHead>Status</TableHead><TableHead>Actions</TableHead></TableRow></TableHeader><TableBody>{vehicles.map((vehicle) => { const status = getStatus(vehicle); const statusColor = status === 'Active' ? 'bg-green-100 text-green-800' : status === 'Warning' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'; return (<TableRow key={vehicle.id}><TableCell className="font-bold">{vehicle.registration_number}</TableCell><TableCell>{vehicle.make && vehicle.model ? `${vehicle.make} ${vehicle.model}` : '—'}</TableCell><TableCell className="capitalize">{vehicle.vehicle_type || '—'}</TableCell><TableCell>{vehicle.insurance_expiry ? (<div className="flex items-center gap-1">{isExpired(vehicle.insurance_expiry) && <AlertTriangle className="h-4 w-4 text-red-600" />}{formatDateOnly(vehicle.insurance_expiry)}</div>) : '—'}</TableCell><TableCell>{vehicle.mot_expiry ? (<div className="flex items-center gap-1">{isExpired(vehicle.mot_expiry) && <AlertTriangle className="h-4 w-4 text-red-600" />}{formatDateOnly(vehicle.mot_expiry)}</div>) : '—'}</TableCell><TableCell><Badge className={statusColor}>{status}</Badge></TableCell><TableCell><div className="flex gap-2"><Button variant="ghost" size="sm" onClick={() => handleOpenDialog(vehicle)}><Edit className="h-4 w-4" /></Button><Button variant="ghost" size="sm" onClick={() => handleDelete(vehicle.id)}><Trash className="h-4 w-4 text-red-600" /></Button></div></TableCell></TableRow>); })}</TableBody></Table></div>}
         </CardContent>
       </Card>
     </div>

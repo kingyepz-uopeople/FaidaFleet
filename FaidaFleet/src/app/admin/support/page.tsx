@@ -23,7 +23,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Plus, MoreHorizontal } from 'lucide-react';
+import { Plus, MoreHorizontal } from '@/components/icons';
 import { createClient } from '@/lib/supabase/client';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {

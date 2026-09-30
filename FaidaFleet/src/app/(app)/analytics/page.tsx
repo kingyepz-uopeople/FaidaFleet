@@ -6,8 +6,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Loader2, TrendingUp, TrendingDown, DollarSign, Percent } from 'lucide-react';
+import { Loader2, TrendingUp, TrendingDown, DollarSign, Percent } from '@/components/icons';
 import { createClient } from '@/lib/supabase/client';
+import { lastNDateKeys } from '@/lib/dates';
+import { groupFinancials, profitBreakdown, type MoneyRow } from '@/lib/fleet-metrics';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
 type FinancialData = { date: string; revenue: number; expenses: number; profit: number };
@@ -31,49 +33,37 @@ export default function AnalyticsPage() {
       const membership: any = membershipResp.data;
       if (!membership) throw new Error('No tenant found');
 
-      const daysAgo = new Date();
-      daysAgo.setDate(daysAgo.getDate() - parseInt(dateRange));
-      const startDate = daysAgo.toISOString().split('T')[0];
+      const rangeDays = Number.parseInt(dateRange, 10);
+      const startDate = lastNDateKeys(rangeDays + 1)[0];
 
       const [collectionsRes, expensesRes] = await Promise.all([
         supabase.from('collections').select('date, amount').eq('tenant_id', membership.tenant_id).gte('date', startDate),
         supabase.from('expenses').select('date, amount').eq('tenant_id', membership.tenant_id).gte('date', startDate)
       ]);
 
-      const collections: any[] = collectionsRes.data || [];
-      const expenses: any[] = expensesRes.data || [];
+      if (collectionsRes.error) throw collectionsRes.error;
+      if (expensesRes.error) throw expensesRes.error;
 
-      const dateMap = new Map<string, { revenue: number; expenses: number }>();
-      collections.forEach(c => {
-        const entry = dateMap.get(c.date) || { revenue: 0, expenses: 0 };
-        entry.revenue += parseFloat(c.amount);
-        dateMap.set(c.date, entry);
+      const report = groupFinancials(
+        (collectionsRes.data || []) as MoneyRow[],
+        (expensesRes.data || []) as MoneyRow[]
+      );
+
+      setData(report.series);
+      setStats({
+        totalRevenue: report.totalRevenue,
+        totalExpenses: report.totalExpenses,
+        totalProfit: report.totalProfit,
+        profitMargin: report.profitMargin,
       });
-      expenses.forEach(e => {
-        const entry = dateMap.get(e.date) || { revenue: 0, expenses: 0 };
-        entry.expenses += parseFloat(e.amount);
-        dateMap.set(e.date, entry);
-      });
-
-      const financialData = Array.from(dateMap.entries()).map(([date, { revenue, expenses }]) => ({
-        date,
-        revenue,
-        expenses,
-        profit: revenue - expenses
-      })).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-
-      const totalRevenue = financialData.reduce((sum, d) => sum + d.revenue, 0);
-      const totalExpenses = financialData.reduce((sum, d) => sum + d.expenses, 0);
-      const totalProfit = totalRevenue - totalExpenses;
-
-      setData(financialData);
-      setStats({ totalRevenue, totalExpenses, totalProfit, profitMargin: totalRevenue > 0 ? Math.round((totalProfit / totalRevenue) * 100) : 0 });
     } catch (err: any) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
   };
+
+  const slices = profitBreakdown(stats.totalProfit, stats.totalExpenses);
 
   return (
     <div className="flex flex-col gap-6 p-6">
@@ -99,7 +89,7 @@ export default function AnalyticsPage() {
 
           <Card><CardHeader><CardTitle>Daily Profit Analysis</CardTitle></CardHeader><CardContent><ResponsiveContainer width="100%" height={300}><BarChart data={data}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="date" /><YAxis /><Tooltip formatter={(value) => `KES ${Number(value).toLocaleString()}`} /><Legend /><Bar dataKey="profit" fill="#3b82f6" name="Daily Profit" /></BarChart></ResponsiveContainer></CardContent></Card>
 
-          <Card><CardHeader><CardTitle>Revenue Breakdown</CardTitle></CardHeader><CardContent><ResponsiveContainer width="100%" height={300}><PieChart><Pie data={[{ name: 'Profit', value: stats.totalProfit }, { name: 'Expenses', value: stats.totalExpenses }]} cx="50%" cy="50%" labelLine={false} label={({ name, value }) => `${name}: KES ${Number(value).toLocaleString()}`} outerRadius={100} fill="#8884d8" dataKey="value"><Cell fill="#10b981" /><Cell fill="#ef4444" /></Pie></PieChart></ResponsiveContainer></CardContent></Card>
+          <Card><CardHeader><CardTitle>Revenue Breakdown</CardTitle></CardHeader><CardContent>{slices.length === 0 ? <p className="py-12 text-center text-gray-500">No revenue or expenses in this range.</p> : <ResponsiveContainer width="100%" height={300}><PieChart><Pie data={slices} cx="50%" cy="50%" labelLine={false} label={({ name, value }) => `${name}: KES ${Number(value).toLocaleString()}`} outerRadius={100} dataKey="value">{slices.map((slice) => <Cell key={slice.name} fill={slice.name === 'Profit' ? '#10b981' : '#ef4444'} />)}</Pie></PieChart></ResponsiveContainer>}</CardContent></Card>
         </>
       )}
     </div>

@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { StatCard } from '@/components/stat-card';
 import { createClient } from '@/lib/supabase/client';
-import { TrendingUp, Users, Truck, DollarSign } from 'lucide-react';
+import { TrendingUp, Users, Truck, DollarSign } from '@/components/icons';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
 export default function AnalyticsPage() {
