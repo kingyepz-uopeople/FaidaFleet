@@ -7,6 +7,26 @@
 
 -- Drop the existing restrictive policy for memberships insert
 drop policy if exists "Owners/Admins can manage memberships" on public.memberships;
+drop policy if exists "Owners/Admins can view memberships" on public.memberships;
+drop policy if exists "Owners/Admins can update memberships" on public.memberships;
+drop policy if exists "Owners/Admins can delete memberships" on public.memberships;
+drop policy if exists "Users can create their own membership" on public.memberships;
+
+-- A caller can become owner only of a tenant that has no members yet.
+-- This blocks joining an existing fleet by guessing its id.
+create or replace function public.tenant_has_no_members(tenant_uuid uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select not exists (
+    select 1 from public.memberships where tenant_id = tenant_uuid
+  );
+$$;
+
+grant execute on function public.tenant_has_no_members(uuid) to authenticated;
 
 -- Create separate policies for better control
 create policy "Owners/Admins can view memberships"
@@ -24,7 +44,11 @@ create policy "Owners/Admins can delete memberships"
 -- IMPORTANT: Allow authenticated users to create their first membership (for onboarding)
 create policy "Users can create their own membership"
   on public.memberships for insert
-  with check (auth.uid() = user_id);
+  with check (
+    auth.uid() = user_id
+    and role = 'owner'
+    and public.tenant_has_no_members(tenant_id)
+  );
 
 -- ============================================
 -- 2. CREATE HELPER FUNCTION FOR ONBOARDING

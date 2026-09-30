@@ -146,7 +146,7 @@ create table public.expenses (
   tenant_id uuid not null references public.tenants(id) on delete cascade,
   vehicle_id uuid references public.vehicles(id) on delete cascade,
   date date not null default current_date,
-  category text not null check (category in ('fuel', 'maintenance', 'insurance', 'license', 'parking', 'other')),
+  category text not null check (category in ('fuel', 'maintenance', 'insurance', 'license', 'parking', 'fine', 'other')),
   amount numeric(10,2) not null check (amount >= 0),
   description text,
   receipt_url text,
@@ -181,6 +181,8 @@ create or replace function public.current_tenant_ids()
 returns setof uuid
 language sql
 stable
+security definer
+set search_path = public
 as $$
   select tenant_id
   from public.memberships
@@ -193,6 +195,8 @@ create or replace function public.has_tenant_role(tenant_uuid uuid, required_rol
 returns boolean
 language sql
 stable
+security definer
+set search_path = public
 as $$
   select exists (
     select 1
@@ -209,6 +213,8 @@ create or replace function public.has_any_tenant_role(tenant_uuid uuid, required
 returns boolean
 language sql
 stable
+security definer
+set search_path = public
 as $$
   select exists (
     select 1
@@ -417,11 +423,12 @@ security definer
 set search_path = public
 as $$
 begin
-  insert into public.profiles (id, full_name, avatar_url)
+  insert into public.profiles (id, full_name, avatar_url, phone)
   values (
     new.id,
     coalesce(new.raw_user_meta_data->>'full_name', ''),
-    coalesce(new.raw_user_meta_data->>'avatar_url', '')
+    coalesce(new.raw_user_meta_data->>'avatar_url', ''),
+    nullif(new.raw_user_meta_data->>'phone', '')
   );
   return new;
 end;
@@ -436,31 +443,51 @@ create trigger on_auth_user_created
 -- ============================================
 
 create materialized view public.kpi_daily as
+with expense_totals as (
+  select tenant_id, date, sum(amount) as total_expenses
+  from public.expenses
+  group by tenant_id, date
+),
+collection_totals as (
+  select
+    tenant_id,
+    date,
+    count(distinct vehicle_id) as active_vehicles,
+    count(distinct driver_id) as active_drivers,
+    sum(amount) filter (where payment_method = 'cash') as cash_total,
+    sum(amount) filter (where payment_method = 'mpesa') as mpesa_total,
+    sum(amount) filter (where payment_method = 'pochi') as pochi_total,
+    sum(amount) as total_collections,
+    count(*) filter (where reconciled = true) as reconciled_count,
+    count(*) filter (where reconciled = false) as unreconciled_count
+  from public.collections
+  group by tenant_id, date
+)
 select
-  c.tenant_id,
-  c.date,
-  count(distinct c.vehicle_id) as active_vehicles,
-  count(distinct c.driver_id) as active_drivers,
-  sum(c.amount) filter (where c.payment_method = 'cash') as cash_total,
-  sum(c.amount) filter (where c.payment_method = 'mpesa') as mpesa_total,
-  sum(c.amount) filter (where c.payment_method = 'pochi') as pochi_total,
-  sum(c.amount) as total_collections,
-  count(*) filter (where c.reconciled = true) as reconciled_count,
-  count(*) filter (where c.reconciled = false) as unreconciled_count,
-  coalesce(sum(e.amount), 0) as total_expenses,
-  sum(c.amount) - coalesce(sum(e.amount), 0) as net_profit
-from public.collections c
-left join public.expenses e on e.tenant_id = c.tenant_id and e.date = c.date
-group by c.tenant_id, c.date;
+  coalesce(c.tenant_id, e.tenant_id) as tenant_id,
+  coalesce(c.date, e.date) as date,
+  coalesce(c.active_vehicles, 0) as active_vehicles,
+  coalesce(c.active_drivers, 0) as active_drivers,
+  c.cash_total,
+  c.mpesa_total,
+  c.pochi_total,
+  coalesce(c.total_collections, 0) as total_collections,
+  coalesce(c.reconciled_count, 0) as reconciled_count,
+  coalesce(c.unreconciled_count, 0) as unreconciled_count,
+  coalesce(e.total_expenses, 0) as total_expenses,
+  coalesce(c.total_collections, 0) - coalesce(e.total_expenses, 0) as net_profit
+from collection_totals c
+full outer join expense_totals e
+  on e.tenant_id = c.tenant_id and e.date = c.date;
 
--- Create index on materialized view
-create unique index on public.kpi_daily (tenant_id, date);
+create unique index kpi_daily_tenant_date on public.kpi_daily (tenant_id, date);
 
--- Function to refresh KPI view
+-- Function to refresh KPI view. Runs as the owner from the SQL editor.
 create or replace function public.refresh_kpi_daily()
 returns void
 language sql
 security definer
+set search_path = public
 as $$
   refresh materialized view concurrently public.kpi_daily;
 $$;
@@ -470,6 +497,10 @@ $$;
 -- ============================================
 
 grant usage on schema public to anon, authenticated;
-grant all on all tables in schema public to authenticated;
-grant all on all sequences in schema public to authenticated;
+grant select, insert, update, delete on all tables in schema public to authenticated;
+grant usage, select on all sequences in schema public to authenticated;
 grant execute on all functions in schema public to authenticated;
+
+-- kpi_daily has one row per fleet. Keep it off the client API.
+revoke all on table public.kpi_daily from anon, authenticated, public;
+revoke all on function public.refresh_kpi_daily() from anon, authenticated, public;

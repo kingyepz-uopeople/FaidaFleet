@@ -15,20 +15,27 @@
 -- Step 4: Migration 004 - Trips Table
 -- Location: supabase/migrations/004_add_trips_table.sql
 
--- Step 5: Migration 005 - Vehicle Compliance (NEW)
+-- Step 5: Migration 005 - Vehicle Compliance
 -- Location: supabase/migrations/005_add_vehicle_compliance_columns.sql
+-- Step 6: Migration 006 - Phone and PIN auth
+-- Location: supabase/migrations/006_phone_pin_auth.sql
+-- Step 7: Migration 007 - Schema fixes
+-- Location: supabase/migrations/007_schema_fixes.sql
 
--- ============================================
--- Or run the complete schema all at once:
--- Location: COMPLETE_SCHEMA.sql
--- ============================================
+-- Do not run COMPLETE_SCHEMA.sql. It is not a schema.
 
--- This quick fix adds just the missing columns:
-ALTER TABLE public.vehicles 
-ADD COLUMN IF NOT EXISTS insurance_expiry DATE;
+-- These statements add vehicle compliance columns when that table already exists.
+do $$
+begin
+  if to_regclass('public.vehicles') is null then
+    raise exception 'Run supabase/migrations/001 through 007 before RUN_THIS_FIRST.sql';
+  end if;
 
-ALTER TABLE public.vehicles 
-ADD COLUMN IF NOT EXISTS mot_expiry DATE;
+  execute 'alter table public.vehicles add column if not exists insurance_expiry date';
+  execute 'alter table public.vehicles add column if not exists mot_expiry date';
+  execute 'alter table public.vehicles add column if not exists vehicle_type text';
+end $$;
 
-ALTER TABLE public.vehicles 
-ADD COLUMN IF NOT EXISTS vehicle_type TEXT CHECK (vehicle_type IN ('psv', 'cargo', 'pickup', 'other'));
+alter table public.vehicles drop constraint if exists vehicles_vehicle_type_check;
+alter table public.vehicles add constraint vehicles_vehicle_type_check
+  check (vehicle_type is null or vehicle_type in ('psv', 'cargo', 'pickup', 'other'));
