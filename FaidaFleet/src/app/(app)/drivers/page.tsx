@@ -32,6 +32,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { PlusCircle, Loader2 } from '@/components/icons';
+import { normalizeKenyanPhone, validatePin } from '@/lib/phone';
 import { createClient } from '@/lib/supabase/client';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
@@ -64,6 +65,8 @@ export default function DriversPage() {
   const [formData, setFormData] = useState({
     full_name: '',
     phone: '',
+    pin: '',
+    pin_confirm: '',
     license_number: '',
     license_expiry: '',
     id_number: '',
@@ -145,24 +148,35 @@ export default function DriversPage() {
         throw new Error('No tenant found');
       }
 
-      const { error } = await supabase
-        .from('drivers')
-        .insert({
-          tenant_id: tenantId,
+      const phone = normalizeKenyanPhone(formData.phone);
+      const pinError = validatePin(formData.pin);
+      if (!phone) throw new Error('Enter a valid Kenyan phone number');
+      if (pinError) throw new Error(pinError);
+      if (formData.pin !== formData.pin_confirm) throw new Error('PINs do not match');
+
+      const response = await fetch('/api/drivers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
           full_name: formData.full_name,
-          phone: formData.phone,
+          phone,
+          pin: formData.pin,
           license_number: formData.license_number || null,
           license_expiry: formData.license_expiry || null,
           id_number: formData.id_number || null,
-          is_active: true,
-        });
-
-      if (error) throw error;
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.error || 'Could not add the driver');
+      }
 
       // Reset form and close dialog
       setFormData({
         full_name: '',
         phone: '',
+        pin: '',
+        pin_confirm: '',
         license_number: '',
         license_expiry: '',
         id_number: '',
@@ -374,7 +388,7 @@ export default function DriversPage() {
                 <DialogHeader>
                   <DialogTitle>Add New Driver</DialogTitle>
                   <DialogDescription>
-                    Add a new driver to your fleet. All fields marked with * are required.
+                    Add a driver and a PIN. They sign in with this phone number and PIN.
                   </DialogDescription>
                 </DialogHeader>
                 
@@ -401,9 +415,39 @@ export default function DriversPage() {
                     <Label htmlFor="phone">Phone Number *</Label>
                     <Input
                       id="phone"
-                      placeholder="+254712345678"
+                      placeholder="0712345678"
                       value={formData.phone}
                       onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                      required
+                      disabled={submitting}
+                    />
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Label htmlFor="pin">PIN *</Label>
+                    <Input
+                      id="pin"
+                      type="password"
+                      inputMode="numeric"
+                      maxLength={6}
+                      placeholder="4 to 6 digits"
+                      value={formData.pin}
+                      onChange={(e) => setFormData({ ...formData, pin: e.target.value.replace(/\D/g, '').slice(0, 6) })}
+                      required
+                      disabled={submitting}
+                    />
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Label htmlFor="pin_confirm">Confirm PIN *</Label>
+                    <Input
+                      id="pin_confirm"
+                      type="password"
+                      inputMode="numeric"
+                      maxLength={6}
+                      placeholder="Repeat PIN"
+                      value={formData.pin_confirm}
+                      onChange={(e) => setFormData({ ...formData, pin_confirm: e.target.value.replace(/\D/g, '').slice(0, 6) })}
                       required
                       disabled={submitting}
                     />

@@ -21,6 +21,7 @@ import {
 import { createClient } from '@/lib/supabase/client';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { formatDateOnly } from '@/lib/dates';
+import { accountPhone, friendlyAuthError, isPhoneAccount, validatePin } from '@/lib/phone';
 
 type TeamMember = {
   id: string;
@@ -39,7 +40,9 @@ export default function SettingsPage() {
   const [role, setRole] = useState<string | null>(null);
   const [fleetName, setFleetName] = useState('');
   const [members, setMembers] = useState<TeamMember[]>([]);
-  const [form, setForm] = useState({ name: '', email: '', currentPassword: '', newPassword: '' });
+  const [phoneAccount, setPhoneAccount] = useState(true);
+  const [phone, setPhone] = useState('');
+  const [form, setForm] = useState({ name: '', currentPin: '', newPin: '' });
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -80,10 +83,11 @@ export default function SettingsPage() {
 
         setFleetName((tenantResp.data as { name: string }).name || '');
         setMembers((teamResp.data || []) as TeamMember[]);
+        setPhoneAccount(isPhoneAccount(user));
+        setPhone(accountPhone(user) || '');
         setForm((prev) => ({
           ...prev,
-          name: profileResp.data?.full_name || '',
-          email: user.email || '',
+          name: profileResp.data?.full_name || user.user_metadata?.full_name || '',
         }));
       } catch (err: unknown) {
         setError(err instanceof Error ? err.message : 'Could not load settings');
@@ -105,12 +109,7 @@ export default function SettingsPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
 
-      if (form.email && form.email !== user.email) {
-        const { error: emailErr } = await supabase.auth.updateUser({ email: form.email });
-        if (emailErr) throw emailErr;
-      }
-
-      const upsertResp = await supabase.from('profiles').upsert({ id: user.id, full_name: form.name });
+      const upsertResp = await supabase.from('profiles').upsert({ id: user.id, full_name: form.name, phone: phone || null });
       if (upsertResp.error) throw upsertResp.error;
 
       setMessage('Profile updated successfully.');
@@ -124,11 +123,13 @@ export default function SettingsPage() {
     setError(null);
     setMessage(null);
     try {
-      if (!form.currentPassword || !form.newPassword) {
-        throw new Error('Enter your current password and a new password');
+      const pinError = validatePin(form.newPin);
+      if (!form.currentPin || !form.newPin) {
+        throw new Error('Enter your current PIN and a new PIN');
       }
-      if (form.newPassword.length < 8) {
-        throw new Error('New password must be at least 8 characters');
+      if (pinError) throw new Error(pinError);
+      if (!phoneAccount) {
+        throw new Error('PIN changes are for phone accounts');
       }
 
       const supabase = createClient();
@@ -137,14 +138,14 @@ export default function SettingsPage() {
 
       const { error: signInError } = await supabase.auth.signInWithPassword({
         email: user.email,
-        password: form.currentPassword,
+        password: form.currentPin,
       });
-      if (signInError) throw new Error('Current password is incorrect');
+      if (signInError) throw new Error(friendlyAuthError(signInError.message));
 
-      const { error: updateError } = await supabase.auth.updateUser({ password: form.newPassword });
+      const { error: updateError } = await supabase.auth.updateUser({ password: form.newPin });
       if (updateError) throw updateError;
-      setMessage('Password updated successfully.');
-      setForm((prev) => ({ ...prev, currentPassword: '', newPassword: '' }));
+      setMessage('PIN updated successfully.');
+      setForm((prev) => ({ ...prev, currentPin: '', newPin: '' }));
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Could not change password');
     }
@@ -192,7 +193,7 @@ export default function SettingsPage() {
           <Card>
             <CardHeader>
               <CardTitle>Profile</CardTitle>
-              <CardDescription>Manage your personal information and password.</CardDescription>
+              <CardDescription>Manage your name and PIN. Sign-in uses your phone number.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {loading ? <div>Loading…</div> : (
@@ -203,21 +204,22 @@ export default function SettingsPage() {
                       <Input id="name" name="name" value={form.name} onChange={handleChange} />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="email">Email</Label>
-                      <Input id="email" name="email" type="email" value={form.email} onChange={handleChange} />
+                      <Label htmlFor="phone">Phone number</Label>
+                      <Input id="phone" value={phone} readOnly />
+                      <p className="text-sm text-muted-foreground">This phone number is used to sign in. It is not an email address.</p>
                     </div>
                     <Button type="submit">Save Changes</Button>
                   </form>
                   <form onSubmit={handleChangePassword} className="space-y-4 mt-4">
                     <div className="space-y-2">
-                      <Label htmlFor="currentPassword">Current Password</Label>
-                      <Input id="currentPassword" name="currentPassword" type="password" value={form.currentPassword} onChange={handleChange} />
+                      <Label htmlFor="currentPin">Current PIN</Label>
+                      <Input id="currentPin" name="currentPin" type="password" inputMode="numeric" maxLength={6} value={form.currentPin} onChange={handleChange} />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="newPassword">New Password</Label>
-                      <Input id="newPassword" name="newPassword" type="password" value={form.newPassword} onChange={handleChange} />
+                      <Label htmlFor="newPin">New PIN</Label>
+                      <Input id="newPin" name="newPin" type="password" inputMode="numeric" maxLength={6} value={form.newPin} onChange={handleChange} />
                     </div>
-                    <Button type="submit">Change Password</Button>
+                    <Button type="submit">Change PIN</Button>
                   </form>
                 </>
               )}
@@ -229,7 +231,7 @@ export default function SettingsPage() {
             <CardHeader>
               <CardTitle>Team</CardTitle>
               <CardDescription>
-                Active members of this fleet. Email invitations are not available yet.
+                Active members of this fleet. Drivers sign in with the phone number and PIN set when they are added.
               </CardDescription>
             </CardHeader>
             <CardContent>

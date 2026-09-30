@@ -9,11 +9,12 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Loader2, Car, Mail, Lock, Sparkles, TrendingUp, Shield } from '@/components/icons'
+import { Loader2, Car, Phone, Lock, Sparkles, TrendingUp, Shield } from '@/components/icons'
+import { friendlyAuthError, normalizeKenyanPhone, phoneAuthEmail, validatePin } from '@/lib/phone'
 
 export default function LoginPage() {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
+  const [phone, setPhone] = useState('')
+  const [pin, setPin] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const router = useRouter()
@@ -24,19 +25,65 @@ export default function LoginPage() {
     setLoading(true)
     setError(null)
 
+    const normalized = normalizeKenyanPhone(phone)
+    const pinError = validatePin(pin)
+    if (!normalized) {
+      setError('Enter a valid Kenyan phone number, for example 0712345678')
+      setLoading(false)
+      return
+    }
+    if (pinError) {
+      setError(pinError)
+      setLoading(false)
+      return
+    }
+
     try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({
+        email: phoneAuthEmail(normalized),
+        password: pin,
       })
 
-      if (error) {
-        setError(error.message)
+      if (signInError || !data.user) {
+        setError(friendlyAuthError(signInError?.message || 'Phone number or PIN is incorrect'))
+        setLoading(false)
+        return
+      }
+
+      const { data: adminRows } = await supabase
+        .from('admin_users')
+        .select('id')
+        .eq('user_id', data.user.id)
+        .eq('is_active', true)
+        .limit(1)
+
+      if (adminRows && adminRows.length > 0) {
+        await supabase.auth.signOut()
+        setError('System administrators sign in with email.')
+        setLoading(false)
+        return
+      }
+
+      const { data: memberships } = await supabase
+        .from('memberships')
+        .select('id')
+        .eq('user_id', data.user.id)
+        .eq('is_active', true)
+        .limit(1)
+
+      if (!memberships || memberships.length === 0) {
+        if (data.user.user_metadata?.account_type === 'driver') {
+          await supabase.auth.signOut()
+          setError('Your fleet owner still needs to add this phone number to the fleet.')
+          setLoading(false)
+          return
+        }
+        router.push('/onboarding')
       } else {
         router.push('/dashboard')
-        router.refresh()
       }
-    } catch (err) {
+      router.refresh()
+    } catch {
       setError('An unexpected error occurred')
     } finally {
       setLoading(false)
@@ -113,7 +160,7 @@ export default function LoginPage() {
               Welcome back
             </CardTitle>
             <CardDescription className="text-center text-gray-600">
-              Enter your credentials to access your fleet dashboard
+              Fleet owners and drivers sign in with a phone number and PIN
             </CardDescription>
           </CardHeader>
         <CardContent className="pt-0">
@@ -125,18 +172,20 @@ export default function LoginPage() {
             )}
 
             <div className="space-y-3">
-              <Label htmlFor="email" className="text-sm font-semibold text-gray-700">
-                Email Address
+              <Label htmlFor="phone" className="text-sm font-semibold text-gray-700">
+                Phone number
               </Label>
               <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
                 <Input
-                  id="email"
-                  type="email"
-                  placeholder="your.email@example.com"
+                  id="phone"
+                  type="tel"
+                  inputMode="tel"
+                  autoComplete="tel"
+                  placeholder="0712345678"
                   className="pl-10 h-12 border border-gray-300 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
                   required
                   disabled={loading}
                 />
@@ -144,35 +193,33 @@ export default function LoginPage() {
             </div>
 
             <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="password" className="text-sm font-semibold text-gray-700">
-                  Password
-                </Label>
-                <Link 
-                  href="/reset-password" 
-                  className="text-sm text-blue-600 hover:text-blue-700 font-medium transition-colors"
-                >
-                  Forgot password?
-                </Link>
-              </div>
+              <Label htmlFor="pin" className="text-sm font-semibold text-gray-700">
+                PIN
+              </Label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
                 <Input
-                  id="password"
+                  id="pin"
                   type="password"
-                  placeholder="••••••••"
+                  inputMode="numeric"
+                  autoComplete="current-password"
+                  placeholder="4 to 6 digits"
+                  maxLength={6}
                   className="pl-10 h-12 border border-gray-300 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  value={pin}
+                  onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
                   required
                   disabled={loading}
                 />
               </div>
+              <p className="text-xs text-gray-500">
+                A fleet owner resets a forgotten PIN from the driver record. Drivers can also change their own PIN in Settings.
+              </p>
             </div>
 
             <Button 
               type="submit" 
-              className="w-full h-12 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition-all shadow-md hover:shadow-lg" 
+              className="w-full h-12 bg-blue-600 hover:bg-blue-700 text-white font-semibold transition-all shadow-md hover:shadow-lg" 
               disabled={loading}
             >
               {loading ? (
@@ -195,8 +242,11 @@ export default function LoginPage() {
               Sign up now
             </Link>
           </p>
-          <p className="text-xs text-center text-gray-500">
-            By signing in, you agree to our Terms of Service and Privacy Policy
+          <p className="text-sm text-center w-full text-gray-600">
+            System administrator?{' '}
+            <Link href="/admin-login" className="text-blue-600 hover:text-blue-700 font-semibold transition-colors">
+              Sign in with email
+            </Link>
           </p>
         </CardFooter>
         </Card>

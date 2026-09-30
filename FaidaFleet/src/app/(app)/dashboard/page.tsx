@@ -10,6 +10,7 @@ import {
   type CollectionRow,
   type MoneyRow,
 } from '@/lib/fleet-metrics'
+import { accountLabel } from '@/lib/phone'
 import { FleetHome, type RecentCollection } from './dashboard-view'
 
 export const dynamic = 'force-dynamic'
@@ -79,7 +80,7 @@ export default async function DashboardPage() {
 
   return (
     <FleetHome
-      userName={profileRes.data?.full_name || user.email?.split('@')[0] || 'Fleet Owner'}
+      userName={profileRes.data?.full_name || accountLabel(user)}
       fleetName={tenantRes.data?.name || 'Your Fleet'}
       vehicleCount={vehicles.length}
       driverCount={driversRes.data?.length || 0}

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Loader2, Car } from '@/components/icons'
+import { accountPhone } from '@/lib/phone'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 export default function OnboardingPage() {
@@ -19,8 +20,23 @@ export default function OnboardingPage() {
   const [plan, setPlan] = useState<'starter' | 'pro' | 'enterprise'>('starter')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [blockedDriver, setBlockedDriver] = useState(false)
   const router = useRouter()
   const supabase = createClient()
+
+  useEffect(() => {
+    const loadAccount = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      if (user.user_metadata?.account_type === 'driver') {
+        setBlockedDriver(true)
+        return
+      }
+      const savedPhone = accountPhone(user)
+      if (savedPhone) setPhone(savedPhone)
+    }
+    loadAccount()
+  }, [supabase])
 
   const handleCreateFleet = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -92,6 +108,13 @@ export default function OnboardingPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {blockedDriver ? (
+            <Alert>
+              <AlertDescription>
+                This phone number is a driver account. Ask the fleet owner to add you, then sign in with your PIN.
+              </AlertDescription>
+            </Alert>
+          ) : null}
           <form onSubmit={handleCreateFleet} className="space-y-4">
             {error && (
               <Alert variant="destructive">
@@ -130,7 +153,7 @@ export default function OnboardingPage() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="phone">Phone Number (Optional)</Label>
+                <Label htmlFor="phone">Business phone</Label>
                 <Input
                   id="phone"
                   type="tel"
@@ -142,7 +165,7 @@ export default function OnboardingPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="email">Business Email (Optional)</Label>
+                <Label htmlFor="email">Business contact email (optional)</Label>
                 <Input
                   id="email"
                   type="email"
@@ -196,7 +219,7 @@ export default function OnboardingPage() {
             <Button 
               type="submit" 
               className="w-full" 
-              disabled={loading}
+              disabled={loading || blockedDriver}
               size="lg"
             >
               {loading ? (
@@ -215,7 +238,7 @@ export default function OnboardingPage() {
 
           {error && error.includes('002_fix_onboarding.sql') && (
             <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-              <h4 className="font-semibold text-yellow-900 mb-2">📋 Quick Fix Instructions:</h4>
+              <h4 className="font-semibold text-yellow-900 mb-2">Quick fix</h4>
               <ol className="text-sm text-yellow-800 space-y-1 list-decimal list-inside">
                 <li>Go to <a href="https://supabase.com/dashboard" target="_blank" rel="noopener noreferrer" className="underline font-medium">Supabase Dashboard</a></li>
                 <li>Click <strong>SQL Editor</strong> → <strong>New Query</strong></li>
