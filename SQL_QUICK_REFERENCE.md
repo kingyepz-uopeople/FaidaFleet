@@ -1,14 +1,7 @@
 # FaidaFleet SQL Quick Reference
 
-<<<<<<< HEAD:SQL_QUICK_REFERENCE.md
-## 📄 Complete Schema File
-**Location:** `COMPLETE_SCHEMA.sql`
-
-This single SQL file contains the entire database schema for all 5 fleet owner features.
-=======
 ## Schema
 Apply `supabase/migrations/001_initial_schema.sql` through `007_schema_fixes.sql` in order. `COMPLETE_SCHEMA.sql` is not a schema and refuses to run.
->>>>>>> origin/main:FaidaFleet/SQL_QUICK_REFERENCE.md
 
 ---
 
