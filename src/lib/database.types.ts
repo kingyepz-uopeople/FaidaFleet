@@ -341,7 +341,7 @@ export interface Database {
           tenant_id: string
           vehicle_id: string | null
           date: string
-          category: 'fuel' | 'maintenance' | 'insurance' | 'license' | 'parking' | 'other'
+          category: 'fuel' | 'maintenance' | 'insurance' | 'license' | 'parking' | 'fine' | 'other'
           amount: number
           description: string | null
           receipt_url: string | null
@@ -354,7 +354,7 @@ export interface Database {
           tenant_id: string
           vehicle_id?: string | null
           date?: string
-          category: 'fuel' | 'maintenance' | 'insurance' | 'license' | 'parking' | 'other'
+          category: 'fuel' | 'maintenance' | 'insurance' | 'license' | 'parking' | 'fine' | 'other'
           amount: number
           description?: string | null
           receipt_url?: string | null
@@ -367,7 +367,7 @@ export interface Database {
           tenant_id?: string
           vehicle_id?: string | null
           date?: string
-          category?: 'fuel' | 'maintenance' | 'insurance' | 'license' | 'parking' | 'other'
+          category?: 'fuel' | 'maintenance' | 'insurance' | 'license' | 'parking' | 'fine' | 'other'
           amount?: number
           description?: string | null
           receipt_url?: string | null
@@ -527,5 +527,5 @@ export type UserRole = 'owner' | 'admin' | 'accountant' | 'driver'
 export type TenantPlan = 'starter' | 'pro' | 'enterprise'
 export type PaymentMethod = 'cash' | 'mpesa' | 'pochi'
 export type Shift = 'morning' | 'afternoon' | 'evening' | 'night'
-export type ExpenseCategory = 'fuel' | 'maintenance' | 'insurance' | 'license' | 'parking' | 'other'
+export type ExpenseCategory = 'fuel' | 'maintenance' | 'insurance' | 'license' | 'parking' | 'fine' | 'other'
 export type MaintenanceType = 'service' | 'repair' | 'inspection' | 'other'

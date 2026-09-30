@@ -68,7 +68,7 @@ FaidaFleet is a comprehensive fleet management web application designed for mata
 
 4. **Set up the database**
    - Open the new project's SQL Editor
-   - Run every file in `supabase/migrations/` in order, from `001_initial_schema.sql` through `006_phone_pin_auth.sql`
+   - Run every file in `supabase/migrations/` in order, from `001_initial_schema.sql` through `007_schema_fixes.sql`
    - See `supabase/DATABASE_SETUP.md` for the same steps
 
 5. **Turn off email confirmation for phone accounts**
@@ -135,11 +135,12 @@ FaidaFleet/
 │   │   ├── 003_admin_tables.sql
 │   │   ├── 004_add_trips_table.sql
 │   │   ├── 005_add_vehicle_compliance_columns.sql
-│   │   └── 006_phone_pin_auth.sql
+│   │   ├── 006_phone_pin_auth.sql
+│   │   └── 007_schema_fixes.sql
 │   └── DATABASE_SETUP.md      # Setup guide
 ├── docs/
 │   └── blueprint.md           # Project blueprint
-├── COMPLETE_SCHEMA.sql        # Full database schema
+├── COMPLETE_SCHEMA.sql        # Refuses to run; use supabase/migrations
 ├── DATABASE_SCHEMA.md         # Schema documentation
 ├── SQL_QUICK_REFERENCE.md     # SQL query examples
 ├── FEATURE_TABLES.txt         # Feature table reference
