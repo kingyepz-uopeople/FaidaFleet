@@ -20,6 +20,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { AppHeader } from '@/components/app-header';
 import { PlaceHolderImages } from '@/lib/placeholder-images';
+import { accountInitials, accountLabel } from '@/lib/phone';
 import { createClient } from '@/lib/supabase/client';
 import type { User } from '@supabase/supabase-js';
 import { cn } from '@/lib/utils';
@@ -89,19 +90,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     localStorage.setItem('faidafleet-theme', dark ? 'dark' : 'light');
   };
 
-  const getUserInitials = () => {
-    if (!user) return 'U';
-    const name = user.user_metadata?.full_name || user.email || '';
-    const parts = name.split(' ');
-    if (parts.length >= 2) {
-      return (parts[0][0] + parts[1][0]).toUpperCase();
-    }
-    return name.slice(0, 2).toUpperCase();
-  };
+  const getUserInitials = () => accountInitials(user);
 
-  const getUserDisplayName = () => {
-    return user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User';
-  };
+  const getUserDisplayName = () => accountLabel(user);
 
   return (
     <div className="flex h-screen overflow-hidden bg-gray-100 dark:bg-gray-900">

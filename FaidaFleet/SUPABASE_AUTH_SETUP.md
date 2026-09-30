@@ -1,194 +1,67 @@
-# Supabase Authentication Setup
+# Supabase authentication setup
 
-This project now includes complete authentication using Supabase.
+FaidaFleet uses two sign-in methods on a new Supabase project.
 
-## Features
+| Who | Sign-in | Page |
+| --- | --- | --- |
+| Fleet owner | Phone number and PIN | `/login` and `/signup` |
+| Driver | Phone number and PIN issued by the fleet | `/login` |
+| System administrator | Email and password | `/admin-login` |
 
-- ✅ Email/Password authentication
-- ✅ Google OAuth authentication
-- ✅ Password reset functionality
-- ✅ Protected routes with middleware
-- ✅ User session management
-- ✅ Logout functionality
+Phone accounts are stored in Supabase Auth with an internal address, `2547XXXXXXXX@phone.faidafleet.local`. The PIN is the password. The real phone number is saved on the profile. This avoids SMS so a new project can run without a phone provider.
 
-## Setup Instructions
+## 1. Environment
 
-### 1. Install Dependencies
-
-The required packages have been installed:
-- `@supabase/supabase-js`
-- `@supabase/ssr`
-
-### 2. Configure Supabase
-
-1. Create a Supabase project at [https://supabase.com](https://supabase.com)
-2. Go to Project Settings > API
-3. Copy your project URL and anon public key
-4. Update `.env.local` with your credentials:
+Copy `.env.example` to `.env.local` in `FaidaFleet` and fill in the new project:
 
 ```env
 NEXT_PUBLIC_SUPABASE_URL=your-project-url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 ```
 
-### 3. Configure Email Templates (Optional)
+Keep the service role key on the server. It is used when a fleet owner adds a driver, so the owner's session stays signed in and the driver account is confirmed immediately.
 
-In your Supabase dashboard:
-1. Go to Authentication > Email Templates
-2. Customize the templates for:
-   - Confirmation email
-   - Password reset email
-   - Magic link email
+## 2. Database
 
-### 4. Configure OAuth Providers (Optional)
+Run `supabase/migrations/001_initial_schema.sql` through `006_phone_pin_auth.sql` in order. Migration 006 stores the phone on new profiles, locks `admin_users` to system administrators, and adds `provision_driver_login`.
 
-To enable Google sign-in:
+## 3. Auth settings
 
-1. Go to Authentication > Providers in Supabase
-2. Enable Google provider
-3. Add your OAuth credentials from Google Cloud Console
-4. Add authorized redirect URLs:
-   - `http://localhost:9002/auth/callback` (development)
-   - `https://your-domain.com/auth/callback` (production)
+In Authentication, then Providers, then Email:
 
-### 5. Configure Site URL and Redirect URLs
+- Turn off Confirm email. Phone accounts cannot receive mail.
+- Set the minimum password length to 4.
 
-In Supabase Project Settings > Authentication:
+Leave Google and other OAuth providers disabled.
 
-1. Set **Site URL** to:
-   - Development: `http://localhost:9002`
-   - Production: `https://your-domain.com`
+## 4. First system administrator
 
-2. Add **Redirect URLs**:
-   - `http://localhost:9002/auth/callback`
-   - `https://your-domain.com/auth/callback`
+1. Authentication, then Users, then Add user.
+2. Use a real email and a password.
+3. Copy the user id.
+4. Run:
 
-## Available Pages
-
-- `/login` - Sign in page
-- `/signup` - Sign up page
-- `/reset-password` - Password reset request
-- `/auth/update-password` - Set new password (from email link)
-- `/auth/callback` - OAuth callback handler
-- `/auth/auth-code-error` - Error page for failed authentication
-
-## How It Works
-
-### Authentication Flow
-
-1. **Sign Up**:
-   - User enters email and password
-   - Supabase sends confirmation email
-   - User clicks link to verify account
-   - User can now log in
-
-2. **Sign In**:
-   - User enters credentials
-   - On success, redirected to `/dashboard`
-   - Session stored in cookies
-
-3. **Password Reset**:
-   - User requests reset on `/reset-password`
-   - Email sent with reset link
-   - Link goes to `/auth/update-password`
-   - User sets new password
-
-4. **Google OAuth**:
-   - User clicks "Continue with Google"
-   - Redirected to Google for authentication
-   - Returns to `/auth/callback`
-   - Redirected to `/dashboard`
-
-### Middleware Protection
-
-The middleware in `src/middleware.ts` protects all routes except:
-- `/login`
-- `/signup`
-- `/reset-password`
-- `/auth/*`
-- Static files
-
-Unauthenticated users are automatically redirected to `/login`.
-
-### User Data Access
-
-**Client Component:**
-```tsx
-import { createClient } from '@/lib/supabase/client'
-
-const supabase = createClient()
-const { data: { user } } = await supabase.auth.getUser()
+```sql
+insert into public.admin_users (user_id, email, full_name, role)
+values ('paste-user-id', 'admin@example.com', 'System Admin', 'super_admin');
 ```
 
-**Server Component/Action:**
-```tsx
-import { createClient } from '@/lib/supabase/server'
+That insert is done in the SQL Editor, which bypasses row level security. Later administrator rows are managed from `/admin/users`.
 
-const supabase = await createClient()
-const { data: { user } } = await supabase.auth.getUser()
-```
+Sign in at `http://localhost:5000/admin-login`. A fleet phone account is rejected on that page. An administrator email is rejected on the fleet phone form.
 
-### Logout
+## 5. Fleet owners and drivers
 
-Call the logout action from anywhere:
-```tsx
-import { logout } from '@/app/auth/actions'
+- A fleet owner creates an account at `/signup` with name, phone, and PIN, then creates the fleet during onboarding.
+- A fleet owner or fleet admin adds a driver on the Drivers page with a phone number and PIN. The driver uses `/login`.
+- A forgotten fleet PIN is changed in Settings by the person who is signed in. There is no email reset for phone accounts.
+- `/reset-password` is only for system administrator email accounts.
 
-// In a form or button
-<form action={logout}>
-  <button type="submit">Logout</button>
-</form>
+## Pages
 
-// Or programmatically
-await logout()
-```
-
-## Development
-
-Run the development server:
-```bash
-npm run dev
-```
-
-The app will be available at `http://localhost:9002`
-
-## Testing Authentication
-
-1. Start your development server
-2. Navigate to `http://localhost:9002`
-3. You'll be redirected to `/login`
-4. Click "Sign up" to create an account
-5. Check your email for verification (if email confirmation is enabled)
-6. Log in with your credentials
-7. You'll be redirected to `/dashboard`
-
-## Troubleshooting
-
-### Users not receiving emails
-- Check your Supabase email settings
-- Verify SMTP configuration in production
-- Check spam folder
-
-### OAuth not working
-- Verify redirect URLs are correctly configured
-- Check OAuth credentials are valid
-- Ensure Site URL is set correctly
-
-### Session expires too quickly
-- Adjust session settings in Supabase dashboard
-- Check cookie configuration in middleware
-
-## Security Notes
-
-- Never commit `.env.local` to version control
-- The `NEXT_PUBLIC_SUPABASE_ANON_KEY` is safe to expose (it's public)
-- Use Row Level Security (RLS) in Supabase for data access control
-- The middleware ensures protected routes are only accessible when authenticated
-
-## Next Steps
-
-1. Set up Row Level Security policies in Supabase
-2. Create user profile tables
-3. Add role-based access control
-4. Implement email verification enforcement
-5. Add multi-factor authentication (MFA)
+- `/login` - phone and PIN
+- `/signup` - fleet owner phone and PIN
+- `/admin-login` - system administrator email and password
+- `/reset-password` - system administrator password reset
+- `/onboarding` - first fleet setup after owner sign-up

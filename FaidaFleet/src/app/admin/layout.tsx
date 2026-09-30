@@ -22,6 +22,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { createClient } from '@/lib/supabase/client';
 import type { User } from '@supabase/supabase-js';
+import { accountInitials, accountLabel } from '@/lib/phone';
 import { cn } from '@/lib/utils';
 import {
   Tooltip,
@@ -60,42 +61,39 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       setUser(user);
 
       if (user) {
-        const { data: memberships } = await supabase
-          .from('memberships')
-          .select('role')
+        const { data: adminRows } = await supabase
+          .from('admin_users')
+          .select('id')
           .eq('user_id', user.id)
-          .eq('is_active', true);
+          .eq('is_active', true)
+          .limit(1);
 
-        if (memberships && memberships.length > 0) {
+        if (adminRows && adminRows.length > 0) {
           setIsAdmin(true);
         } else {
-          router.push('/dashboard');
+          const { data: memberships } = await supabase
+            .from('memberships')
+            .select('id')
+            .eq('user_id', user.id)
+            .eq('is_active', true)
+            .limit(1);
+          router.push(memberships && memberships.length > 0 ? '/dashboard' : '/admin-login');
         }
       } else {
-        router.push('/login');
+        router.push('/admin-login');
       }
     };
 
     checkAdmin();
   }, [supabase, router]);
 
-  const getUserInitials = () => {
-    if (!user) return 'A';
-    const name = user.user_metadata?.full_name || user.email || '';
-    const parts = name.split(' ');
-    if (parts.length >= 2) {
-      return (parts[0][0] + parts[1][0]).toUpperCase();
-    }
-    return name.slice(0, 2).toUpperCase();
-  };
+  const getUserInitials = () => accountInitials(user);
 
-  const getUserDisplayName = () => {
-    return user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Admin';
-  };
+  const getUserDisplayName = () => accountLabel(user) || 'Admin';
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    router.push('/login');
+    router.push('/admin-login');
   };
 
   if (!isAdmin) {

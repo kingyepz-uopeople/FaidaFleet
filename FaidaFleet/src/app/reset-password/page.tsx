@@ -44,9 +44,9 @@ export default function ResetPasswordPage() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1">
-          <CardTitle className="text-2xl font-bold text-center">Reset Password</CardTitle>
+          <CardTitle className="text-2xl font-bold text-center">Reset admin password</CardTitle>
           <CardDescription className="text-center">
-            Enter your email address and we'll send you a link to reset your password
+            System administrators can reset an email password here. Fleet owners and drivers change their PIN in Settings.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -96,11 +96,11 @@ export default function ResetPasswordPage() {
         </CardContent>
         <CardFooter className="flex flex-col space-y-2">
           <Link 
-            href="/login" 
+            href="/admin-login" 
             className="text-sm text-blue-600 hover:underline flex items-center gap-1"
           >
             <ArrowLeft className="h-4 w-4" />
-            Back to Login
+            Back to admin sign-in
           </Link>
         </CardFooter>
       </Card>

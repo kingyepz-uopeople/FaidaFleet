@@ -11,11 +11,10 @@ This guide explains how to set up the complete database schema for FaidaFleet in
 
 ### Method 1: Using Supabase Dashboard (Easiest)
 
-1. Go to your Supabase Dashboard
-2. Navigate to **SQL Editor**
-3. Copy the entire content from `supabase/migrations/001_initial_schema.sql`
-4. Paste and click **Run**
-5. Wait for completion (should take 10-30 seconds)
+1. Create a new Supabase project
+2. Open **SQL Editor**
+3. Run each file in `supabase/migrations/` in numeric order, from `001_initial_schema.sql` through `006_phone_pin_auth.sql`
+4. Wait for each script to finish before running the next one
 
 ### Method 2: Using Supabase CLI
 
@@ -27,7 +26,7 @@ npm install -g supabase
 npx supabase login
 
 # Link your project
-npx supabase link --project-ref fohshifanqdhzbzhddkq
+npx supabase link --project-ref your-new-project-ref
 
 # Push the migration
 npx supabase db push

@@ -14,6 +14,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import { LogOut, Settings, User as UserIcon } from '@/components/icons';
 import { PlaceHolderImages } from '@/lib/placeholder-images';
+import { accountContact, accountInitials, accountLabel } from '@/lib/phone';
 import { createClient } from '@/lib/supabase/client';
 import type { User } from '@supabase/supabase-js';
 
@@ -52,19 +53,9 @@ export function AppHeader() {
     router.refresh();
   };
 
-  const getUserInitials = () => {
-    if (!user) return 'U';
-    const name = user.user_metadata?.full_name || user.email || '';
-    const parts = name.split(' ');
-    if (parts.length >= 2) {
-      return (parts[0][0] + parts[1][0]).toUpperCase();
-    }
-    return name.slice(0, 2).toUpperCase();
-  };
+  const getUserInitials = () => accountInitials(user);
 
-  const getUserDisplayName = () => {
-    return user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User';
-  };
+  const getUserDisplayName = () => accountLabel(user);
 
   return (
     <header className="sticky top-0 z-10 flex h-16 items-center gap-4 border-b bg-white/80 dark:bg-gray-900/80 px-6 backdrop-blur-sm">
@@ -86,7 +77,7 @@ export function AppHeader() {
               <div className="flex flex-col space-y-1">
                 <p className="text-sm font-medium leading-none">{getUserDisplayName()}</p>
                 <p className="text-xs leading-none text-muted-foreground">
-                  {user?.email || 'No email'}
+                  {accountContact(user) || 'Phone sign-in'}
                 </p>
               </div>
             </DropdownMenuLabel>

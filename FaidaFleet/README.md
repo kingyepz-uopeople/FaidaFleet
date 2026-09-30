@@ -1,15 +1,15 @@
-# 🚦 FaidaFleet - Fleet Management System
+# FaidaFleet - Fleet Management System
 
 FaidaFleet is a comprehensive fleet management web application designed for matatu and logistics operators in Kenya. It provides digital tracking of vehicles, drivers, daily collections (cash & M-Pesa), expenses, and profitability dashboards.
 
-## 🎯 Core Features
+## Core Features
 
 ### Fleet Owner Features
-- **🚗 Vehicles Management** - Register vehicles, track insurance/MOT expiry, compliance monitoring
-- **💰 Financial Analytics** - Revenue vs expenses dashboard, P&L statements, profit margin tracking
-- **🛣️ Trip & Route Tracking** - Record individual trips, calculate per-trip profitability
-- **🔧 Maintenance Scheduler** - Schedule vehicle maintenance, track service history and costs
-- **👥 Driver Performance Analytics** - Earnings leaderboard, trip count, profit per driver
+- **Vehicles Management** - Register vehicles, track insurance/MOT expiry, compliance monitoring
+- **Financial Analytics** - Revenue vs expenses dashboard, P&L statements, profit margin tracking
+- **Trip & Route Tracking** - Record individual trips, calculate per-trip profitability
+- **Maintenance Scheduler** - Schedule vehicle maintenance, track service history and costs
+- **Driver Performance Analytics** - Earnings leaderboard, trip count, profit per driver
 
 ### Platform Features
 - **Multi-Tenant Architecture** - Support multiple fleet owners with isolated data
@@ -18,20 +18,20 @@ FaidaFleet is a comprehensive fleet management web application designed for mata
 - **Financial Tracking** - Daily collections, expenses, and profitability
 - **M-Pesa Integration** - Automatic reconciliation with Daraja API
 - **Real-time Dashboard** - KPIs, analytics, and performance metrics
-- **Secure Authentication** - Supabase Auth with email/password and OAuth
+- **Secure Authentication** - Fleet owners and drivers sign in with a phone number and PIN. System administrators sign in with email.
 
-## 🏗️ Tech Stack
+## Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
-| **Frontend** | Next.js 15, React 18, TypeScript |
+| **Frontend** | Next.js 16, React 18, TypeScript |
 | **UI Components** | Tailwind CSS, shadcn/ui |
 | **Backend & Database** | Supabase (PostgreSQL + RLS + Auth) |
-| **Authentication** | Supabase Auth (Email, Google OAuth) |
+| **Authentication** | Phone and PIN for fleets; email and password for system admins |
 | **Payments** | Safaricom Daraja API (M-Pesa) |
 | **Hosting** | Vercel |
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 
@@ -56,27 +56,48 @@ FaidaFleet is a comprehensive fleet management web application designed for mata
    ```bash
    cp .env.example .env.local
    ```
-   
-   Update `.env.local` with your Supabase credentials:
+
+   Create a new Supabase project and put its API values in `.env.local`:
    ```env
    NEXT_PUBLIC_SUPABASE_URL=your-project-url
    NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+   SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
    ```
 
-4. **Set up the database**
-   - Go to your Supabase Dashboard → SQL Editor
-   - Run the migration from `supabase/migrations/001_initial_schema.sql`
-   - See `supabase/DATABASE_SETUP.md` for detailed instructions
+   The service role key stays on the server. It lets a fleet owner create a driver login without replacing their own session.
 
-5. **Run the development server**
+4. **Set up the database**
+   - Open the new project's SQL Editor
+   - Run every file in `supabase/migrations/` in order, from `001_initial_schema.sql` through `006_phone_pin_auth.sql`
+   - See `supabase/DATABASE_SETUP.md` for the same steps
+
+5. **Turn off email confirmation for phone accounts**
+   - Authentication, then Providers, then Email
+   - Turn off Confirm email
+   - Set the minimum password length to 4 so a 4-digit PIN is accepted
+   - Fleet accounts use an internal address such as `2547XXXXXXXX@phone.faidafleet.local`. That address cannot receive mail.
+
+6. **Create the first system administrator**
+   - In Authentication, add a user with a real email and password
+   - Copy that user's id
+   - Run this in the SQL Editor, using that id and email:
+
+   ```sql
+   insert into public.admin_users (user_id, email, full_name, role)
+   values ('paste-user-id', 'admin@example.com', 'System Admin', 'super_admin');
+   ```
+
+   System administrators sign in at `/admin-login`. Fleet owners sign up at `/signup` with a phone number and PIN. Drivers receive a phone number and PIN when a fleet owner adds them, then sign in at `/login`.
+
+7. **Run the development server**
    ```bash
    npm run dev
    ```
 
-6. **Open your browser**
-   Navigate to `http://localhost:9002`
+8. **Open your browser**
+   Navigate to `http://localhost:5000`
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 FaidaFleet/
@@ -94,9 +115,10 @@ FaidaFleet/
 │   │   │   ├── driver-analytics/ # Driver performance leaderboard
 │   │   │   └── settings/      # App settings
 │   │   ├── auth/              # Auth callbacks & errors
-│   │   ├── login/             # Login page
-│   │   ├── signup/            # Sign-up page
-│   │   └── reset-password/    # Password reset
+│   │   ├── login/             # Fleet phone and PIN sign-in
+│   │   ├── signup/            # Fleet owner sign-up
+│   │   ├── admin-login/       # System admin email sign-in
+│   │   └── reset-password/    # System admin password reset
 │   ├── components/            # React components
 │   │   ├── ui/                # shadcn/ui components
 │   │   ├── app-header.tsx     # App header with auth
@@ -112,7 +134,8 @@ FaidaFleet/
 │   │   ├── 002_fix_onboarding.sql
 │   │   ├── 003_admin_tables.sql
 │   │   ├── 004_add_trips_table.sql
-│   │   └── 005_add_vehicle_compliance_columns.sql
+│   │   ├── 005_add_vehicle_compliance_columns.sql
+│   │   └── 006_phone_pin_auth.sql
 │   └── DATABASE_SETUP.md      # Setup guide
 ├── docs/
 │   └── blueprint.md           # Project blueprint
@@ -123,11 +146,11 @@ FaidaFleet/
 └── SUPABASE_AUTH_SETUP.md     # Auth setup guide
 ```
 
-## 👥 Multi-Tenancy & Roles
+## Multi-Tenancy & Roles
 
 ### How It Works
 
-- Each **tenant** represents a fleet company
+- Each**tenant**represents a fleet company
 - Users can belong to multiple tenants
 - All data is isolated per tenant using Row Level Security (RLS)
 - Roles determine what actions users can perform
@@ -141,7 +164,7 @@ FaidaFleet/
 | **Accountant** | Record/reconcile collections, manage expenses, view reports |
 | **Driver** | Add daily collections, view own assignments |
 
-## 🗄️ Database Schema
+## Database Schema
 
 ### Core Tables (10 Tables)
 
@@ -159,11 +182,11 @@ FaidaFleet/
 | **memberships** | User-tenant relationships | Multi-tenancy |
 
 ### Key Columns
-- **vehicles**: registration_number, insurance_expiry, mot_expiry, vehicle_type (compliance tracking)
-- **trips**: trip_date, vehicle_id, driver_id, earnings, expenses, distance_km
-- **maintenance_logs**: vehicle_id, type, cost, next_service_date
-- **collections**: date, driver_id, amount, payment_method, reconciled
-- **expenses**: category, amount, description, vehicle_id
+-**vehicles**: registration_number, insurance_expiry, mot_expiry, vehicle_type (compliance tracking)
+-**trips**: trip_date, vehicle_id, driver_id, earnings, expenses, distance_km
+-**maintenance_logs**: vehicle_id, type, cost, next_service_date
+-**collections**: date, driver_id, amount, payment_method, reconciled
+-**expenses**: category, amount, description, vehicle_id
 
 ### Materialized View
 - **kpi_daily** - Pre-calculated daily metrics (collections, expenses, profit, reconciliation counts)
@@ -176,7 +199,7 @@ FaidaFleet/
 - All queries scoped by tenant_id
 - Triggers for automatic audit trail (created_at, updated_at)
 
-## 💳 M-Pesa Integration
+## M-Pesa Integration
 
 ### Features
 
@@ -191,7 +214,7 @@ Edge Functions for:
 - `/api/mpesa-webhook` - Handle Daraja callbacks
 - `/api/reconcile-payments` - Match transactions to collections
 
-## 📊 Dashboard & Analytics
+## Dashboard & Analytics
 
 ### KPIs Available
 
@@ -211,7 +234,7 @@ WHERE tenant_id = 'your-tenant-id'
 ORDER BY date DESC;
 ```
 
-## 💰 Pricing Plans
+## Pricing Plans
 
 | Plan | Target | Price (KES/month) |
 |------|--------|-------------------|
@@ -219,37 +242,38 @@ ORDER BY date DESC;
 | **Pro** | 4-10 vehicles | 1000-1500 |
 | **Enterprise** | 10+ vehicles | Custom |
 
-## 🔐 Security
+## Security
 
-- Supabase Auth with email/password and OAuth
-- Row Level Security (RLS) on all database tables
+- Fleet owners and drivers sign in with a Kenyan phone number and a 4 to 6 digit PIN
+- System administrators sign in with email and password, and only an active `admin_users` row can open `/admin`
+- Row Level Security (RLS) on database tables, including `admin_users`
 - Protected routes via middleware
 - Secure session management
 - HTTPS only in production
 
-## 📱 PWA Ready
+## PWA Ready
 
 FaidaFleet is designed to work offline and can be installed as a Progressive Web App for mobile conductors and managers.
 
-## 🛠️ Development
+## Development
 
 ### Available Scripts
 
 ```bash
-npm run dev          # Start development server (port 9002)
+npm run dev          # Start development server (port 5000)
 npm run build        # Build for production
 npm run start        # Start production server
 npm run lint         # Run ESLint
 npm run typecheck    # TypeScript type checking
 ```
 
-## 📚 Documentation
+## Documentation
 
 - [Database Setup Guide](supabase/DATABASE_SETUP.md)
 - [Authentication Setup](SUPABASE_AUTH_SETUP.md)
 - [Project Blueprint](docs/blueprint.md)
 
-## 🚀 Deployment
+## Deployment
 
 ### Vercel (Recommended)
 
@@ -263,11 +287,12 @@ npm run typecheck    # TypeScript type checking
 ```env
 NEXT_PUBLIC_SUPABASE_URL=your-production-url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-production-key
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 ```
 
-## 🗺️ Roadmap
+## Roadmap
 
-### Phase 1 (MVP) ✅ COMPLETE
+### Phase 1 (MVP) complete
 - [x] Authentication system
 - [x] Multi-tenant database
 - [x] Basic UI components
@@ -299,25 +324,25 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-production-key
 - [ ] Route optimization
 - [ ] Mobile app (React Native)
 
-## 🤝 Contributing
+## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+This software is proprietary. Do not copy, publish, or redistribute it. Ask FaidaFleet for written permission before contributing changes.
 
-## 📄 License
+## License
 
-This project is private and proprietary.
+FaidaFleet is not free software and is not open source. See [LICENSE](../LICENSE). All rights reserved.
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - Built with [Next.js](https://nextjs.org/)
 - UI components from [shadcn/ui](https://ui.shadcn.com/)
 - Backend powered by [Supabase](https://supabase.com/)
 - Designed for Kenyan matatu operators
 
-## 📞 Support
+## Support
 
 For questions or support, please open an issue on GitHub.
 
 ---
 
-Made with ❤️ for Kenya's transport sector
+Built for Kenya's transport sector.
