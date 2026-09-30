@@ -68,7 +68,7 @@ export default function OnboardingPage() {
         if (error.code === '42883') {
           setError('Database function missing. Please run migration 002_fix_onboarding.sql in Supabase. See instructions below.')
         } else if (error.code === '42P01') {
-          setError('Database not set up. Please run migration 001_initial_schema.sql in Supabase SQL Editor first. See QUICK_START.md')
+          setError('Database not set up. Please run migration 001_initial_schema.sql in Supabase SQL Editor first. See docs/QUICK_START.md')
         } else if (error.message?.includes('Not authenticated')) {
           setError('You must be logged in. Please refresh the page and try again.')
         } else {

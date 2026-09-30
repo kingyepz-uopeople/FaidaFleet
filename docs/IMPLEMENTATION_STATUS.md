@@ -47,7 +47,7 @@
 ### 6. Documentation ✅
 - **README.md** - Complete project overview
 - **DATABASE_SETUP.md** - Step-by-step database setup
-- **SUPABASE_AUTH_SETUP.md** - Authentication guide
+- **docs/SUPABASE_AUTH_SETUP.md** - Authentication guide
 - **SQL migration file** - Ready to run in Supabase
 
 ## 📋 Next Steps

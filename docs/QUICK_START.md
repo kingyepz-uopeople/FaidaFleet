@@ -124,10 +124,10 @@ After running the migration successfully:
 
 ## 🆘 Need More Help?
 
-- **Database Schema Details**: See `DATABASE_SETUP.md`
-- **Authentication Setup**: See `SUPABASE_AUTH_SETUP.md`  
+- **Database Schema Details**: See `../supabase/DATABASE_SETUP.md`
+- **Authentication Setup**: See `SUPABASE_AUTH_SETUP.md`
 - **Signup Walkthrough**: See `FLEET_OWNER_SIGNUP_GUIDE.md`
-- **Full Documentation**: See `README.md`
+- **Full Documentation**: See `../README.md`
 
 ---
 

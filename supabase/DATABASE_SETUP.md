@@ -13,7 +13,7 @@ This guide explains how to set up the complete database schema for FaidaFleet in
 
 1. Create a new Supabase project
 2. Open **SQL Editor**
-3. Run each file in `supabase/migrations/` in numeric order, from `001_initial_schema.sql` through `007_schema_fixes.sql`. Do not run `COMPLETE_SCHEMA.sql`.
+3. Run each file in `supabase/migrations/` in numeric order, from `001_initial_schema.sql` through `007_schema_fixes.sql`. Do not run `supabase/COMPLETE_SCHEMA.sql`.
 4. Wait for each script to finish before running the next one
 
 ### Method 2: Using Supabase CLI
