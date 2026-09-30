@@ -21,10 +21,34 @@ create table public.trips (
 );
 
 -- Add indexes for common queries
-create index trips_tenant_id on public.trips(tenant_id);
-create index trips_vehicle_id on public.trips(vehicle_id);
-create index trips_driver_id on public.trips(driver_id);
-create index trips_trip_date on public.trips(trip_date);
+create index if not exists trips_tenant_id on public.trips(tenant_id);
+create index if not exists trips_vehicle_id on public.trips(vehicle_id);
+create index if not exists trips_driver_id on public.trips(driver_id);
+create index if not exists trips_trip_date on public.trips(trip_date);
+
+alter table public.trips enable row level security;
+
+drop policy if exists "Members can view trips" on public.trips;
+create policy "Members can view trips"
+  on public.trips for select
+  using (tenant_id in (select public.current_tenant_ids()));
+
+drop policy if exists "Members can record trips" on public.trips;
+create policy "Members can record trips"
+  on public.trips for insert
+  with check (tenant_id in (select public.current_tenant_ids()));
+
+drop policy if exists "Owners/Admins can update trips" on public.trips;
+create policy "Owners/Admins can update trips"
+  on public.trips for update
+  using (public.has_any_tenant_role(tenant_id, array['owner', 'admin']));
+
+drop policy if exists "Owners/Admins can delete trips" on public.trips;
+create policy "Owners/Admins can delete trips"
+  on public.trips for delete
+  using (public.has_any_tenant_role(tenant_id, array['owner', 'admin']));
+
+grant select, insert, update, delete on public.trips to authenticated;
 
 -- Add updated_at trigger for trips
 create trigger set_updated_at before update on public.trips
@@ -36,4 +60,4 @@ alter table public.vehicles add column if not exists mot_expiry date;
 alter table public.vehicles add column if not exists vehicle_type text check (vehicle_type in ('psv', 'cargo', 'pickup', 'other'));
 
 -- Create index for vehicle compliance tracking
-create index vehicles_tenant_active on public.vehicles(tenant_id, is_active);
+create index if not exists vehicles_tenant_active on public.vehicles(tenant_id, is_active);

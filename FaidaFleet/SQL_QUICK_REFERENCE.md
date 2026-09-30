@@ -1,9 +1,7 @@
 # FaidaFleet SQL Quick Reference
 
-## 📄 Complete Schema File
-**Location:** `FaidaFleet/COMPLETE_SCHEMA.sql`
-
-This single SQL file contains the entire database schema for all 5 fleet owner features.
+## Schema
+Apply `supabase/migrations/001_initial_schema.sql` through `007_schema_fixes.sql` in order. `COMPLETE_SCHEMA.sql` is not a schema and refuses to run.
 
 ---
 
@@ -208,6 +206,8 @@ ORDER BY d.full_name;
 1. `001_initial_schema.sql` - Core tables
 2. `002_fix_onboarding.sql` - Onboarding fixes
 3. `003_admin_tables.sql` - Admin features
-4. `004_add_trips_table.sql` - Trips + vehicle compliance
-5. `COMPLETE_SCHEMA.sql` - Full schema (consolidated)
+4. `004_add_trips_table.sql` - Trips and vehicle compliance
+5. `005_add_vehicle_compliance_columns.sql` - Vehicle compliance columns
+6. `006_phone_pin_auth.sql` - Phone and PIN accounts
+7. `007_schema_fixes.sql` - Fines, daily totals, and admin access
 

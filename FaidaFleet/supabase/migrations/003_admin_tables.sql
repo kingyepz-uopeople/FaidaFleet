@@ -101,6 +101,30 @@ create index idx_system_settings_key on public.system_settings(key);
 create index idx_audit_logs_user on public.audit_logs(user_id);
 create index idx_audit_logs_entity on public.audit_logs(entity_type, entity_id);
 
+-- Lock these tables as soon as they exist. Policies arrive in 006 and 007.
+alter table public.plans enable row level security;
+alter table public.admin_users enable row level security;
+alter table public.support_tickets enable row level security;
+alter table public.support_messages enable row level security;
+alter table public.system_settings enable row level security;
+alter table public.audit_logs enable row level security;
+
+revoke all on public.plans, public.admin_users, public.support_tickets,
+  public.support_messages, public.system_settings, public.audit_logs
+  from anon, authenticated, public;
+
+create trigger set_updated_at before update on public.plans
+  for each row execute function public.handle_updated_at();
+
+create trigger set_updated_at before update on public.admin_users
+  for each row execute function public.handle_updated_at();
+
+create trigger set_updated_at before update on public.support_tickets
+  for each row execute function public.handle_updated_at();
+
+create trigger set_updated_at before update on public.system_settings
+  for each row execute function public.handle_updated_at();
+
 -- ============================================
 -- 8. INSERT DEFAULT DATA
 -- ============================================
