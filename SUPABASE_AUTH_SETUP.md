@@ -12,7 +12,7 @@ Phone accounts are stored in Supabase Auth with an internal address, `2547XXXXXX
 
 ## 1. Environment
 
-Copy `.env.example` to `.env.local` in `FaidaFleet` and fill in the new project:
+Copy `.env.example` to `.env.local` in the project root and fill in the new project:
 
 ```env
 NEXT_PUBLIC_SUPABASE_URL=your-project-url

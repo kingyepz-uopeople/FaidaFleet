@@ -1,7 +1,7 @@
 # FaidaFleet SQL Quick Reference
 
 ## 📄 Complete Schema File
-**Location:** `FaidaFleet/COMPLETE_SCHEMA.sql`
+**Location:** `COMPLETE_SCHEMA.sql`
 
 This single SQL file contains the entire database schema for all 5 fleet owner features.
 

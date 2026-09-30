@@ -330,7 +330,7 @@ This software is proprietary. Do not copy, publish, or redistribute it. Ask Faid
 
 ## License
 
-FaidaFleet is not free software and is not open source. See [LICENSE](../LICENSE). All rights reserved.
+FaidaFleet is not free software and is not open source. See [LICENSE](./LICENSE). All rights reserved.
 
 ## Acknowledgments
 
