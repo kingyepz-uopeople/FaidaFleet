@@ -22,7 +22,7 @@
 -- Step 7: Migration 007 - Schema fixes
 -- Location: supabase/migrations/007_schema_fixes.sql
 
--- Do not run COMPLETE_SCHEMA.sql. It is not a schema.
+-- Do not run supabase/COMPLETE_SCHEMA.sql. It is not a schema.
 
 -- These statements add vehicle compliance columns when that table already exists.
 do $$
