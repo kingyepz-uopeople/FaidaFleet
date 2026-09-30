@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createDriverAuthUser } from '@/lib/create-driver-login'
 import { normalizeKenyanPhone, phoneAuthEmail, validatePin } from '@/lib/phone'
+import { getSupabaseKey, getSupabaseUrl } from '@/lib/supabase/env'
 import { createClient } from '@/lib/supabase/server'
 
 export async function POST(request: Request) {
@@ -47,8 +48,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Only a fleet owner or admin can add a driver login' }, { status: 403 })
   }
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  const url = getSupabaseUrl()
+  const anonKey = getSupabaseKey()
   if (!url || !anonKey) {
     return NextResponse.json({ error: 'Supabase is not configured' }, { status: 500 })
   }
