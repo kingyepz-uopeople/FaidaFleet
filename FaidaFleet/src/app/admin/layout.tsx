@@ -214,7 +214,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                     <Link
                       href={item.href}
                       className={cn(
-                        'menu-item flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-300',
+                        'menu-item flex items-center gap-3 rounded-full px-3 py-2.5 text-sm font-medium transition-all duration-300',
                         isActive
                           ? 'active bg-gradient-to-r from-red-500/15 to-transparent text-red-300 shadow-md'
                           : 'text-gray-400 hover:text-gray-200 hover:bg-white/5',

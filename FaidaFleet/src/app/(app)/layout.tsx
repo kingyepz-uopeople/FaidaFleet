@@ -250,7 +250,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     <Link
                       href={href}
                       className={cn(
-                        'nav-item menu-item flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-300',
+                        'nav-item menu-item flex items-center gap-3 rounded-full px-3 py-2.5 text-sm font-medium transition-all duration-300',
                         isActive
                           ? 'active bg-gradient-to-r from-blue-500/15 to-transparent text-blue-300 shadow-md'
                           : 'text-gray-400 hover:text-gray-200 hover:bg-white/5',
@@ -286,7 +286,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   <Link
                     href="/help"
                     className={cn(
-                      'nav-item flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-400 transition-all duration-300',
+                      'nav-item flex items-center gap-3 rounded-full px-3 py-2.5 text-sm font-medium text-gray-400 transition-all duration-300',
                       'hover:text-gray-200 hover:bg-white/5 relative overflow-hidden group',
                       !isExpanded && 'justify-center'
                     )}
@@ -310,7 +310,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <Link
               href="/settings"
               className={cn(
-                'flex items-center gap-3 rounded-lg p-2.5 transition-all duration-300 group',
+                'flex items-center gap-3 rounded-full p-2.5 transition-all duration-300 group',
                 'hover:bg-gradient-to-r hover:from-blue-500/10 hover:to-transparent',
                 !isExpanded && 'justify-center'
               )}
@@ -333,7 +333,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           {/* Theme Toggle */}
           <div className="theme-toggle">
             <div className={cn(
-              'flex items-center gap-1.5 rounded-lg bg-white/5 backdrop-blur-sm p-1 border border-white/10',
+              'flex items-center gap-1.5 rounded-full bg-white/5 backdrop-blur-sm p-1 border border-white/10',
               'hover:bg-white/10 transition-all duration-300',
               !isExpanded && 'justify-center'
             )}>
@@ -342,7 +342,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   <button
                     onClick={() => setTheme(true)}
                     className={cn(
-                      'flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-all duration-300',
+                      'flex-1 rounded-full px-3 py-1.5 text-xs font-medium transition-all duration-300',
                       'hover:scale-105 active:scale-95',
                       isDark 
                         ? 'bg-gradient-to-r from-blue-500/20 to-blue-400/10 text-blue-300 shadow-md' 
@@ -354,7 +354,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   <button
                     onClick={() => setTheme(false)}
                     className={cn(
-                      'flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-all duration-300',
+                      'flex-1 rounded-full px-3 py-1.5 text-xs font-medium transition-all duration-300',
                       'hover:scale-105 active:scale-95',
                       !isDark 
                         ? 'bg-gradient-to-r from-yellow-500/20 to-yellow-400/10 text-yellow-300 shadow-md' 
@@ -367,7 +367,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               ) : (
                 <button
                   onClick={() => setTheme(!isDark)}
-                  className="flex-1 rounded-md p-1.5 text-gray-400 transition-all hover:text-white hover:bg-white/10 hover:scale-105 active:scale-95"
+                  className="flex-1 rounded-full p-1.5 text-gray-400 transition-all hover:text-white hover:bg-white/10 hover:scale-105 active:scale-95"
                 >
                   {isDark ? <Moon className="mx-auto h-4 w-4" /> : <Sun className="mx-auto h-4 w-4" />}
                 </button>
