@@ -1,6 +1,0 @@
-{
-  "buildCommand": "cd FaidaFleet && npm run build",
-  "installCommand": "cd FaidaFleet && npm install",
-  "devCommand": "cd FaidaFleet && npm run dev",
-  "outputDirectory": "FaidaFleet/.next"
-}
