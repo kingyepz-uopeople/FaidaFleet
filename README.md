@@ -60,7 +60,7 @@ FaidaFleet is a comprehensive fleet management web application designed for mata
    Create a new Supabase project and put its API values in `.env.local`:
    ```env
    NEXT_PUBLIC_SUPABASE_URL=your-project-url
-   NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+   NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-publishable-key
    SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
    ```
 
@@ -287,7 +287,7 @@ npm run typecheck    # TypeScript type checking
 
 ```env
 NEXT_PUBLIC_SUPABASE_URL=your-production-url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your-production-key
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-publishable-key
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 ```
 
