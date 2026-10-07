@@ -32,6 +32,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { addAdminUser } from './actions';
 
 type AdminUser = {
   id: string;
@@ -57,6 +58,7 @@ export default function AdminUsersPage() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [filteredUsers, setFilteredUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
+  const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -86,6 +88,20 @@ export default function AdminUsersPage() {
   const fetchUsers = async () => {
     try {
       setLoading(true);
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: myAdmin } = await supabase
+          .from('admin_users')
+          .select('role')
+          .eq('user_id', user.id)
+          .eq('is_active', true)
+          .maybeSingle();
+        if (myAdmin) {
+          setCurrentUserRole(myAdmin.role);
+        }
+      }
+
       const { data, error: err } = await supabase
         .from('admin_users')
         .select('*')
@@ -145,18 +161,17 @@ export default function AdminUsersPage() {
         if (err) throw err;
         setSuccess('Admin user updated successfully');
       } else {
-        const { error: err } = await supabase
-          .from('admin_users')
-          .insert([{
-            email: formData.email,
-            full_name: formData.full_name,
-            role: formData.role,
-            permissions: formData.permissions,
-            is_active: true,
-          }] as any);
+        const result = await addAdminUser({
+          email: formData.email,
+          full_name: formData.full_name,
+          role: formData.role,
+          permissions: formData.permissions,
+        });
 
-        if (err) throw err;
-        setSuccess('Admin user created successfully');
+        if (!result.success) {
+          throw new Error(result.error || 'Failed to create admin user');
+        }
+        setSuccess(result.message || 'Admin user created successfully');
       }
 
       setDialogOpen(false);
@@ -222,12 +237,14 @@ export default function AdminUsersPage() {
           <p className="text-gray-600 dark:text-gray-400">Manage system admin accounts</p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button onClick={() => handleOpenDialog()} className="bg-red-600 hover:bg-red-700">
-              <Plus className="h-4 w-4 mr-2" />
-              Add Admin
-            </Button>
-          </DialogTrigger>
+          {currentUserRole === 'super_admin' && (
+            <DialogTrigger asChild>
+              <Button onClick={() => handleOpenDialog()} className="bg-red-600 hover:bg-red-700">
+                <Plus className="h-4 w-4 mr-2" />
+                Add Admin
+              </Button>
+            </DialogTrigger>
+          )}
           <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>{editingId ? 'Edit Admin' : 'Create Admin'}</DialogTitle>

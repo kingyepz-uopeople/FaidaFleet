@@ -33,6 +33,7 @@ import {
 } from '@/components/ui/tooltip';
 
 import { BarChart3, Zap, TrendingUp, Wrench } from '@/components/icons';
+import { InstallPrompt } from '@/components/pwa/install-prompt';
 
 const menuItems = [
   { href: '/dashboard', label: 'Dashboard', Icon: LayoutDashboard },
@@ -401,6 +402,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           {children}
         </main>
       </div>
+      <InstallPrompt />
     </div>
   );
 }

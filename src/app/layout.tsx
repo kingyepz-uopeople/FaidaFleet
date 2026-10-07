@@ -1,8 +1,9 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { PT_Sans } from 'next/font/google';
 import Script from 'next/script';
 import './globals.css';
 import { Toaster } from "@/components/ui/toaster"
+import { RegisterSW } from '@/components/pwa/register-sw'
 
 const ptSans = PT_Sans({
   subsets: ['latin'],
@@ -10,9 +11,18 @@ const ptSans = PT_Sans({
   variable: '--font-pt-sans',
 });
 
+export const viewport: Viewport = {
+  themeColor: '#1e3a5f',
+}
+
 export const metadata: Metadata = {
   title: 'FaidaFleet',
   description: 'Fleet management for matatu and logistics operators in Kenya.',
+  appleWebApp: {
+    capable: true,
+    title: 'FaidaFleet',
+    statusBarStyle: 'default',
+  },
 };
 
 export default function RootLayout({
@@ -28,6 +38,7 @@ export default function RootLayout({
         </Script>
         {children}
         <Toaster />
+        <RegisterSW />
       </body>
     </html>
   );

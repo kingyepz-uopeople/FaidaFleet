@@ -42,25 +42,45 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser()
 
-  if (!user && !isPublicAuthPath(request.nextUrl.pathname)) {
+  const pathname = request.nextUrl.pathname
+
+  // Server-side guard for admin routes (/admin and /admin/*, excluding /admin-login)
+  const isAdminRoute = pathname === '/admin' || pathname.startsWith('/admin/')
+
+  if (isAdminRoute) {
+    if (!user) {
+      const redirectUrl = request.nextUrl.clone()
+      redirectUrl.pathname = '/admin-login'
+      const redirectResponse = NextResponse.redirect(redirectUrl)
+      supabaseResponse.cookies.getAll().forEach(({ name, value, ...options }) =>
+        redirectResponse.cookies.set(name, value, options)
+      )
+      return redirectResponse
+    }
+
+    const { data: isAdmin, error: rpcError } = await supabase.rpc('is_system_admin')
+
+    if (rpcError || !isAdmin) {
+      const redirectUrl = request.nextUrl.clone()
+      redirectUrl.pathname = '/dashboard'
+      const redirectResponse = NextResponse.redirect(redirectUrl)
+      supabaseResponse.cookies.getAll().forEach(({ name, value, ...options }) =>
+        redirectResponse.cookies.set(name, value, options)
+      )
+      return redirectResponse
+    }
+  }
+
+  if (!user && !isPublicAuthPath(pathname)) {
     // no user, potentially respond by redirecting the user to the login page
     const url = request.nextUrl.clone()
     url.pathname = '/login'
-    return NextResponse.redirect(url)
+    const redirectResponse = NextResponse.redirect(url)
+    supabaseResponse.cookies.getAll().forEach(({ name, value, ...options }) =>
+      redirectResponse.cookies.set(name, value, options)
+    )
+    return redirectResponse
   }
-
-  // IMPORTANT: You *must* return the supabaseResponse object as it is. If you're
-  // creating a new response object with NextResponse.next() make sure to:
-  // 1. Pass the request in it, like so:
-  //    const myNewResponse = NextResponse.next({ request })
-  // 2. Copy over the cookies, like so:
-  //    myNewResponse.cookies.setAll(supabaseResponse.cookies.getAll())
-  // 3. Change the myNewResponse object to fit your needs, but avoid changing
-  //    the cookies!
-  // 4. Finally:
-  //    return myNewResponse
-  // If this is not done, you may be causing the browser and server to go out
-  // of sync and terminate the user's session prematurely.
 
   return supabaseResponse
 }

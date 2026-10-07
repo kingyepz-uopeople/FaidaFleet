@@ -55,6 +55,12 @@ export default function AdminLoginPage() {
         return
       }
 
+      // Non-blocking update of last_login
+      void supabase
+        .from('admin_users')
+        .update({ last_login: new Date().toISOString() })
+        .eq('user_id', data.user.id)
+
       router.push('/admin')
       router.refresh()
     } catch {
