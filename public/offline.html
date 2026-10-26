@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#2563eb" />
+    <title>Offline · FaidaFleet</title>
+    <style>
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 2rem;
+        font-family: "PT Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        background: linear-gradient(135deg, #f8fafc, #f1f5f9);
+        color: #111827;
+      }
+      .card {
+        width: 100%;
+        max-width: 28rem;
+        background: #ffffff;
+        border-radius: 1rem;
+        box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.25);
+        padding: 2.5rem 2rem;
+        text-align: center;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        margin-bottom: 1.5rem;
+      }
+      .brand-badge {
+        display: inline-flex;
+        padding: 0.5rem;
+        border-radius: 0.75rem;
+        background: #2563eb;
+        color: #ffffff;
+      }
+      .brand-name { font-size: 1.5rem; font-weight: 700; }
+      h1 { font-size: 1.375rem; margin: 0 0 0.5rem; }
+      p { margin: 0 0 1.5rem; color: #4b5563; line-height: 1.5; }
+      button {
+        appearance: none;
+        border: 0;
+        cursor: pointer;
+        width: 100%;
+        height: 3rem;
+        border-radius: 0.5rem;
+        background: #2563eb;
+        color: #ffffff;
+        font-size: 1rem;
+        font-weight: 600;
+      }
+      button:hover { background: #1d4ed8; }
+    </style>
+  </head>
+  <body>
+    <main class="card">
+      <div class="brand">
+        <span class="brand-badge">
+          <svg width="24" height="24" viewBox="0 0 122.88 103.26" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" clip-rule="evenodd" d="M117.95,42.04v61.22h-14.31V93.8h-84.4v9.46l-14.31,0V42.04H0v-9.41h12.04l6.71-20.88 C20.73,5.59,24.03,0,30.49,0h64.39c6.46,0,10.18,5.48,11.74,11.74l5.19,20.88h11.06v9.41H117.95L117.95,42.04L117.95,42.04z M40.01,74.91h42.27v9.97l-42.27,0V74.91L40.01,74.91L40.01,74.91z M9.72,51.69c10.77,0.34,17.36,4.85,19.05,14.26H9.72V51.69 L9.72,51.69z M111.8,51.69c-10.77,0.34-17.36,4.85-19.05,14.26h19.05V51.69L111.8,51.69z M17.18,32.62h88.52l-3.79-17.51 c-1.04-4.8-4.03-8.95-8.95-8.95H31.74c-4.92,0-7.44,4.26-8.95,8.95L17.18,32.62L17.18,32.62L17.18,32.62z"/></svg>
+        </span>
+        <span class="brand-name">FaidaFleet</span>
+      </div>
+      <h1>You&rsquo;re offline</h1>
+      <p>
+        FaidaFleet can&rsquo;t reach the network right now. Check your internet
+        connection, then try again.
+      </p>
+      <button type="button" onclick="window.location.reload()">Try again</button>
+    </main>
+    <script>
+      // Reload automatically as soon as connectivity comes back.
+      window.addEventListener('online', function () {
+        window.location.reload()
+      })
+    </script>
+  </body>
+</html>

@@ -9,7 +9,6 @@ import {
   Car,
   ChevronLeft,
   LogOut,
-  Shield,
   Package,
   TrendingUp,
   Wallet,
@@ -188,16 +187,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         )}>
           {isExpanded && (
             <div className="flex items-center gap-3 animate-in fade-in slide-in-from-left">
-              <div className="rounded-lg bg-gradient-to-br from-red-500 to-red-600 p-1.5 shadow-lg">
-                <Shield className="h-5 w-5" />
+              <div className="rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 p-1.5 shadow-lg">
+                <Car className="h-5 w-5" />
               </div>
-              <span className="text-lg font-bold bg-gradient-to-r from-red-400 to-red-300 bg-clip-text text-transparent">Admin</span>
+              <span className="text-lg font-bold bg-gradient-to-r from-blue-400 to-blue-300 bg-clip-text text-transparent">Admin</span>
             </div>
           )}
           {!isExpanded && (
             <div className="flex w-full justify-center">
-              <div className="rounded-lg bg-gradient-to-br from-red-500 to-red-600 p-1.5 shadow-lg">
-                <Shield className="h-5 w-5" />
+              <div className="rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 p-1.5 shadow-lg">
+                <Car className="h-5 w-5" />
               </div>
             </div>
           )}

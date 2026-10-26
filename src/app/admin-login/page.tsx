@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Loader2, Shield, Mail, Lock } from '@/components/icons'
+import { Loader2, Car, Mail, Lock } from '@/components/icons'
 import { friendlyAuthError, isPhoneAuthEmail } from '@/lib/phone'
 
 export default function AdminLoginPage() {
@@ -69,8 +69,8 @@ export default function AdminLoginPage() {
       <Card className="w-full max-w-md shadow-2xl border-0 bg-white">
         <CardHeader className="space-y-2 pb-6">
           <div className="flex items-center justify-center gap-2 mb-2">
-            <div className="p-2 bg-red-600 rounded-xl">
-              <Shield className="h-6 w-6 text-white" />
+            <div className="p-2 bg-blue-600 rounded-xl">
+              <Car className="h-6 w-6 text-white" />
             </div>
             <span className="text-2xl font-bold text-gray-900">FaidaFleet</span>
           </div>
