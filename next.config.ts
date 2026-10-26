@@ -2,6 +2,7 @@ import type {NextConfig} from 'next';
 
 const nextConfig: NextConfig = {
   /* config options here */
+  transpilePackages: ['tailwind-merge'],
   typescript: {
     ignoreBuildErrors: true,
   },
@@ -21,13 +22,6 @@ const nextConfig: NextConfig = {
             value: 'no-cache, no-store, must-revalidate',
           },
           { key: 'Service-Worker-Allowed', value: '/' },
-        ],
-      },
-      {
-        source: '/manifest.json',
-        headers: [
-          { key: 'Content-Type', value: 'application/manifest+json' },
-          { key: 'Cache-Control', value: 'public, max-age=3600' },
         ],
       },
       {

@@ -175,8 +175,8 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="flex flex-col gap-6 p-6">
-      <h1 className="text-2xl font-bold">Settings</h1>
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 py-5 sm:px-6 sm:py-6">
+      <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">Settings</h1>
       {error && (
         <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>
       )}
@@ -184,7 +184,7 @@ export default function SettingsPage() {
         <Alert><AlertDescription>{message}</AlertDescription></Alert>
       )}
       <Tabs defaultValue="profile" className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid h-auto w-full grid-cols-3">
           <TabsTrigger value="profile">Profile</TabsTrigger>
           <TabsTrigger value="team">Team</TabsTrigger>
           <TabsTrigger value="fleet">Fleet</TabsTrigger>
@@ -193,7 +193,7 @@ export default function SettingsPage() {
           <Card>
             <CardHeader>
               <CardTitle>Profile</CardTitle>
-              <CardDescription>Manage your name and PIN. Sign-in uses your phone number.</CardDescription>
+              <CardDescription>Manage your name and PIN. Sign-in uses your phone number. If you forget your PIN, ask a system administrator to reset it.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {loading ? <div>Loading…</div> : (
@@ -210,17 +210,23 @@ export default function SettingsPage() {
                     </div>
                     <Button type="submit">Save Changes</Button>
                   </form>
-                  <form onSubmit={handleChangePassword} className="space-y-4 mt-4">
+                  {phoneAccount && (
+                  <form onSubmit={handleChangePassword} className="mt-6 space-y-4 rounded-2xl border bg-muted/40 p-4">
+                    <div>
+                      <h2 className="font-semibold">Change PIN</h2>
+                      <p className="text-sm text-muted-foreground">Enter your current PIN, then a new 4 to 6 digit PIN. Forgotten PIN? Ask a system administrator.</p>
+                    </div>
                     <div className="space-y-2">
                       <Label htmlFor="currentPin">Current PIN</Label>
-                      <Input id="currentPin" name="currentPin" type="password" inputMode="numeric" maxLength={6} value={form.currentPin} onChange={handleChange} />
+                      <Input id="currentPin" name="currentPin" type="password" inputMode="numeric" autoComplete="current-password" maxLength={6} value={form.currentPin} onChange={handleChange} />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="newPin">New PIN</Label>
-                      <Input id="newPin" name="newPin" type="password" inputMode="numeric" maxLength={6} value={form.newPin} onChange={handleChange} />
+                      <Input id="newPin" name="newPin" type="password" inputMode="numeric" autoComplete="new-password" maxLength={6} value={form.newPin} onChange={handleChange} />
                     </div>
                     <Button type="submit">Change PIN</Button>
                   </form>
+                  )}
                 </>
               )}
             </CardContent>

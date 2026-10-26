@@ -219,7 +219,7 @@ export default function ExpensesPage() {
   const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
 
   return (
-    <div className="flex flex-col gap-6 p-6">
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 py-5 sm:px-6 sm:py-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>

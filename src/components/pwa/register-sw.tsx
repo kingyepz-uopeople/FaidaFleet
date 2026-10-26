@@ -2,21 +2,22 @@
 
 import { useEffect } from 'react'
 
-/**
- * Registers the FaidaFleet service worker (/sw.js) for offline support.
- * Runs in production builds only, after the page has loaded, so it never
- * competes with first paint or interferes with local development.
- */
-export function ServiceWorkerRegister() {
+export function RegisterSW() {
   useEffect(() => {
+    // Register in production only, after load so it never competes with first paint.
     if (process.env.NODE_ENV !== 'production') return
     if (!('serviceWorker' in navigator)) return
 
     const register = () => {
       navigator.serviceWorker
         .register('/sw.js', { scope: '/' })
-        .catch((error) => {
-          console.error('Service worker registration failed:', error)
+        .then((reg) => {
+          if (reg.waiting) {
+            reg.waiting.postMessage({ type: 'SKIP_WAITING' })
+          }
+        })
+        .catch((err) => {
+          console.error('[FaidaFleet SW] Registration failed:', err)
         })
     }
 

@@ -5,11 +5,13 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Switch } from '@/components/ui/switch';
 import { createClient } from '@/lib/supabase/client';
+import { AdminFeedback, AdminLoading, AdminPageHeader } from '@/components/admin-ui';
+import { isAdminUiPreview } from '@/lib/admin-preview';
 
 export default function SettingsPage() {
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!isAdminUiPreview());
   const [saved, setSaved] = useState(false);
   const [settings, setSettings] = useState({
     mpesa_api_key: '',
@@ -26,13 +28,16 @@ export default function SettingsPage() {
 
   const fetchSettings = async () => {
     try {
+      if (isAdminUiPreview()) {
+        return;
+      }
       const { data, error: err } = await supabase
         .from('system_settings')
         .select('key, value');
 
       if (err) throw err;
 
-      const settingsMap = data?.reduce((acc: any, s: any) => {
+      const settingsMap = data?.reduce((acc: Record<string, unknown>, s) => {
         acc[s.key] = s.value;
         return acc;
       }, {});
@@ -49,13 +54,17 @@ export default function SettingsPage() {
 
   const handleSave = async () => {
     try {
-      // Save each setting
+      if (isAdminUiPreview()) {
+        setSaved(true);
+        setTimeout(() => setSaved(false), 3000);
+        return;
+      }
       for (const [key, value] of Object.entries(settings)) {
         await supabase
           .from('system_settings')
           .upsert(
-            { key, value } as any,
-            { onConflict: 'key' }
+            { key, value },
+            { onConflict: 'key' },
           );
       }
       setSaved(true);
@@ -65,44 +74,44 @@ export default function SettingsPage() {
     }
   };
 
-  if (loading) return <div className="text-center py-8">Loading...</div>;
+  if (loading) {
+    return (
+      <>
+        <AdminPageHeader title="Settings" description="Global platform configuration." />
+        <AdminLoading />
+      </>
+    );
+  }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">System Settings</h1>
-        <p className="text-gray-600 dark:text-gray-400">Configure global system settings</p>
-      </div>
+    <>
+      <AdminPageHeader title="Settings" description="Global platform configuration. These controls are for system administrators only." />
+      <AdminFeedback success={saved ? 'Settings saved.' : null} />
 
-      {saved && (
-        <Alert className="bg-green-50 text-green-800 border-green-200">
-          <AlertDescription>Settings saved successfully!</AlertDescription>
-        </Alert>
-      )}
-
-      {/* M-Pesa Configuration */}
       <Card>
         <CardHeader>
-          <CardTitle>M-Pesa Integration</CardTitle>
-          <CardDescription>Configure M-Pesa Daraja API credentials</CardDescription>
+          <CardTitle>M-Pesa</CardTitle>
+          <CardDescription>Daraja API credentials</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div>
-            <Label htmlFor="api_key">API Key</Label>
+          <div className="space-y-2">
+            <Label htmlFor="api_key">API key</Label>
             <Input
               id="api_key"
               type="password"
-              placeholder="Enter M-Pesa API Key"
+              autoComplete="off"
+              placeholder="Enter M-Pesa API key"
               value={settings.mpesa_api_key || ''}
               onChange={(e) => setSettings({ ...settings, mpesa_api_key: e.target.value })}
             />
           </div>
-          <div>
-            <Label htmlFor="consumer_key">Consumer Key</Label>
+          <div className="space-y-2">
+            <Label htmlFor="consumer_key">Consumer key</Label>
             <Input
               id="consumer_key"
               type="password"
-              placeholder="Enter M-Pesa Consumer Key"
+              autoComplete="off"
+              placeholder="Enter M-Pesa consumer key"
               value={settings.mpesa_consumer_key || ''}
               onChange={(e) => setSettings({ ...settings, mpesa_consumer_key: e.target.value })}
             />
@@ -110,59 +119,52 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      {/* Notifications */}
       <Card>
         <CardHeader>
           <CardTitle>Notifications</CardTitle>
-          <CardDescription>Configure notification preferences</CardDescription>
+          <CardDescription>How the platform emails or texts operators</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex items-center justify-between">
-            <Label>Email Notifications</Label>
-            <input
-              type="checkbox"
-              checked={settings.email_notifications || false}
-              onChange={(e) => setSettings({ ...settings, email_notifications: e.target.checked })}
-              className="w-5 h-5"
+          <div className="flex min-h-11 items-center justify-between gap-4">
+            <Label htmlFor="email_notifications">Email notifications</Label>
+            <Switch
+              id="email_notifications"
+              checked={Boolean(settings.email_notifications)}
+              onCheckedChange={(checked) => setSettings({ ...settings, email_notifications: checked })}
             />
           </div>
-          <div className="flex items-center justify-between">
-            <Label>SMS Notifications</Label>
-            <input
-              type="checkbox"
-              checked={settings.sms_notifications || false}
-              onChange={(e) => setSettings({ ...settings, sms_notifications: e.target.checked })}
-              className="w-5 h-5"
+          <div className="flex min-h-11 items-center justify-between gap-4">
+            <Label htmlFor="sms_notifications">SMS notifications</Label>
+            <Switch
+              id="sms_notifications"
+              checked={Boolean(settings.sms_notifications)}
+              onCheckedChange={(checked) => setSettings({ ...settings, sms_notifications: checked })}
             />
           </div>
         </CardContent>
       </Card>
 
-      {/* Maintenance Mode */}
       <Card>
         <CardHeader>
           <CardTitle>Maintenance</CardTitle>
-          <CardDescription>System maintenance controls</CardDescription>
+          <CardDescription>Take the operator app offline while keeping admin access</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center justify-between">
+        <CardContent>
+          <div className="flex min-h-11 items-center justify-between gap-4">
             <div>
-              <Label>Maintenance Mode</Label>
-              <p className="text-sm text-gray-500">Disable access for all users except admins</p>
+              <Label htmlFor="maintenance_mode">Maintenance mode</Label>
+              <p className="text-sm text-muted-foreground">Disable access for all users except admins</p>
             </div>
-            <input
-              type="checkbox"
-              checked={settings.maintenance_mode || false}
-              onChange={(e) => setSettings({ ...settings, maintenance_mode: e.target.checked })}
-              className="w-5 h-5"
+            <Switch
+              id="maintenance_mode"
+              checked={Boolean(settings.maintenance_mode)}
+              onCheckedChange={(checked) => setSettings({ ...settings, maintenance_mode: checked })}
             />
           </div>
         </CardContent>
       </Card>
 
-      <Button onClick={handleSave} className="bg-red-600 hover:bg-red-700">
-        Save Settings
-      </Button>
-    </div>
+      <Button onClick={handleSave}>Save settings</Button>
+    </>
   );
 }

@@ -1,17 +1,7 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -23,15 +13,26 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { Search, MoreHorizontal, Trash2, Edit, Plus } from '@/components/icons';
+import { MoreHorizontal, Trash2, Edit, Plus, KeyRound } from '@/components/icons';
+import { PinResetDialog } from '@/components/pin-reset-dialog';
 import { createClient } from '@/lib/supabase/client';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  AdminFeedback,
+  AdminPageHeader,
+  AdminRecordList,
+  AdminSearch,
+  RowActionsTrigger,
+  StatusBadge,
+  adminSelectClass,
+  formatDate,
+} from '@/components/admin-ui';
+import { isAdminUiPreview, previewDrivers, previewTenants } from '@/lib/admin-preview';
 
 type Driver = {
   id: string;
@@ -52,16 +53,18 @@ type Tenant = {
 };
 
 export default function AllDriversPage() {
-  const [drivers, setDrivers] = useState<Driver[]>([]);
-  const [tenants, setTenants] = useState<Tenant[]>([]);
-  const [filteredDrivers, setFilteredDrivers] = useState<Driver[]>([]);
-  const [loading, setLoading] = useState(true);
+  const preview = isAdminUiPreview();
+  const [drivers, setDrivers] = useState<Driver[]>(preview ? previewDrivers : []);
+  const [tenants, setTenants] = useState<Tenant[]>(preview ? previewTenants.map((t) => ({ id: t.id, name: t.name })) : []);
+  const [loading, setLoading] = useState(!preview);
   const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [resetDriver, setResetDriver] = useState<Driver | null>(null);
   const [formData, setFormData] = useState({
     full_name: '',
     phone: '',
@@ -76,33 +79,21 @@ export default function AllDriversPage() {
     fetchData();
   }, []);
 
-  useEffect(() => {
-    const filtered = drivers.filter((driver) =>
-      driver.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      driver.phone.includes(searchQuery) ||
-      driver.license_number?.includes(searchQuery)
-    );
-    setFilteredDrivers(filtered);
-  }, [searchQuery, drivers]);
-
   const fetchData = async () => {
     try {
       setLoading(true);
+      if (isAdminUiPreview()) {
+        setDrivers(previewDrivers);
+        setTenants(previewTenants.map((t) => ({ id: t.id, name: t.name })));
+        return;
+      }
       const [driversRes, tenantsRes] = await Promise.all([
-        supabase
-          .from('drivers')
-          .select('*, tenants(name)')
-          .order('created_at', { ascending: false }),
-        supabase
-          .from('tenants')
-          .select('id, name')
-          .eq('is_active', true),
+        supabase.from('drivers').select('*, tenants(name)').order('created_at', { ascending: false }),
+        supabase.from('tenants').select('id, name').eq('is_active', true),
       ]);
-
       if (driversRes.error) throw driversRes.error;
       if (tenantsRes.error) throw tenantsRes.error;
-
-      setDrivers(driversRes.data || []);
+      setDrivers((driversRes.data || []) as Driver[]);
       setTenants(tenantsRes.data || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch data');
@@ -110,6 +101,21 @@ export default function AllDriversPage() {
       setLoading(false);
     }
   };
+
+  const filteredDrivers = useMemo(() => {
+    const needle = searchQuery.toLowerCase();
+    return drivers.filter((driver) => {
+      const matchesSearch =
+        !needle ||
+        driver.full_name.toLowerCase().includes(needle) ||
+        driver.phone.includes(searchQuery) ||
+        Boolean(driver.license_number?.includes(searchQuery));
+      const matchesStatus =
+        statusFilter === 'all' ||
+        (statusFilter === 'active' ? driver.is_active : !driver.is_active);
+      return matchesSearch && matchesStatus;
+    });
+  }, [drivers, searchQuery, statusFilter]);
 
   const handleOpenDialog = (driver?: Driver) => {
     if (driver) {
@@ -140,7 +146,6 @@ export default function AllDriversPage() {
     e.preventDefault();
     setSubmitting(true);
     setError(null);
-
     try {
       if (editingId) {
         const { error: err } = await supabase
@@ -151,28 +156,23 @@ export default function AllDriversPage() {
             license_number: formData.license_number || null,
             license_expiry: formData.license_expiry || null,
             id_number: formData.id_number || null,
-          } as any)
+          })
           .eq('id', editingId);
-
         if (err) throw err;
         setSuccess('Driver updated successfully');
       } else {
-        const { error: err } = await supabase
-          .from('drivers')
-          .insert([{
-            tenant_id: formData.tenant_id,
-            full_name: formData.full_name,
-            phone: formData.phone,
-            license_number: formData.license_number || null,
-            license_expiry: formData.license_expiry || null,
-            id_number: formData.id_number || null,
-            is_active: true,
-          }]);
-
+        const { error: err } = await supabase.from('drivers').insert([{
+          tenant_id: formData.tenant_id,
+          full_name: formData.full_name,
+          phone: formData.phone,
+          license_number: formData.license_number || null,
+          license_expiry: formData.license_expiry || null,
+          id_number: formData.id_number || null,
+          is_active: true,
+        }]);
         if (err) throw err;
         setSuccess('Driver created successfully');
       }
-
       setDialogOpen(false);
       await fetchData();
       setTimeout(() => setSuccess(null), 3000);
@@ -185,13 +185,8 @@ export default function AllDriversPage() {
 
   const handleDelete = async (driverId: string) => {
     if (!window.confirm('Are you sure you want to delete this driver?')) return;
-    
     try {
-      const { error: err } = await supabase
-        .from('drivers')
-        .delete()
-        .eq('id', driverId);
-
+      const { error: err } = await supabase.from('drivers').delete().eq('id', driverId);
       if (err) throw err;
       setSuccess('Driver deleted successfully');
       await fetchData();
@@ -203,11 +198,7 @@ export default function AllDriversPage() {
 
   const toggleDriverStatus = async (driverId: string, currentStatus: boolean) => {
     try {
-      const { error: err } = await supabase
-        .from('drivers')
-        .update({ is_active: !currentStatus } as any)
-        .eq('id', driverId);
-
+      const { error: err } = await supabase.from('drivers').update({ is_active: !currentStatus }).eq('id', driverId);
       if (err) throw err;
       await fetchData();
     } catch (err) {
@@ -215,239 +206,138 @@ export default function AllDriversPage() {
     }
   };
 
-  const isLicenseExpired = (expiryDate: string | null) => {
-    if (!expiryDate) return false;
-    return new Date(expiryDate) < new Date();
-  };
+  const isLicenseExpired = (expiryDate: string | null) => Boolean(expiryDate && new Date(expiryDate) < new Date());
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">All Drivers</h1>
-          <p className="text-gray-600 dark:text-gray-400">Manage drivers across all fleet companies</p>
-        </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button onClick={() => handleOpenDialog()} className="bg-red-600 hover:bg-red-700">
-              <Plus className="h-4 w-4 mr-2" />
-              Add Driver
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle>{editingId ? 'Edit Driver' : 'Create Driver'}</DialogTitle>
-              <DialogDescription>
-                {editingId ? 'Update driver information' : 'Add a new driver to the system'}
-              </DialogDescription>
-            </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {!editingId && (
-                <div>
-                  <Label htmlFor="tenant_id">Fleet Company *</Label>
-                  <select
-                    id="tenant_id"
-                    value={formData.tenant_id}
-                    onChange={(e) => setFormData({ ...formData, tenant_id: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md dark:bg-gray-800 dark:border-gray-600"
-                    required
-                  >
-                    <option value="">Select a fleet company</option>
-                    {tenants.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.name}
-                      </option>
-                    ))}
-                  </select>
+    <>
+      <AdminPageHeader
+        title="Drivers"
+        description="Every driver record across fleets. Set or reset a PIN from the row menu."
+        actions={
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <DialogTrigger asChild>
+              <Button onClick={() => handleOpenDialog()}>
+                <Plus className="h-4 w-4" />
+                Add driver
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>{editingId ? 'Edit driver' : 'Create driver'}</DialogTitle>
+                <DialogDescription>{editingId ? 'Update driver information' : 'Add a new driver to the system'}</DialogDescription>
+              </DialogHeader>
+              <form onSubmit={handleSubmit} className="space-y-4">
+                {!editingId && (
+                  <div className="space-y-2">
+                    <Label htmlFor="tenant_id">Fleet company *</Label>
+                    <select id="tenant_id" value={formData.tenant_id} onChange={(e) => setFormData({ ...formData, tenant_id: e.target.value })} className={adminSelectClass} required>
+                      <option value="">Select a fleet company</option>
+                      {tenants.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                    </select>
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <Label htmlFor="full_name">Full name *</Label>
+                  <Input id="full_name" value={formData.full_name} onChange={(e) => setFormData({ ...formData, full_name: e.target.value })} required />
                 </div>
-              )}
-              <div>
-                <Label htmlFor="full_name">Full Name *</Label>
-                <Input
-                  id="full_name"
-                  value={formData.full_name}
-                  onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
-                  placeholder="John Doe"
-                  required
-                />
-              </div>
-              <div>
-                <Label htmlFor="phone">Phone *</Label>
-                <Input
-                  id="phone"
-                  value={formData.phone}
-                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                  placeholder="+254 700 000000"
-                  required
-                />
-              </div>
-              <div>
-                <Label htmlFor="license_number">License Number</Label>
-                <Input
-                  id="license_number"
-                  value={formData.license_number}
-                  onChange={(e) => setFormData({ ...formData, license_number: e.target.value })}
-                  placeholder="LIC123456"
-                />
-              </div>
-              <div>
-                <Label htmlFor="license_expiry">License Expiry</Label>
-                <Input
-                  id="license_expiry"
-                  type="date"
-                  value={formData.license_expiry}
-                  onChange={(e) => setFormData({ ...formData, license_expiry: e.target.value })}
-                />
-              </div>
-              <div>
-                <Label htmlFor="id_number">ID Number</Label>
-                <Input
-                  id="id_number"
-                  value={formData.id_number}
-                  onChange={(e) => setFormData({ ...formData, id_number: e.target.value })}
-                  placeholder="12345678"
-                />
-              </div>
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={submitting} className="bg-red-600 hover:bg-red-700">
-                  {submitting ? 'Saving...' : editingId ? 'Update' : 'Create'}
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
+                <div className="space-y-2">
+                  <Label htmlFor="phone">Phone *</Label>
+                  <Input id="phone" type="tel" inputMode="tel" autoComplete="tel" value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} required />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="license_number">License number</Label>
+                  <Input id="license_number" value={formData.license_number} onChange={(e) => setFormData({ ...formData, license_number: e.target.value })} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="license_expiry">License expiry</Label>
+                  <Input id="license_expiry" type="date" value={formData.license_expiry} onChange={(e) => setFormData({ ...formData, license_expiry: e.target.value })} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="id_number">ID number</Label>
+                  <Input id="id_number" value={formData.id_number} onChange={(e) => setFormData({ ...formData, id_number: e.target.value })} />
+                </div>
+                <DialogFooter>
+                  <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
+                  <Button type="submit" disabled={submitting}>{submitting ? 'Saving…' : editingId ? 'Update' : 'Create'}</Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+        }
+      />
+
+      <AdminFeedback error={error} success={success} />
+      <div className="flex flex-col gap-3 sm:flex-row">
+        <AdminSearch value={searchQuery} onChange={setSearchQuery} placeholder="Search name, phone, or license…" />
+        <select className={`${adminSelectClass} sm:w-44`} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)} aria-label="Filter status">
+          <option value="all">All statuses</option>
+          <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
+        </select>
       </div>
 
-      {error && (
-        <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
+      <AdminRecordList
+        rows={filteredDrivers}
+        rowKey={(row) => row.id}
+        loading={loading}
+        emptyTitle="No drivers found"
+        emptyDescription="Add a driver or change the search."
+        columns={[
+          { id: 'name', header: 'Driver', cell: (row) => <span className="font-medium">{row.full_name}</span> },
+          { id: 'phone', header: 'Phone', cell: (row) => row.phone },
+          { id: 'fleet', header: 'Fleet', cell: (row) => row.tenants?.name || '—' },
+          { id: 'license', header: 'License', cell: (row) => row.license_number || '—', hideOnMobile: true },
+          {
+            id: 'expiry',
+            header: 'Expiry',
+            hideOnMobile: true,
+            cell: (row) => (
+              <span className={isLicenseExpired(row.license_expiry) ? 'font-medium text-rose-600' : ''}>
+                {row.license_expiry ? `${formatDate(row.license_expiry)}${isLicenseExpired(row.license_expiry) ? ' (expired)' : ''}` : '—'}
+              </span>
+            ),
+          },
+          { id: 'status', header: 'Status', cell: (row) => <StatusBadge tone={row.is_active ? 'success' : 'neutral'}>{row.is_active ? 'Active' : 'Inactive'}</StatusBadge> },
+        ]}
+        actions={(driver) => (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <RowActionsTrigger><MoreHorizontal className="h-4 w-4" /></RowActionsTrigger>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => setResetDriver(driver)} className="cursor-pointer min-h-11">
+                <KeyRound className="h-4 w-4 mr-2" /> Set / reset PIN
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleOpenDialog(driver)} className="cursor-pointer min-h-11">
+                <Edit className="h-4 w-4 mr-2" /> Edit
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => toggleDriverStatus(driver.id, driver.is_active)} className="cursor-pointer min-h-11">
+                {driver.is_active ? 'Deactivate' : 'Activate'}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleDelete(driver.id)} className="cursor-pointer min-h-11 text-destructive">
+                <Trash2 className="h-4 w-4 mr-2" /> Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+      />
 
-      {success && (
-        <Alert className="bg-green-50 text-green-800 border-green-200 dark:bg-green-900/20 dark:border-green-800">
-          <AlertDescription>{success}</AlertDescription>
-        </Alert>
-      )}
-
-      {/* Search Bar */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-        <Input
-          placeholder="Search by name, phone, or license number..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="pl-10"
-        />
-      </div>
-
-      {/* Drivers Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Drivers List</CardTitle>
-          <CardDescription>Total: {filteredDrivers.length} drivers</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <div className="flex items-center justify-center h-32">Loading...</div>
-          ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Driver Name</TableHead>
-                    <TableHead>Phone</TableHead>
-                    <TableHead>Fleet Company</TableHead>
-                    <TableHead>License Number</TableHead>
-                    <TableHead>License Expiry</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Joined</TableHead>
-                    <TableHead className="w-10">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredDrivers.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={8} className="text-center py-8 text-gray-500">
-                        No drivers found
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    filteredDrivers.map((driver) => (
-                      <TableRow key={driver.id}>
-                        <TableCell className="font-medium">{driver.full_name}</TableCell>
-                        <TableCell className="text-sm">{driver.phone}</TableCell>
-                        <TableCell className="text-sm">
-                          {driver.tenants?.name || '-'}
-                        </TableCell>
-                        <TableCell className="text-sm">{driver.license_number || '-'}</TableCell>
-                        <TableCell className="text-sm">
-                          {driver.license_expiry ? (
-                            <span className={isLicenseExpired(driver.license_expiry) ? 'text-red-600 font-medium' : ''}>
-                              {new Date(driver.license_expiry).toLocaleDateString()}
-                              {isLicenseExpired(driver.license_expiry) && ' (Expired)'}
-                            </span>
-                          ) : (
-                            '-'
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <Badge
-                            className={
-                              driver.is_active
-                                ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
-                                : 'bg-gray-100 text-gray-800 dark:bg-gray-800/30 dark:text-gray-300'
-                            }
-                          >
-                            {driver.is_active ? 'Active' : 'Inactive'}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-sm text-gray-500">
-                          {new Date(driver.created_at).toLocaleDateString()}
-                        </TableCell>
-                        <TableCell>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="sm">
-                                <MoreHorizontal className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem
-                                onClick={() => handleOpenDialog(driver)}
-                                className="cursor-pointer"
-                              >
-                                <Edit className="h-4 w-4 mr-2" />
-                                Edit
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() => toggleDriverStatus(driver.id, driver.is_active)}
-                                className="cursor-pointer"
-                              >
-                                {driver.is_active ? 'Deactivate' : 'Activate'}
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() => handleDelete(driver.id)}
-                                className="cursor-pointer text-red-600"
-                              >
-                                <Trash2 className="h-4 w-4 mr-2" />
-                                Delete
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+      <PinResetDialog
+        open={Boolean(resetDriver)}
+        onOpenChange={(open) => { if (!open) setResetDriver(null) }}
+        title="Reset driver PIN"
+        description="Set a new PIN for this driver across fleets. The PIN is shown once and is never stored in plain text."
+        name={resetDriver?.full_name}
+        submit={async ({ pin, generate }) => {
+          if (!resetDriver) return { error: 'No driver selected', generated: false }
+          const response = await fetch('/api/admin/pin', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ target: 'driver', driverId: resetDriver.id, pin, generate }),
+          })
+          return response.json()
+        }}
+      />
+    </>
   );
 }

@@ -3,7 +3,7 @@ import { PT_Sans } from 'next/font/google';
 import Script from 'next/script';
 import './globals.css';
 import { Toaster } from "@/components/ui/toaster"
-import { ServiceWorkerRegister } from '@/components/service-worker-register'
+import { RegisterSW } from '@/components/pwa/register-sw'
 
 const ptSans = PT_Sans({
   subsets: ['latin'],
@@ -11,15 +11,21 @@ const ptSans = PT_Sans({
   variable: '--font-pt-sans',
 });
 
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+  themeColor: '#1e3a5f',
+}
+
 export const metadata: Metadata = {
   title: 'FaidaFleet',
   description: 'Fleet management for matatu and logistics operators in Kenya.',
   applicationName: 'FaidaFleet',
-  manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
-    statusBarStyle: 'default',
     title: 'FaidaFleet',
+    statusBarStyle: 'black-translucent',
   },
   icons: {
     icon: [
@@ -32,10 +38,6 @@ export const metadata: Metadata = {
       { url: '/icons/apple-touch-icon.png', sizes: '180x180', type: 'image/png' },
     ],
   },
-};
-
-export const viewport: Viewport = {
-  themeColor: '#2563eb',
 };
 
 export default function RootLayout({
@@ -51,7 +53,7 @@ export default function RootLayout({
         </Script>
         {children}
         <Toaster />
-        <ServiceWorkerRegister />
+        <RegisterSW />
       </body>
     </html>
   );

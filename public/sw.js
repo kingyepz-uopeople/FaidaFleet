@@ -1,10 +1,12 @@
 /**
- * FaidaFleet service worker — basic offline support.
+ * FaidaFleet service worker — offline support.
+ *
+ * Single PWA stack: Next.js manifest.webmanifest + /offline page + RegisterSW.
  *
  * Strategies:
- * - App shell assets (offline page, icons, manifest) are precached on install.
+ * - App shell assets (offline page, icons) are precached on install.
  * - Page navigations: network-first, falling back to the last cached page
- *   and finally to /offline.html.
+ *   and finally to /offline.
  * - Next.js build assets (/_next/static/) and other static files: cache-first
  *   (they are content-hashed / immutable).
  * - Everything else same-origin: stale-while-revalidate.
@@ -13,22 +15,21 @@
  *
  * Bump VERSION whenever the caching behaviour changes so old caches are purged.
  */
-const VERSION = 'v2'
+const VERSION = 'v3'
 const STATIC_CACHE = `faidafleet-static-${VERSION}`
 const PAGES_CACHE = `faidafleet-pages-${VERSION}`
 const ASSETS_CACHE = `faidafleet-assets-${VERSION}`
 const KNOWN_CACHES = [STATIC_CACHE, PAGES_CACHE, ASSETS_CACHE]
 
-const OFFLINE_URL = '/offline.html'
+const OFFLINE_URL = '/offline'
 
 const PRECACHE_URLS = [
   OFFLINE_URL,
-  '/manifest.json',
   '/favicon.ico',
   '/icons/icon.svg',
   '/icons/icon-192.png',
   '/icons/icon-512.png',
-  '/icons/maskable-512.png',
+  '/icons/icon-maskable-512.png',
   '/icons/apple-touch-icon.png',
 ]
 
@@ -134,6 +135,7 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url)
   if (url.origin !== self.location.origin) return
   if (url.pathname.startsWith('/api/')) return
+  if (url.pathname.startsWith('/auth/')) return
   if (url.pathname === '/sw.js') return
 
   if (request.mode === 'navigate') {

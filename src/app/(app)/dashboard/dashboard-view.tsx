@@ -78,9 +78,9 @@ export function FleetHome({
   const netProfit = totalCollections - totalExpenses
 
   return (
-    <div className="flex flex-col gap-6 p-6">
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 py-5 sm:px-6 sm:py-6">
       <div className="bg-gradient-to-r from-blue-600/10 to-purple-600/10 rounded-lg p-6 border border-blue-200/20 dark:border-blue-800/30">
-        <h1 className="text-4xl font-bold tracking-tight bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
           Welcome back, {userName}!
         </h1>
         <p className="text-muted-foreground mt-2">
@@ -258,6 +258,7 @@ export function FleetHome({
             <CardDescription>The last 5 recorded collections.</CardDescription>
           </CardHeader>
           <CardContent>
+            <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -291,6 +292,7 @@ export function FleetHome({
                 )}
               </TableBody>
             </Table>
+            </div>
           </CardContent>
         </Card>
       </div>

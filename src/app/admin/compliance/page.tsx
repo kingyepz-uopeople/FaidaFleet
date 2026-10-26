@@ -1,19 +1,11 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { createClient } from '@/lib/supabase/client';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import { AlertTriangle, CheckCircle, Clock } from '@/components/icons';
+import { AdminKpi, AdminPageHeader, AdminRecordList, AdminSearch, StatusBadge, formatDate } from '@/components/admin-ui';
+import { isAdminUiPreview, previewDrivers } from '@/lib/admin-preview';
 
 type Driver = {
   id: string;
@@ -23,18 +15,21 @@ type Driver = {
   tenants: { name: string };
 };
 
-type Vehicle = {
-  id: string;
-  registration_number: string;
-  make: string | null;
-  model: string | null;
-  tenants: { name: string };
-};
-
 export default function CompliancePage() {
-  const [drivers, setDrivers] = useState<Driver[]>([]);
-  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
-  const [loading, setLoading] = useState(true);
+  const preview = isAdminUiPreview();
+  const [drivers, setDrivers] = useState<Driver[]>(
+    preview
+      ? previewDrivers.map((d) => ({
+          id: d.id,
+          full_name: d.full_name,
+          license_expiry: d.license_expiry,
+          license_number: d.license_number,
+          tenants: d.tenants,
+        }))
+      : [],
+  );
+  const [loading, setLoading] = useState(!preview);
+  const [query, setQuery] = useState('');
   const supabase = createClient();
 
   useEffect(() => {
@@ -43,19 +38,15 @@ export default function CompliancePage() {
 
   const fetchComplianceData = async () => {
     try {
-      const [driversRes, vehiclesRes] = await Promise.all([
-        supabase
-          .from('drivers')
-          .select('id, full_name, license_expiry, license_number, tenants(name)')
-          .eq('is_active', true),
-        supabase
-          .from('vehicles')
-          .select('id, registration_number, make, model, tenants(name)')
-          .eq('is_active', true),
-      ]);
-
-      setDrivers(driversRes.data || []);
-      setVehicles(vehiclesRes.data || []);
+      if (isAdminUiPreview()) {
+        setDrivers(previewDrivers.map((d) => ({ id: d.id, full_name: d.full_name, license_expiry: d.license_expiry, license_number: d.license_number, tenants: d.tenants })));
+        return;
+      }
+      const { data } = await supabase
+        .from('drivers')
+        .select('id, full_name, license_expiry, license_number, tenants(name)')
+        .eq('is_active', true);
+      setDrivers((data || []) as Driver[]);
     } catch (error) {
       console.error('Error fetching compliance data:', error);
     } finally {
@@ -63,235 +54,96 @@ export default function CompliancePage() {
     }
   };
 
-  const isExpired = (date: string | null) => {
-    if (!date) return false;
-    return new Date(date) < new Date();
-  };
-
+  const isExpired = (date: string | null) => Boolean(date && new Date(date) < new Date());
   const isExpiringSoon = (date: string | null) => {
     if (!date) return false;
-    const expiryDate = new Date(date);
-    const today = new Date();
-    const daysUntilExpiry = Math.ceil((expiryDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-    return daysUntilExpiry <= 30 && daysUntilExpiry > 0;
+    const days = Math.ceil((new Date(date).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+    return days <= 30 && days > 0;
   };
-
   const getDaysToExpiry = (date: string | null) => {
     if (!date) return null;
-    const expiryDate = new Date(date);
-    const today = new Date();
-    const daysUntilExpiry = Math.ceil((expiryDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-    return daysUntilExpiry;
+    return Math.ceil((new Date(date).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
   };
 
-  const expiredLicenses = drivers.filter((d) => isExpired(d.license_expiry));
-  const expiringSoon = drivers.filter((d) => isExpiringSoon(d.license_expiry));
-  const compliantDrivers = drivers.filter(
-    (d) => !isExpired(d.license_expiry) && !isExpiringSoon(d.license_expiry)
+  const needle = query.toLowerCase();
+  const visible = useMemo(
+    () => drivers.filter((d) => !needle || d.full_name.toLowerCase().includes(needle) || d.tenants?.name?.toLowerCase().includes(needle)),
+    [drivers, needle],
   );
 
+  const expiredLicenses = visible.filter((d) => isExpired(d.license_expiry));
+  const expiringSoon = visible.filter((d) => isExpiringSoon(d.license_expiry));
+  const compliantDrivers = visible.filter((d) => !isExpired(d.license_expiry) && !isExpiringSoon(d.license_expiry));
+
+  const columns = (kind: 'expired' | 'soon' | 'ok') => [
+    { id: 'name', header: 'Driver', cell: (driver: Driver) => <span className="font-medium">{driver.full_name}</span> },
+    { id: 'license', header: 'License', cell: (driver: Driver) => driver.license_number || '—' },
+    { id: 'fleet', header: 'Fleet', cell: (driver: Driver) => driver.tenants?.name || '—' },
+    {
+      id: 'expiry',
+      header: kind === 'soon' ? 'Expires in' : 'Expiry',
+      cell: (driver: Driver) => (kind === 'soon' ? `${getDaysToExpiry(driver.license_expiry)} days` : formatDate(driver.license_expiry)),
+    },
+    {
+      id: 'status',
+      header: 'Status',
+      cell: () => (
+        <StatusBadge tone={kind === 'expired' ? 'danger' : kind === 'soon' ? 'warning' : 'success'}>
+          {kind === 'expired' ? 'Expired' : kind === 'soon' ? 'Expiring soon' : 'Compliant'}
+        </StatusBadge>
+      ),
+    },
+  ];
+
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Compliance & Alerts</h1>
-        <p className="text-gray-600 dark:text-gray-400">Driver and vehicle compliance monitoring</p>
-      </div>
+    <>
+      <AdminPageHeader title="Compliance" description="Driver licence expiry across every fleet." />
+      <AdminSearch value={query} onChange={setQuery} placeholder="Search driver or fleet…" />
 
       {expiredLicenses.length > 0 && (
-        <Alert className="bg-red-50 border-red-200">
-          <AlertTriangle className="h-4 w-4 text-red-600" />
-          <AlertDescription className="text-red-800 font-medium">
-            ⚠ {expiredLicenses.length} drivers have expired licenses - immediate action required
+        <Alert className="border-rose-200 bg-rose-50">
+          <AlertTriangle className="h-4 w-4 text-rose-600" />
+          <AlertDescription className="font-medium text-rose-800">
+            {expiredLicenses.length} drivers have expired licences.
           </AlertDescription>
         </Alert>
       )}
-
       {expiringSoon.length > 0 && (
-        <Alert className="bg-yellow-50 border-yellow-200">
-          <Clock className="h-4 w-4 text-yellow-600" />
-          <AlertDescription className="text-yellow-800 font-medium">
-            ⚠ {expiringSoon.length} drivers have licenses expiring within 30 days
+        <Alert className="border-amber-200 bg-amber-50">
+          <Clock className="h-4 w-4 text-amber-600" />
+          <AlertDescription className="font-medium text-amber-800">
+            {expiringSoon.length} licences expire within 30 days.
           </AlertDescription>
         </Alert>
       )}
-
       {compliantDrivers.length > 0 && expiredLicenses.length === 0 && (
-        <Alert className="bg-green-50 border-green-200">
-          <CheckCircle className="h-4 w-4 text-green-600" />
-          <AlertDescription className="text-green-800 font-medium">
-            ✓ All drivers are compliant
-          </AlertDescription>
+        <Alert className="border-emerald-200 bg-emerald-50">
+          <CheckCircle className="h-4 w-4 text-emerald-600" />
+          <AlertDescription className="font-medium text-emerald-800">All visible drivers are compliant.</AlertDescription>
         </Alert>
       )}
 
-      {/* Summary */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Total Drivers</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-3xl font-bold">{drivers.length}</p>
-            <p className="text-sm text-gray-500">Active drivers</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Expired Licenses</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-3xl font-bold text-red-600">{expiredLicenses.length}</p>
-            <p className="text-sm text-red-500">Action needed</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Expiring Soon</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-3xl font-bold text-yellow-600">{expiringSoon.length}</p>
-            <p className="text-sm text-yellow-500">Next 30 days</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Compliant</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-3xl font-bold text-green-600">{compliantDrivers.length}</p>
-            <p className="text-sm text-green-500">Good standing</p>
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <AdminKpi title="Drivers" value={String(visible.length)} hint="Active" />
+        <AdminKpi title="Expired" value={String(expiredLicenses.length)} hint="Action needed" />
+        <AdminKpi title="Expiring soon" value={String(expiringSoon.length)} hint="Next 30 days" />
+        <AdminKpi title="Compliant" value={String(compliantDrivers.length)} hint="Good standing" />
       </div>
 
-      {/* Expired Licenses */}
       {expiredLicenses.length > 0 && (
-        <Card className="border-red-200 bg-red-50/50">
-          <CardHeader>
-            <CardTitle>Expired Licenses</CardTitle>
-            <CardDescription className="text-red-700">Requires immediate attention</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Driver</TableHead>
-                    <TableHead>License #</TableHead>
-                    <TableHead>Fleet</TableHead>
-                    <TableHead>Expired Since</TableHead>
-                    <TableHead>Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {expiredLicenses.map((driver) => (
-                    <TableRow key={driver.id}>
-                      <TableCell className="font-medium">{driver.full_name}</TableCell>
-                      <TableCell className="text-sm">{driver.license_number || 'N/A'}</TableCell>
-                      <TableCell>{driver.tenants?.name}</TableCell>
-                      <TableCell>
-                        {driver.license_expiry
-                          ? new Date(driver.license_expiry).toLocaleDateString()
-                          : 'Unknown'}
-                      </TableCell>
-                      <TableCell>
-                        <Badge className="bg-red-100 text-red-800">Expired</Badge>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
+        <AdminRecordList rows={expiredLicenses} rowKey={(row) => row.id} loading={loading} emptyTitle="No expired licences" columns={columns('expired')} />
       )}
-
-      {/* Expiring Soon */}
       {expiringSoon.length > 0 && (
-        <Card className="border-yellow-200 bg-yellow-50/50">
-          <CardHeader>
-            <CardTitle>Licenses Expiring Soon</CardTitle>
-            <CardDescription className="text-yellow-700">Renewal needed within 30 days</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Driver</TableHead>
-                    <TableHead>License #</TableHead>
-                    <TableHead>Fleet</TableHead>
-                    <TableHead>Expires In</TableHead>
-                    <TableHead>Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {expiringSoon.map((driver) => (
-                    <TableRow key={driver.id}>
-                      <TableCell className="font-medium">{driver.full_name}</TableCell>
-                      <TableCell className="text-sm">{driver.license_number || 'N/A'}</TableCell>
-                      <TableCell>{driver.tenants?.name}</TableCell>
-                      <TableCell>
-                        <span className="font-semibold">{getDaysToExpiry(driver.license_expiry)} days</span>
-                      </TableCell>
-                      <TableCell>
-                        <Badge className="bg-yellow-100 text-yellow-800">Expiring Soon</Badge>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
+        <AdminRecordList rows={expiringSoon} rowKey={(row) => row.id} loading={loading} emptyTitle="None expiring" columns={columns('soon')} />
       )}
-
-      {/* Compliant Drivers */}
-      {compliantDrivers.length > 0 && (
-        <Card className="border-green-200">
-          <CardHeader>
-            <CardTitle>Compliant Drivers</CardTitle>
-            <CardDescription>Licenses valid and up to date</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Driver</TableHead>
-                    <TableHead>License #</TableHead>
-                    <TableHead>Fleet</TableHead>
-                    <TableHead>Expires</TableHead>
-                    <TableHead>Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {compliantDrivers.slice(0, 10).map((driver) => (
-                    <TableRow key={driver.id}>
-                      <TableCell className="font-medium">{driver.full_name}</TableCell>
-                      <TableCell className="text-sm">{driver.license_number || 'N/A'}</TableCell>
-                      <TableCell>{driver.tenants?.name}</TableCell>
-                      <TableCell>
-                        {driver.license_expiry
-                          ? new Date(driver.license_expiry).toLocaleDateString()
-                          : 'Unknown'}
-                      </TableCell>
-                      <TableCell>
-                        <Badge className="bg-green-100 text-green-800">Compliant</Badge>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-            {compliantDrivers.length > 10 && (
-              <p className="text-sm text-gray-500 mt-4">
-                Showing 10 of {compliantDrivers.length} compliant drivers
-              </p>
-            )}
-          </CardContent>
-        </Card>
-      )}
-    </div>
+      <AdminRecordList
+        rows={compliantDrivers.slice(0, 10)}
+        rowKey={(row) => row.id}
+        loading={loading}
+        emptyTitle="No compliant drivers to show"
+        emptyDescription={compliantDrivers.length > 10 ? `Showing 10 of ${compliantDrivers.length}` : undefined}
+        columns={columns('ok')}
+      />
+    </>
   );
 }

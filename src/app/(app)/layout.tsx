@@ -4,18 +4,11 @@ import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-  LayoutDashboard,
-  Truck,
-  Users,
-  Wallet,
-  Receipt,
-  Settings,
-  CircleHelp,
   Car,
   ChevronLeft,
   ChevronRight,
-  Sun,
   Moon,
+  Sun,
 } from '@/components/icons';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { AppHeader } from '@/components/app-header';
@@ -31,32 +24,25 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-
-import { BarChart3, Zap, TrendingUp, Wrench } from '@/components/icons';
-
-const menuItems = [
-  { href: '/dashboard', label: 'Dashboard', Icon: LayoutDashboard },
-  { href: '/vehicles', label: 'Vehicles', Icon: Truck },
-  { href: '/drivers', label: 'Drivers', Icon: Users },
-  { href: '/collections', label: 'Collections', Icon: Wallet },
-  { href: '/expenses', label: 'Expenses', Icon: Receipt },
-  { href: '/trips', label: 'Trips', Icon: Zap },
-  { href: '/analytics', label: 'Analytics', Icon: BarChart3 },
-  { href: '/maintenance', label: 'Maintenance', Icon: Wrench },
-  { href: '/driver-analytics', label: 'Driver Stats', Icon: TrendingUp },
-  { href: '/settings', label: 'Settings', Icon: Settings },
-];
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
+import { InstallPrompt } from '@/components/pwa/install-prompt';
+import { MustChangePinDialog } from '@/components/must-change-pin-dialog';
+import { MobileBottomNav } from '@/components/mobile-nav';
+import { fleetHelpItem, fleetMenuItems } from '@/lib/nav';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [userRole, setUserRole] = useState<string>('Member');
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const [isHovered, setIsHovered] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const [isDark, setIsDark] = useState(false);
   const supabase = createClient();
   const pathname = usePathname();
-
-  const isExpanded = !isCollapsed || isHovered;
 
   useEffect(() => {
     const getUser = async () => {
@@ -69,7 +55,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           .select('role')
           .eq('user_id', user.id)
           .eq('is_active', true)
-          .single();
+          .maybeSingle();
 
         if (membership) {
           setUserRole(membership.role.charAt(0).toUpperCase() + membership.role.slice(1));
@@ -84,323 +70,150 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     setIsDark(document.documentElement.classList.contains('dark'));
   }, []);
 
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
+
   const setTheme = (dark: boolean) => {
     setIsDark(dark);
     document.documentElement.classList.toggle('dark', dark);
     localStorage.setItem('faidafleet-theme', dark ? 'dark' : 'light');
   };
 
-  const getUserInitials = () => accountInitials(user);
-
-  const getUserDisplayName = () => accountLabel(user);
+  const navLinks = (
+    <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
+      <TooltipProvider delayDuration={0}>
+        {fleetMenuItems.map(({ href, label, Icon }) => {
+          const isActive = pathname === href || pathname.startsWith(`${href}/`);
+          return (
+            <Tooltip key={href}>
+              <TooltipTrigger asChild>
+                <Link
+                  href={href}
+                  className={cn(
+                    'flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm font-medium transition-colors',
+                    isActive
+                      ? 'bg-white/10 text-white'
+                      : 'text-white/70 hover:bg-white/5 hover:text-white',
+                    isCollapsed && 'justify-center px-0',
+                  )}
+                >
+                  <Icon className="h-5 w-5 shrink-0" />
+                  {!isCollapsed && <span>{label}</span>}
+                </Link>
+              </TooltipTrigger>
+              {isCollapsed && (
+                <TooltipContent side="right">{label}</TooltipContent>
+              )}
+            </Tooltip>
+          );
+        })}
+      </TooltipProvider>
+    </nav>
+  );
 
   return (
-    <div className="flex h-screen overflow-hidden bg-gray-100 dark:bg-gray-900">
-      <style>{`
-        @keyframes slideInLeftSpring {
-          0% {
-            opacity: 0;
-            transform: translateX(-20px);
-          }
-          60% {
-            opacity: 1;
-            transform: translateX(8px);
-          }
-          80% {
-            transform: translateX(-2px);
-          }
-          100% {
-            transform: translateX(0);
-          }
-        }
-        
-        @keyframes slideInUpSpring {
-          0% {
-            opacity: 0;
-            transform: translateY(15px);
-          }
-          60% {
-            opacity: 1;
-            transform: translateY(-4px);
-          }
-          80% {
-            transform: translateY(1px);
-          }
-          100% {
-            transform: translateY(0);
-          }
-        }
-        
-        @keyframes activeIndicatorPulse {
-          0% {
-            width: 0;
-            opacity: 0;
-            box-shadow: 0 0 0 rgba(59, 130, 246, 0.5);
-          }
-          50% {
-            opacity: 1;
-            box-shadow: 0 0 8px rgba(59, 130, 246, 0.6);
-          }
-          100% {
-            width: 4px;
-            opacity: 1;
-            box-shadow: 0 0 0 rgba(59, 130, 246, 0);
-          }
-        }
-
-        @keyframes hoverGlow {
-          0% {
-            background-color: rgba(255, 255, 255, 0.02);
-          }
-          100% {
-            background-color: rgba(59, 130, 246, 0.1);
-          }
-        }
-
-        .menu-item {
-          position: relative;
-          animation: slideInLeftSpring 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
-        }
-        
-        .menu-item:nth-child(1) { animation-delay: 0.08s; }
-        .menu-item:nth-child(2) { animation-delay: 0.14s; }
-        .menu-item:nth-child(3) { animation-delay: 0.2s; }
-        .menu-item:nth-child(4) { animation-delay: 0.26s; }
-        .menu-item:nth-child(5) { animation-delay: 0.32s; }
-        .menu-item:nth-child(6) { animation-delay: 0.38s; }
-
-        .menu-item.active::before {
-          content: '';
-          position: absolute;
-          left: 0;
-          top: 50%;
-          transform: translateY(-50%);
-          width: 4px;
-          height: 24px;
-          background: linear-gradient(to bottom, rgb(59, 130, 246), rgb(37, 99, 235));
-          border-radius: 0 2px 2px 0;
-          animation: activeIndicatorPulse 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
-        }
-
-        .user-section {
-          animation: slideInUpSpring 0.7s cubic-bezier(0.34, 1.56, 0.64, 1);
-        }
-
-        .help-support {
-          animation: slideInUpSpring 0.65s cubic-bezier(0.34, 1.56, 0.64, 1);
-        }
-
-        .theme-toggle {
-          animation: slideInUpSpring 0.75s cubic-bezier(0.34, 1.56, 0.64, 1);
-        }
-
-        .nav-item {
-          transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
-        }
-
-        .nav-item:hover {
-          transform: translateX(6px) scale(1.02);
-        }
-
-        .nav-item:active {
-          transform: translateX(2px) scale(0.98);
-        }
-      `}</style>
-
-      {/* Collapsible Sidebar */}
+    <div className="flex min-h-dvh overflow-hidden bg-background">
       <aside
         className={cn(
-          'relative flex flex-col bg-gradient-to-b from-[#1a1d29] to-[#12141d] text-white transition-all duration-400 ease-out shadow-2xl',
-          isExpanded ? 'w-64' : 'w-16'
+          'relative hidden shrink-0 flex-col bg-[#152238] text-white md:flex',
+          isCollapsed ? 'w-16' : 'w-60',
         )}
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
       >
-        {/* Header */}
-        <div className={cn(
-          'flex h-16 items-center justify-between px-4 border-b border-white/10 transition-all duration-400',
-          isExpanded ? 'px-4' : 'px-0'
-        )}>
-          {isExpanded && (
-            <Link href="/dashboard" className="flex items-center gap-3 transition-all hover:opacity-80 group">
-              <div className="rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 p-1.5 shadow-lg group-hover:shadow-blue-500/50 transition-all">
-                <Car className="h-5 w-5" />
-              </div>
-              <span className="text-lg font-bold bg-gradient-to-r from-blue-400 to-blue-300 bg-clip-text text-transparent">FaidaFleet</span>
-            </Link>
-          )}
-          {!isExpanded && (
-            <Link href="/dashboard" className="flex w-full justify-center group transition-all">
-              <div className="rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 p-1.5 shadow-lg group-hover:shadow-blue-500/50 transition-all">
-                <Car className="h-5 w-5" />
-              </div>
-            </Link>
-          )}
-        </div>
-
-        {/* Navigation */}
-        <nav className="flex-1 space-y-1.5 overflow-y-auto px-3 py-4">
-          <TooltipProvider delayDuration={0}>
-            {menuItems.map(({ href, label, Icon }, index) => {
-              const isActive = pathname === href || pathname.startsWith(href + '/');
-              
-              return (
-                <Tooltip key={href}>
-                  <TooltipTrigger asChild>
-                    <Link
-                      href={href}
-                      className={cn(
-                        'nav-item menu-item flex items-center gap-3 rounded-full px-3 py-2.5 text-sm font-medium transition-all duration-300',
-                        isActive
-                          ? 'active bg-gradient-to-r from-blue-500/15 to-transparent text-blue-300 shadow-md'
-                          : 'text-gray-400 hover:text-gray-200 hover:bg-white/5',
-                        'relative overflow-hidden group'
-                      )}
-                    >
-                      <div className="absolute inset-0 bg-gradient-to-r from-blue-500/0 to-transparent opacity-0 group-hover:opacity-10 transition-opacity duration-300" />
-                      <Icon className={cn(
-                        'h-5 w-5 flex-shrink-0 transition-all duration-300',
-                        isActive && 'text-blue-400'
-                      )} />
-                      {isExpanded && <span className="relative z-10">{label}</span>}
-                    </Link>
-                  </TooltipTrigger>
-                  {!isExpanded && (
-                    <TooltipContent side="right" className="bg-gray-900 text-white border-gray-700 font-medium">
-                      {label}
-                    </TooltipContent>
-                  )}
-                </Tooltip>
-              );
-            })}
-          </TooltipProvider>
-        </nav>
-
-        {/* Footer */}
-        <div className="border-t border-white/10 space-y-3 p-3">
-          {/* Help & Support */}
-          <div className="help-support">
-            <TooltipProvider delayDuration={0}>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Link
-                    href="/help"
-                    className={cn(
-                      'nav-item flex items-center gap-3 rounded-full px-3 py-2.5 text-sm font-medium text-gray-400 transition-all duration-300',
-                      'hover:text-gray-200 hover:bg-white/5 relative overflow-hidden group',
-                      !isExpanded && 'justify-center'
-                    )}
-                  >
-                    <div className="absolute inset-0 bg-gradient-to-r from-purple-500/0 to-transparent opacity-0 group-hover:opacity-10 transition-opacity duration-300" />
-                    <CircleHelp className="h-5 w-5 flex-shrink-0" />
-                    {isExpanded && <span className="relative z-10">Help & Support</span>}
-                  </Link>
-                </TooltipTrigger>
-                {!isExpanded && (
-                  <TooltipContent side="right" className="bg-gray-900 text-white border-gray-700 font-medium">
-                    Help & Support
-                  </TooltipContent>
-                )}
-              </Tooltip>
-            </TooltipProvider>
-          </div>
-
-          {/* User Profile */}
-          <div className="user-section">
-            <Link
-              href="/settings"
-              className={cn(
-                'flex items-center gap-3 rounded-full p-2.5 transition-all duration-300 group',
-                'hover:bg-gradient-to-r hover:from-blue-500/10 hover:to-transparent',
-                !isExpanded && 'justify-center'
-              )}
-            >
-              <Avatar className="h-8 w-8 flex-shrink-0 ring-2 ring-blue-500/30 group-hover:ring-blue-500/50 transition-all">
-                <AvatarImage src={user?.user_metadata?.avatar_url || PlaceHolderImages[0].imageUrl} />
-                <AvatarFallback className="bg-gradient-to-br from-blue-500 to-blue-600 text-white text-xs font-semibold">
-                  {getUserInitials()}
-                </AvatarFallback>
-              </Avatar>
-              {isExpanded && (
-                <div className="flex flex-col overflow-hidden min-w-0 flex-1 animate-in fade-in slide-in-from-left">
-                  <span className="truncate text-sm font-semibold text-white">{getUserDisplayName()}</span>
-                  <span className="truncate text-xs text-gray-400">{userRole}</span>
-                </div>
-              )}
-            </Link>
-          </div>
-
-          {/* Theme Toggle */}
-          <div className="theme-toggle">
-            <div className={cn(
-              'flex items-center gap-1.5 rounded-full bg-white/5 backdrop-blur-sm p-1 border border-white/10',
-              'hover:bg-white/10 transition-all duration-300',
-              !isExpanded && 'justify-center'
-            )}>
-              {isExpanded ? (
-                <>
-                  <button
-                    onClick={() => setTheme(true)}
-                    className={cn(
-                      'flex-1 rounded-full px-3 py-1.5 text-xs font-medium transition-all duration-300',
-                      'hover:scale-105 active:scale-95',
-                      isDark 
-                        ? 'bg-gradient-to-r from-blue-500/20 to-blue-400/10 text-blue-300 shadow-md' 
-                        : 'text-gray-500 hover:text-gray-300'
-                    )}
-                  >
-                    <Moon className="mx-auto h-4 w-4" />
-                  </button>
-                  <button
-                    onClick={() => setTheme(false)}
-                    className={cn(
-                      'flex-1 rounded-full px-3 py-1.5 text-xs font-medium transition-all duration-300',
-                      'hover:scale-105 active:scale-95',
-                      !isDark 
-                        ? 'bg-gradient-to-r from-yellow-500/20 to-yellow-400/10 text-yellow-300 shadow-md' 
-                        : 'text-gray-500 hover:text-gray-300'
-                    )}
-                  >
-                    <Sun className="mx-auto h-4 w-4" />
-                  </button>
-                </>
-              ) : (
-                <button
-                  onClick={() => setTheme(!isDark)}
-                  className="flex-1 rounded-full p-1.5 text-gray-400 transition-all hover:text-white hover:bg-white/10 hover:scale-105 active:scale-95"
-                >
-                  {isDark ? <Moon className="mx-auto h-4 w-4" /> : <Sun className="mx-auto h-4 w-4" />}
-                </button>
-              )}
+        <div className={cn('flex h-14 items-center border-b border-white/10', isCollapsed ? 'justify-center' : 'px-4')}>
+          <Link href="/dashboard" className="flex items-center gap-2">
+            <div className="rounded-lg bg-primary p-1.5">
+              <Car className="h-5 w-5" />
             </div>
+            {!isCollapsed && <span className="text-base font-semibold">FaidaFleet</span>}
+          </Link>
+        </div>
+        {navLinks}
+        <div className="space-y-2 border-t border-white/10 p-3">
+          <Link
+            href={fleetHelpItem.href}
+            className={cn('flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm text-white/70 hover:bg-white/5 hover:text-white', isCollapsed && 'justify-center px-0')}
+          >
+            <fleetHelpItem.Icon className="h-5 w-5" />
+            {!isCollapsed && <span>{fleetHelpItem.label}</span>}
+          </Link>
+          <Link href="/settings" className={cn('flex min-h-11 items-center gap-3 rounded-xl p-2 hover:bg-white/5', isCollapsed && 'justify-center')}>
+            <Avatar className="h-8 w-8">
+              <AvatarImage src={user?.user_metadata?.avatar_url || PlaceHolderImages[0].imageUrl} />
+              <AvatarFallback className="bg-primary text-xs text-primary-foreground">{accountInitials(user)}</AvatarFallback>
+            </Avatar>
+            {!isCollapsed && (
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium">{accountLabel(user)}</p>
+                <p className="truncate text-xs text-white/60">{userRole}</p>
+              </div>
+            )}
+          </Link>
+          <div className={cn('flex rounded-xl bg-white/5 p-1', isCollapsed && 'justify-center')}>
+            <button type="button" onClick={() => setTheme(true)} className={cn('flex min-h-11 min-w-11 flex-1 items-center justify-center rounded-lg', isDark && 'bg-white/10 text-white')} aria-label="Dark theme">
+              <Moon className="h-4 w-4" />
+            </button>
+            <button type="button" onClick={() => setTheme(false)} className={cn('flex min-h-11 min-w-11 flex-1 items-center justify-center rounded-lg', !isDark && 'bg-white/10 text-white')} aria-label="Light theme">
+              <Sun className="h-4 w-4" />
+            </button>
           </div>
         </div>
-
-        {/* Collapse Toggle Button */}
         <button
+          type="button"
           onClick={() => setIsCollapsed(!isCollapsed)}
-          className={cn(
-            'absolute -right-3 top-20 z-50 flex h-6 w-6 items-center justify-center rounded-full',
-            'border border-blue-500/30 bg-[#1a1d29] text-gray-400 transition-all duration-300',
-            'hover:bg-blue-500/20 hover:text-blue-400 hover:border-blue-500/50 hover:scale-110 active:scale-95',
-            'shadow-lg hover:shadow-blue-500/30'
-          )}
-          style={{
-            transform: isCollapsed ? 'rotate(180deg)' : 'rotate(0deg)',
-            transition: 'all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)',
-          }}
+          className="absolute -right-3 top-16 z-20 flex h-11 w-11 items-center justify-center rounded-full border bg-background text-foreground shadow-sm"
+          aria-label={isCollapsed ? 'Expand menu' : 'Collapse menu'}
         >
           {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
         </button>
       </aside>
 
-      {/* Main Content */}
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <AppHeader />
-        <main className="flex-1 overflow-y-auto bg-white dark:bg-gray-900">
+      <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+        <SheetContent side="left" className="w-[min(20rem,calc(100vw-1.5rem))] bg-[#152238] p-0 text-white">
+          <SheetHeader className="border-b border-white/10 p-4 text-left">
+            <SheetTitle className="flex items-center gap-2 text-white">
+              <Car className="h-5 w-5" />
+              FaidaFleet
+            </SheetTitle>
+          </SheetHeader>
+          <div className="flex h-[calc(100dvh-4rem)] flex-col">
+            <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
+              {fleetMenuItems.map(({ href, label, Icon }) => {
+                const isActive = pathname === href || pathname.startsWith(`${href}/`);
+                return (
+                  <Link
+                    key={href}
+                    href={href}
+                    className={cn(
+                      'flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm font-medium',
+                      isActive ? 'bg-white/10 text-white' : 'text-white/70',
+                    )}
+                  >
+                    <Icon className="h-5 w-5" />
+                    {label}
+                  </Link>
+                );
+              })}
+            </nav>
+            <div className="border-t border-white/10 p-3">
+              <Button variant="ghost" className="min-h-11 w-full justify-start text-white" onClick={() => setTheme(!isDark)}>
+                {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+                {isDark ? 'Light theme' : 'Dark theme'}
+              </Button>
+            </div>
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <AppHeader onMenuClick={() => setMobileOpen(true)} />
+        <main className="flex-1 overflow-y-auto pb-[calc(4.75rem+env(safe-area-inset-bottom))] md:pb-0">
           {children}
         </main>
       </div>
+      <MobileBottomNav role={userRole} />
+      <InstallPrompt />
+      <MustChangePinDialog />
     </div>
   );
 }

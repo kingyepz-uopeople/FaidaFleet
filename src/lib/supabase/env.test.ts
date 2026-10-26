@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { isAdminUiPreview } from '../admin-preview'
 import { getSupabaseKey, getSupabaseUrl, hasSupabaseEnv, supabaseCredentials } from './env'
 
 function withEnv(values: Record<string, string | undefined>, run: () => void) {
@@ -55,5 +56,37 @@ test('missing public env does not throw and uses a build placeholder', () => {
     const credentials = supabaseCredentials()
     assert.ok(credentials.url)
     assert.ok(credentials.key)
+  })
+})
+
+test('admin UI preview is on only with the flag and no supabase env', () => {
+  withEnv({
+    NEXT_PUBLIC_ADMIN_UI_PREVIEW: '1',
+    NEXT_PUBLIC_SUPABASE_URL: undefined,
+    NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: undefined,
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: undefined,
+  }, () => {
+    assert.equal(isAdminUiPreview(), true)
+  })
+})
+
+test('admin UI preview stays off when supabase public env is present', () => {
+  withEnv({
+    NEXT_PUBLIC_ADMIN_UI_PREVIEW: '1',
+    NEXT_PUBLIC_SUPABASE_URL: 'https://example.supabase.co',
+    NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_test',
+  }, () => {
+    assert.equal(isAdminUiPreview(), false)
+  })
+})
+
+test('admin UI preview stays off when the flag is absent', () => {
+  withEnv({
+    NEXT_PUBLIC_ADMIN_UI_PREVIEW: undefined,
+    NEXT_PUBLIC_SUPABASE_URL: undefined,
+    NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: undefined,
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: undefined,
+  }, () => {
+    assert.equal(isAdminUiPreview(), false)
   })
 })
