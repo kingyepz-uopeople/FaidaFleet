@@ -1,135 +1,487 @@
 'use client';
-import React, { useEffect, useState } from 'react';
+
+import React, { useEffect, useMemo, useState } from 'react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { PlusCircle, Loader2, Trash, Edit } from '@/components/icons';
-import { createClient } from '@/lib/supabase/client';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { format } from 'date-fns';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { PlusCircle, Loader2, Trash2, Edit, Zap, Wallet, TrendingUp } from '@/components/icons';
+import { createClient } from '@/lib/supabase/client';
+import { assertMutation, assertMutationRow, requireUuid } from '@/lib/db';
+import { toastError, toastSuccess } from '@/lib/toast';
+import { formatDateOnly } from '@/lib/dates';
+import { EmptyState, PageShell, TableScroll } from '@/components/page-shell';
+import { FormDialog } from '@/components/form-dialog';
+import { NativeSelect } from '@/components/ui/native-select';
+import { StatCard } from '@/components/stat-card';
 
-type Trip = { id: string; trip_date: string; vehicle_id: string; driver_id: string; distance_km: number; earnings: number; expenses: number; vehicles: { registration_number: string }; drivers: { full_name: string } };
+type Trip = {
+  id: string;
+  vehicle_id: string;
+  driver_id: string;
+  trip_date: string;
+  distance_km: number | null;
+  earnings: number | null;
+  expenses: number | null;
+  start_location: string | null;
+  end_location: string | null;
+  vehicles: { registration_number: string } | null;
+  drivers: { full_name: string } | null;
+};
+
+type Option = { id: string; label: string };
+
+const EMPTY_FORM = {
+  vehicleId: '',
+  driverId: '',
+  tripDate: new Date().toISOString().split('T')[0],
+  distanceKm: '',
+  earnings: '',
+  expenses: '',
+  startLocation: '',
+  endLocation: '',
+};
 
 export default function TripsPage() {
   const [trips, setTrips] = useState<Trip[]>([]);
-  const [vehicles, setVehicles] = useState<any[]>([]);
-  const [drivers, setDrivers] = useState<any[]>([]);
+  const [vehicles, setVehicles] = useState<Option[]>([]);
+  const [drivers, setDrivers] = useState<Option[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
-  const [open, setOpen] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Trip | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
   const [tenantId, setTenantId] = useState<string | null>(null);
-  const [form, setForm] = useState({ vehicleId: '', driverId: '', tripDate: new Date().toISOString().split('T')[0], distanceKm: '', earnings: '', expenses: '', startLocation: '', endLocation: '' });
-  const supabase = createClient();
+  const [form, setForm] = useState(EMPTY_FORM);
+  const supabase = useMemo(() => createClient(), []);
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => {
+    fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const fetchData = async () => {
     try {
       setLoading(true);
+      setLoadError(null);
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Not authenticated');
-      const membershipResp = await supabase.from('memberships').select('tenant_id').eq('user_id', user.id).eq('is_active', true).single();
-      const membership: any = membershipResp.data;
-      if (!membership) throw new Error('No tenant found');
-      const tId = membership.tenant_id;
-      setTenantId(tId);
+      if (!user) throw new Error('You need to sign in again.');
+
+      const { data: membership, error: membershipError } = await supabase
+        .from('memberships')
+        .select('tenant_id')
+        .eq('user_id', user.id)
+        .eq('is_active', true)
+        .maybeSingle();
+
+      if (membershipError) throw membershipError;
+      if (!membership) {
+        setLoadError('No fleet is linked to this account yet. Finish onboarding to record trips.');
+        return;
+      }
+
+      setTenantId(membership.tenant_id);
 
       const [tripsRes, vehiclesRes, driversRes] = await Promise.all([
-        supabase.from('trips').select('*, vehicles(registration_number), drivers(full_name)').eq('tenant_id', tId).order('trip_date', { ascending: false }),
-        supabase.from('vehicles').select('id, registration_number').eq('tenant_id', tId).eq('is_active', true),
-        supabase.from('drivers').select('id, full_name').eq('tenant_id', tId).eq('is_active', true),
+        supabase
+          .from('trips')
+          .select('*, vehicles(registration_number), drivers(full_name)')
+          .eq('tenant_id', membership.tenant_id)
+          .order('trip_date', { ascending: false }),
+        supabase
+          .from('vehicles')
+          .select('id, registration_number')
+          .eq('tenant_id', membership.tenant_id)
+          .eq('is_active', true)
+          .order('registration_number'),
+        supabase
+          .from('drivers')
+          .select('id, full_name')
+          .eq('tenant_id', membership.tenant_id)
+          .eq('is_active', true)
+          .order('full_name'),
       ]);
 
       if (tripsRes.error) throw tripsRes.error;
       if (vehiclesRes.error) throw vehiclesRes.error;
       if (driversRes.error) throw driversRes.error;
 
-      setTrips(tripsRes.data || []);
-      setVehicles(vehiclesRes.data || []);
-      setDrivers(driversRes.data || []);
-    } catch (err: any) {
-      setError(err.message);
+      setTrips((tripsRes.data || []) as Trip[]);
+      setVehicles((vehiclesRes.data || []).map((row) => ({ id: row.id, label: row.registration_number })));
+      setDrivers((driversRes.data || []).map((row) => ({ id: row.id, label: row.full_name })));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Could not load trips';
+      setLoadError(message);
+      toastError(message, 'Could not load trips');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleOpenDialog = (trip?: Trip) => {
-    if (trip) {
-      setEditing(trip);
-      setForm({ vehicleId: trip.vehicle_id, driverId: trip.driver_id, tripDate: trip.trip_date, distanceKm: trip.distance_km?.toString() || '', earnings: trip.earnings?.toString() || '', expenses: trip.expenses?.toString() || '', startLocation: '', endLocation: '' });
-    } else {
-      setEditing(null);
-      setForm({ vehicleId: '', driverId: '', tripDate: new Date().toISOString().split('T')[0], distanceKm: '', earnings: '', expenses: '', startLocation: '', endLocation: '' });
-    }
-    setOpen(true);
+  const openCreate = () => {
+    setEditing(null);
+    setForm(EMPTY_FORM);
+    setFormError(null);
+    setDialogOpen(true);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const openEdit = (trip: Trip) => {
+    setEditing(trip);
+    setForm({
+      vehicleId: trip.vehicle_id,
+      driverId: trip.driver_id,
+      tripDate: trip.trip_date,
+      distanceKm: trip.distance_km?.toString() || '',
+      earnings: trip.earnings?.toString() || '',
+      expenses: trip.expenses?.toString() || '',
+      startLocation: trip.start_location || '',
+      endLocation: trip.end_location || '',
+    });
+    setFormError(null);
+    setDialogOpen(true);
+  };
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
     setSubmitting(true);
-    setError(null);
+    setFormError(null);
     try {
-      if (!tenantId) throw new Error('No tenant found');
-      const payload: any = { tenant_id: tenantId, vehicle_id: form.vehicleId, driver_id: form.driverId, trip_date: form.tripDate, distance_km: parseFloat(form.distanceKm) || 0, earnings: parseFloat(form.earnings) || 0, expenses: parseFloat(form.expenses) || 0, start_location: form.startLocation || null, end_location: form.endLocation || null };
-      if (editing) {
-        const { error: err } = await supabase.from('trips').update(payload).eq('id', editing.id);
-        if (err) throw err;
-        setSuccess('Trip updated successfully');
-      } else {
-        const { error: err } = await supabase.from('trips').insert([payload]);
-        if (err) throw err;
-        setSuccess('Trip recorded successfully');
-      }
-      setOpen(false);
+      if (!tenantId) throw new Error('No fleet found for this account.');
+      const vehicleId = requireUuid(form.vehicleId, 'vehicle');
+      const driverId = requireUuid(form.driverId, 'driver');
+      if (!form.tripDate) throw new Error('Choose the trip date');
+
+      const payload = {
+        tenant_id: tenantId,
+        vehicle_id: vehicleId,
+        driver_id: driverId,
+        trip_date: form.tripDate,
+        distance_km: form.distanceKm ? Number.parseFloat(form.distanceKm) : null,
+        earnings: form.earnings ? Number.parseFloat(form.earnings) : 0,
+        expenses: form.expenses ? Number.parseFloat(form.expenses) : 0,
+        start_location: form.startLocation.trim() || null,
+        end_location: form.endLocation.trim() || null,
+      };
+
+      const result = editing
+        ? await supabase.from('trips').update(payload).eq('id', editing.id).select('id')
+        : await supabase.from('trips').insert([payload]).select('id');
+
+      assertMutationRow(result, editing ? 'Could not update the trip' : 'Could not record the trip');
+      toastSuccess(editing ? 'Trip updated.' : 'Trip recorded.', 'Saved');
+      setDialogOpen(false);
       await fetchData();
-      setTimeout(() => setSuccess(null), 3000);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Could not save the trip';
+      setFormError(message);
+      toastError(message, 'Could not save the trip');
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!window.confirm('Delete this trip?')) return;
+  const handleDelete = async (trip: Trip) => {
+    if (!window.confirm('Delete this trip? This cannot be undone.')) return;
     try {
-      const { error: err } = await supabase.from('trips').delete().eq('id', id);
-      if (err) throw err;
-      setSuccess('Trip deleted successfully');
+      const result = await supabase.from('trips').delete().eq('id', trip.id).select('id');
+      assertMutation(result, 'Could not delete the trip');
+      toastSuccess('Trip deleted.', 'Deleted');
       await fetchData();
-      setTimeout(() => setSuccess(null), 3000);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      toastError(err, 'Could not delete the trip');
     }
   };
 
-  const totalEarnings = trips.reduce((sum, t) => sum + (t.earnings || 0), 0);
-  const totalExpenses = trips.reduce((sum, t) => sum + (t.expenses || 0), 0);
+  const totalEarnings = trips.reduce((sum, trip) => sum + (trip.earnings || 0), 0);
+  const totalExpenses = trips.reduce((sum, trip) => sum + (trip.expenses || 0), 0);
   const totalProfit = totalEarnings - totalExpenses;
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 py-5 sm:px-6 sm:py-6">
-      <div className="flex items-center justify-between"><div><h1 className="text-3xl font-bold">Trips & Routes</h1><p className="text-gray-600 dark:text-gray-400">Track individual trips and earnings</p></div><Dialog open={open} onOpenChange={setOpen}><DialogTrigger asChild><Button onClick={() => handleOpenDialog()} className="bg-blue-600 hover:bg-blue-700"><PlusCircle className="mr-2 h-4 w-4" />Record Trip</Button></DialogTrigger><DialogContent className="max-w-md max-h-[90vh] overflow-y-auto"><DialogHeader><DialogTitle>{editing ? 'Edit Trip' : 'Record Trip'}</DialogTitle></DialogHeader><form onSubmit={handleSubmit} className="space-y-4"><div><Label>Vehicle *</Label><Select value={form.vehicleId} onValueChange={(v) => setForm({ ...form, vehicleId: v })}><SelectTrigger><SelectValue placeholder="Select vehicle" /></SelectTrigger><SelectContent>{vehicles.map((v) => (<SelectItem key={v.id} value={v.id}>{v.registration_number}</SelectItem>))}</SelectContent></Select></div><div><Label>Driver *</Label><Select value={form.driverId} onValueChange={(v) => setForm({ ...form, driverId: v })}><SelectTrigger><SelectValue placeholder="Select driver" /></SelectTrigger><SelectContent>{drivers.map((d) => (<SelectItem key={d.id} value={d.id}>{d.full_name}</SelectItem>))}</SelectContent></Select></div><div><Label>Trip Date *</Label><Input type="date" value={form.tripDate} onChange={(e) => setForm({ ...form, tripDate: e.target.value })} required /></div><div><Label>Distance (KM)</Label><Input type="number" step="0.01" value={form.distanceKm} onChange={(e) => setForm({ ...form, distanceKm: e.target.value })} placeholder="0.00" /></div><div><Label>Earnings (KES) *</Label><Input type="number" step="0.01" value={form.earnings} onChange={(e) => setForm({ ...form, earnings: e.target.value })} placeholder="0.00" required /></div><div><Label>Expenses (KES)</Label><Input type="number" step="0.01" value={form.expenses} onChange={(e) => setForm({ ...form, expenses: e.target.value })} placeholder="0.00" /></div>{error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}<DialogFooter><Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button><Button type="submit" disabled={submitting} className="bg-blue-600">{submitting ? 'Saving...' : editing ? 'Update' : 'Record'}</Button></DialogFooter></form></DialogContent></Dialog></div>
+    <PageShell
+      title="Trips & routes"
+      description="Track individual trips, distance, and earnings."
+      actions={
+        <Button type="button" onClick={openCreate}>
+          <PlusCircle className="mr-2 h-4 w-4" />
+          Record trip
+        </Button>
+      }
+    >
+      {loadError && (
+        <Alert variant="destructive">
+          <AlertDescription>{loadError}</AlertDescription>
+        </Alert>
+      )}
 
-      {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
-      {success && <Alert className="bg-green-50 text-green-800 border-green-200"><AlertDescription>{success}</AlertDescription></Alert>}
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card><CardHeader><CardTitle className="text-lg">Total Earnings</CardTitle></CardHeader><CardContent><p className="text-3xl font-bold text-green-600">KES {totalEarnings.toLocaleString()}</p></CardContent></Card>
-        <Card><CardHeader><CardTitle className="text-lg">Total Expenses</CardTitle></CardHeader><CardContent><p className="text-3xl font-bold text-red-600">KES {totalExpenses.toLocaleString()}</p></CardContent></Card>
-        <Card><CardHeader><CardTitle className="text-lg">Net Profit</CardTitle></CardHeader><CardContent><p className="text-3xl font-bold text-blue-600">KES {totalProfit.toLocaleString()}</p></CardContent></Card>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <StatCard title="Total earnings" value={`KES ${totalEarnings.toLocaleString()}`} description={`${trips.length} trips`} Icon={Wallet} />
+        <StatCard title="Total expenses" value={`KES ${totalExpenses.toLocaleString()}`} description="Fuel and running costs" Icon={Zap} />
+        <StatCard title="Net profit" value={`KES ${totalProfit.toLocaleString()}`} description="Earnings minus expenses" Icon={TrendingUp} />
       </div>
 
-      <Card><CardHeader><CardTitle>Trip Records</CardTitle><CardDescription>{trips.length} trips recorded</CardDescription></CardHeader><CardContent>{loading ? <div className="flex justify-center py-8"><Loader2 className="h-8 w-8 animate-spin text-blue-600" /></div> : trips.length === 0 ? <div className="text-center py-8 text-gray-500"><p>No trips recorded yet</p></div> : <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Date</TableHead><TableHead>Vehicle</TableHead><TableHead>Driver</TableHead><TableHead>Distance</TableHead><TableHead>Earnings</TableHead><TableHead>Expenses</TableHead><TableHead>Profit</TableHead><TableHead>Actions</TableHead></TableRow></TableHeader><TableBody>{trips.map((trip) => (<TableRow key={trip.id}><TableCell>{format(new Date(trip.trip_date), 'MMM dd, yyyy')}</TableCell><TableCell>{trip.vehicles?.registration_number}</TableCell><TableCell>{trip.drivers?.full_name}</TableCell><TableCell>{trip.distance_km?.toFixed(1) || 0} km</TableCell><TableCell className="font-bold text-green-600">KES {(trip.earnings || 0).toLocaleString()}</TableCell><TableCell className="font-bold text-red-600">KES {(trip.expenses || 0).toLocaleString()}</TableCell><TableCell className="font-bold text-blue-600">KES {((trip.earnings || 0) - (trip.expenses || 0)).toLocaleString()}</TableCell><TableCell><div className="flex gap-2"><Button variant="ghost" size="sm" onClick={() => handleOpenDialog(trip)}><Edit className="h-4 w-4" /></Button><Button variant="ghost" size="sm" onClick={() => handleDelete(trip.id)}><Trash className="h-4 w-4 text-red-600" /></Button></div></TableCell></TableRow>))}</TableBody></Table></div>}</CardContent></Card>
-    </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Trip records</CardTitle>
+          <CardDescription>{trips.length} trips recorded</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="flex justify-center py-8">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            </div>
+          ) : trips.length === 0 ? (
+            <EmptyState
+              title="No trips recorded yet"
+              description="Record a trip to track distance, earnings, and running costs per vehicle."
+              action={
+                <Button type="button" onClick={openCreate}>
+                  <PlusCircle className="mr-2 h-4 w-4" />
+                  Record your first trip
+                </Button>
+              }
+            />
+          ) : (
+            <>
+              <div className="grid gap-3 md:hidden">
+                {trips.map((trip) => (
+                  <article key={trip.id} className="rounded-2xl border bg-card p-4 shadow-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold">
+                          {trip.vehicles?.registration_number || 'Vehicle removed'}
+                        </p>
+                        <p className="truncate text-sm text-muted-foreground">
+                          {trip.drivers?.full_name || 'Driver removed'}
+                        </p>
+                      </div>
+                      <span className="shrink-0 text-sm text-muted-foreground">{formatDateOnly(trip.trip_date)}</span>
+                    </div>
+                    <dl className="mt-3 grid grid-cols-3 gap-2 text-sm">
+                      <div>
+                        <dt className="text-xs text-muted-foreground">Distance</dt>
+                        <dd>{trip.distance_km != null ? `${trip.distance_km} km` : '—'}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs text-muted-foreground">Earnings</dt>
+                        <dd className="text-emerald-700">KES {(trip.earnings || 0).toLocaleString()}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs text-muted-foreground">Expenses</dt>
+                        <dd className="text-rose-700">KES {(trip.expenses || 0).toLocaleString()}</dd>
+                      </div>
+                    </dl>
+                    <div className="mt-3 flex gap-2">
+                      <Button type="button" variant="outline" className="min-h-11 flex-1" onClick={() => openEdit(trip)}>
+                        <Edit className="mr-2 h-4 w-4" /> Edit
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="min-h-11 text-destructive"
+                        onClick={() => handleDelete(trip)}
+                        aria-label="Delete trip"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+
+              <TableScroll>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Vehicle</TableHead>
+                      <TableHead>Driver</TableHead>
+                      <TableHead>Distance</TableHead>
+                      <TableHead>Earnings</TableHead>
+                      <TableHead>Expenses</TableHead>
+                      <TableHead>Profit</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {trips.map((trip) => (
+                      <TableRow key={trip.id}>
+                        <TableCell>{formatDateOnly(trip.trip_date)}</TableCell>
+                        <TableCell className="font-medium">{trip.vehicles?.registration_number || '—'}</TableCell>
+                        <TableCell>{trip.drivers?.full_name || '—'}</TableCell>
+                        <TableCell>{trip.distance_km != null ? `${trip.distance_km} km` : '—'}</TableCell>
+                        <TableCell className="font-medium text-emerald-700">KES {(trip.earnings || 0).toLocaleString()}</TableCell>
+                        <TableCell className="font-medium text-rose-700">KES {(trip.expenses || 0).toLocaleString()}</TableCell>
+                        <TableCell className="font-medium">KES {((trip.earnings || 0) - (trip.expenses || 0)).toLocaleString()}</TableCell>
+                        <TableCell>
+                          <div className="flex justify-end gap-1">
+                            <Button type="button" variant="ghost" size="sm" className="min-h-11" onClick={() => openEdit(trip)}>
+                              <Edit className="h-4 w-4" />
+                              <span className="sr-only">Edit trip</span>
+                            </Button>
+                            <Button type="button" variant="ghost" size="sm" className="min-h-11 text-destructive" onClick={() => handleDelete(trip)}>
+                              <Trash2 className="h-4 w-4" />
+                              <span className="sr-only">Delete trip</span>
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableScroll>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      <FormDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        title={editing ? 'Edit trip' : 'Record trip'}
+        description="Trips feed the dashboard profit figures and driver analytics."
+      >
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="trip_vehicle">Vehicle *</Label>
+            <NativeSelect
+              id="trip_vehicle"
+              value={form.vehicleId}
+              onChange={(event) => setForm({ ...form, vehicleId: event.target.value })}
+              required
+              disabled={submitting}
+            >
+              <option value="">Select vehicle</option>
+              {vehicles.map((vehicle) => (
+                <option key={vehicle.id} value={vehicle.id}>{vehicle.label}</option>
+              ))}
+            </NativeSelect>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="trip_driver">Driver *</Label>
+            <NativeSelect
+              id="trip_driver"
+              value={form.driverId}
+              onChange={(event) => setForm({ ...form, driverId: event.target.value })}
+              required
+              disabled={submitting}
+            >
+              <option value="">Select driver</option>
+              {drivers.map((driver) => (
+                <option key={driver.id} value={driver.id}>{driver.label}</option>
+              ))}
+            </NativeSelect>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="trip_date">Trip date *</Label>
+            <Input
+              id="trip_date"
+              type="date"
+              value={form.tripDate}
+              onChange={(event) => setForm({ ...form, tripDate: event.target.value })}
+              required
+              disabled={submitting}
+            />
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="space-y-2">
+              <Label htmlFor="distance">Distance (km)</Label>
+              <Input
+                id="distance"
+                type="number"
+                inputMode="decimal"
+                step="0.01"
+                min="0"
+                value={form.distanceKm}
+                onChange={(event) => setForm({ ...form, distanceKm: event.target.value })}
+                placeholder="0.00"
+                disabled={submitting}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="earnings">Earnings (KES) *</Label>
+              <Input
+                id="earnings"
+                type="number"
+                inputMode="decimal"
+                step="0.01"
+                min="0"
+                value={form.earnings}
+                onChange={(event) => setForm({ ...form, earnings: event.target.value })}
+                placeholder="0.00"
+                required
+                disabled={submitting}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="expenses">Expenses (KES)</Label>
+              <Input
+                id="expenses"
+                type="number"
+                inputMode="decimal"
+                step="0.01"
+                min="0"
+                value={form.expenses}
+                onChange={(event) => setForm({ ...form, expenses: event.target.value })}
+                placeholder="0.00"
+                disabled={submitting}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="start_location">From</Label>
+              <Input
+                id="start_location"
+                value={form.startLocation}
+                onChange={(event) => setForm({ ...form, startLocation: event.target.value })}
+                placeholder="e.g., CBD"
+                disabled={submitting}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="end_location">To</Label>
+              <Input
+                id="end_location"
+                value={form.endLocation}
+                onChange={(event) => setForm({ ...form, endLocation: event.target.value })}
+                placeholder="e.g., Westlands"
+                disabled={submitting}
+              />
+            </div>
+          </div>
+
+          {formError && (
+            <Alert variant="destructive">
+              <AlertDescription>{formError}</AlertDescription>
+            </Alert>
+          )}
+
+          <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
+            <Button type="button" variant="outline" className="min-h-11" onClick={() => setDialogOpen(false)} disabled={submitting}>
+              Cancel
+            </Button>
+            <Button type="submit" className="min-h-11" disabled={submitting}>
+              {submitting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Saving…
+                </>
+              ) : editing ? (
+                'Update trip'
+              ) : (
+                'Record trip'
+              )}
+            </Button>
+          </div>
+        </form>
+      </FormDialog>
+    </PageShell>
   );
 }

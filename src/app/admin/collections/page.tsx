@@ -7,7 +7,9 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { createClient } from '@/lib/supabase/client';
 import { Download } from '@/components/icons';
-import { AdminKpi, AdminPageHeader, AdminRecordList, AdminSearch, StatusBadge, formatDate, formatKes, titleCase } from '@/components/admin-ui';
+import { AdminFeedback, AdminKpi, AdminPageHeader, AdminRecordList, AdminSearch, StatusBadge, formatDate, formatKes, titleCase } from '@/components/admin-ui';
+import { formatDateOnly } from '@/lib/dates';
+import { toastError } from '@/lib/toast';
 import { isAdminUiPreview, previewCollections } from '@/lib/admin-preview';
 
 type Collection = {
@@ -35,6 +37,7 @@ export default function CollectionsPage() {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [sortKey, setSortKey] = useState<'date' | 'amount'>('date');
+  const [error, setError] = useState<string | null>(null);
   const supabase = createClient();
 
   useEffect(() => {
@@ -48,15 +51,19 @@ export default function CollectionsPage() {
         setCollections(previewCollections);
         return;
       }
-      const { data } = await supabase
+      setError(null);
+      const { data, error: loadError } = await supabase
         .from('collections')
         .select('*, drivers(full_name), tenants(name)')
         .order('date', { ascending: false })
         .limit(1000);
 
+      if (loadError) throw loadError;
       setCollections((data || []) as Collection[]);
-    } catch (error) {
-      console.error('Error fetching collections:', error);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Could not load collections';
+      setError(message);
+      toastError(message, 'Could not load collections');
     } finally {
       setLoading(false);
     }
@@ -85,6 +92,28 @@ export default function CollectionsPage() {
     stats[c.payment_method] = (stats[c.payment_method] || 0) + c.amount;
     return stats;
   }, {});
+  const exportCsv = () => {
+    const header = ['Date', 'Driver', 'Fleet', 'Amount (KES)', 'Method', 'Status'];
+    const rows = filteredCollections.map((collection) => [
+      collection.date,
+      collection.drivers?.full_name || '',
+      collection.tenants?.name || '',
+      collection.amount,
+      collection.payment_method,
+      collection.reconciled ? 'Reconciled' : 'Pending',
+    ]);
+    const csv = [header, ...rows]
+      .map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `faidafleet-collections-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   const reconcileStats = {
     reconciled: filteredCollections.filter((c) => c.reconciled).length,
     pending: filteredCollections.filter((c) => !c.reconciled).length,
@@ -96,12 +125,14 @@ export default function CollectionsPage() {
         title="Collections"
         description="System-wide collection tracking and reconciliation."
         actions={
-          <Button variant="outline">
+          <Button type="button" variant="outline" onClick={exportCsv} disabled={filteredCollections.length === 0}>
             <Download className="h-4 w-4" />
-            Export
+            Export CSV
           </Button>
         }
       />
+
+      <AdminFeedback error={error} />
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <AdminKpi title="Total" value={formatKes(totalAmount)} hint={`${filteredCollections.length} records`} />
@@ -155,7 +186,7 @@ export default function CollectionsPage() {
           { id: 'fleet', header: 'Fleet', cell: (row) => row.tenants?.name || '—' },
           { id: 'amount', header: 'Amount', cell: (row) => formatKes(row.amount) },
           { id: 'method', header: 'Method', cell: (row) => <StatusBadge tone={methodTone(row.payment_method)}>{titleCase(row.payment_method)}</StatusBadge> },
-          { id: 'date', header: 'Date', cell: (row) => formatDate(row.date), hideOnMobile: true },
+          { id: 'date', header: 'Date', cell: (row) => formatDateOnly(row.date), hideOnMobile: true },
           { id: 'status', header: 'Status', cell: (row) => <StatusBadge tone={row.reconciled ? 'success' : 'warning'}>{row.reconciled ? 'Reconciled' : 'Pending'}</StatusBadge> },
         ]}
       />

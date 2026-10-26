@@ -1,15 +1,14 @@
 import type { Metadata, Viewport } from 'next';
-import { PT_Sans } from 'next/font/google';
 import Script from 'next/script';
 import './globals.css';
 import { Toaster } from "@/components/ui/toaster"
 import { RegisterSW } from '@/components/pwa/register-sw'
 
-const ptSans = PT_Sans({
-  subsets: ['latin'],
-  weight: ['400', '700'],
-  variable: '--font-pt-sans',
-});
+// PT Sans is loaded with a plain stylesheet link instead of next/font/google so
+// that `next build` works in offline environments (CI, sandboxes). The stack in
+// globals.css falls back to the system UI font when Google Fonts is unreachable.
+const FONT_STYLESHEET =
+  'https://fonts.googleapis.com/css2?family=PT+Sans:wght@400;700&display=swap';
 
 export const viewport: Viewport = {
   width: 'device-width',
@@ -46,7 +45,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning className={ptSans.variable}>
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link rel="stylesheet" href={FONT_STYLESHEET} />
+      </head>
       <body className="font-body antialiased">
         <Script id="theme-init" strategy="beforeInteractive">
           {`(function(){try{var t=localStorage.getItem('faidafleet-theme');var dark=t==='dark'||(t!=='light'&&window.matchMedia('(prefers-color-scheme: dark)').matches);if(dark)document.documentElement.classList.add('dark');}catch(e){}})();`}

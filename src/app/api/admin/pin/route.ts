@@ -97,13 +97,35 @@ export async function POST(request: Request) {
     }
 
     if (!driver.user_id || driver.user_id !== applied.userId) {
-      await admin.from('drivers').update({ user_id: applied.userId }).eq('id', driver.id)
-      await admin.from('memberships').upsert({
-        user_id: applied.userId,
-        tenant_id: driver.tenant_id,
-        role: 'driver',
-        is_active: true,
-      }, { onConflict: 'user_id,tenant_id' })
+      const { error: linkError } = await admin
+        .from('drivers')
+        .update({ user_id: applied.userId })
+        .eq('id', driver.id)
+        .select('id')
+
+      if (linkError) {
+        return NextResponse.json(
+          { error: `PIN set, but the driver record could not be linked: ${linkError.message}` },
+          { status: 500 },
+        )
+      }
+
+      const { error: membershipError } = await admin
+        .from('memberships')
+        .upsert({
+          user_id: applied.userId,
+          tenant_id: driver.tenant_id,
+          role: 'driver',
+          is_active: true,
+        }, { onConflict: 'user_id,tenant_id' })
+        .select('id')
+
+      if (membershipError) {
+        return NextResponse.json(
+          { error: `PIN set, but the fleet membership could not be created: ${membershipError.message}` },
+          { status: 500 },
+        )
+      }
     }
 
     await recordPinReset(admin, {
@@ -180,16 +202,37 @@ export async function POST(request: Request) {
   }
 
   if (!ownerMembership) {
-    await admin.from('memberships').upsert({
-      user_id: applied.userId,
-      tenant_id: tenantId,
-      role: 'owner',
-      is_active: true,
-    }, { onConflict: 'user_id,tenant_id' })
+    const { error: membershipError } = await admin
+      .from('memberships')
+      .upsert({
+        user_id: applied.userId,
+        tenant_id: tenantId,
+        role: 'owner',
+        is_active: true,
+      }, { onConflict: 'user_id,tenant_id' })
+      .select('id')
+
+    if (membershipError) {
+      return NextResponse.json(
+        { error: `PIN set, but the owner membership could not be created: ${membershipError.message}` },
+        { status: 500 },
+      )
+    }
   }
 
   if (!tenant.phone) {
-    await admin.from('tenants').update({ phone }).eq('id', tenantId)
+    const { error: tenantError } = await admin
+      .from('tenants')
+      .update({ phone })
+      .eq('id', tenantId)
+      .select('id')
+
+    if (tenantError) {
+      return NextResponse.json(
+        { error: `PIN set, but the fleet phone number could not be saved: ${tenantError.message}` },
+        { status: 500 },
+      )
+    }
   }
 
   await recordPinReset(admin, {

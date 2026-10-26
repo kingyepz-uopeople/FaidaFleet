@@ -1,130 +1,446 @@
 'use client';
-import React, { useEffect, useState } from 'react';
+
+import React, { useEffect, useMemo, useState } from 'react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { PlusCircle, Loader2, Trash, Edit, AlertTriangle } from '@/components/icons';
-import { createClient } from '@/lib/supabase/client';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { format } from 'date-fns';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { PlusCircle, Loader2, Trash2, Edit, Wrench, Receipt, Clock } from '@/components/icons';
+import { createClient } from '@/lib/supabase/client';
+import { assertMutation, assertMutationRow, requireUuid } from '@/lib/db';
+import { toastError, toastSuccess } from '@/lib/toast';
+import { formatDateOnly } from '@/lib/dates';
+import { EmptyState, PageShell, TableScroll } from '@/components/page-shell';
+import { FormDialog } from '@/components/form-dialog';
+import { NativeSelect } from '@/components/ui/native-select';
+import { StatCard } from '@/components/stat-card';
 
-type Maintenance = { id: string; vehicle_id: string; date: string; type: string; description: string; cost: number; next_service_date: string; vehicles: { registration_number: string } };
+type MaintenanceType = 'service' | 'repair' | 'inspection' | 'other';
+
+type Maintenance = {
+  id: string;
+  vehicle_id: string;
+  date: string;
+  type: MaintenanceType;
+  description: string;
+  cost: number | null;
+  next_service_date: string | null;
+  vehicles: { registration_number: string } | null;
+};
+
+type Option = { id: string; label: string };
+
+const TYPE_LABELS: Record<MaintenanceType, string> = {
+  service: 'Service',
+  repair: 'Repair',
+  inspection: 'Inspection',
+  other: 'Other',
+};
+
+const EMPTY_FORM = {
+  vehicleId: '',
+  type: 'service' as MaintenanceType,
+  description: '',
+  cost: '',
+  date: new Date().toISOString().split('T')[0],
+  nextServiceDate: '',
+};
 
 export default function MaintenancePage() {
   const [maintenance, setMaintenance] = useState<Maintenance[]>([]);
-  const [vehicles, setVehicles] = useState<any[]>([]);
+  const [vehicles, setVehicles] = useState<Option[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
-  const [open, setOpen] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Maintenance | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
   const [tenantId, setTenantId] = useState<string | null>(null);
-  const [form, setForm] = useState({ vehicleId: '', type: 'service', description: '', cost: '', date: new Date().toISOString().split('T')[0], nextServiceDate: '' });
-  const supabase = createClient();
+  const [form, setForm] = useState(EMPTY_FORM);
+  const supabase = useMemo(() => createClient(), []);
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => {
+    fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const fetchData = async () => {
     try {
       setLoading(true);
+      setLoadError(null);
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Not authenticated');
-      const membershipResp = await supabase.from('memberships').select('tenant_id').eq('user_id', user.id).eq('is_active', true).single();
-      const membership: any = membershipResp.data;
-      if (!membership) throw new Error('No tenant found');
-      const tId = membership.tenant_id;
-      setTenantId(tId);
+      if (!user) throw new Error('You need to sign in again.');
+
+      const { data: membership, error: membershipError } = await supabase
+        .from('memberships')
+        .select('tenant_id')
+        .eq('user_id', user.id)
+        .eq('is_active', true)
+        .maybeSingle();
+
+      if (membershipError) throw membershipError;
+      if (!membership) {
+        setLoadError('No fleet is linked to this account yet. Finish onboarding to schedule maintenance.');
+        return;
+      }
+
+      setTenantId(membership.tenant_id);
 
       const [maintenanceRes, vehiclesRes] = await Promise.all([
-        supabase.from('maintenance_logs').select('*, vehicles(registration_number)').eq('tenant_id', tId).order('date', { ascending: false }),
-        supabase.from('vehicles').select('id, registration_number').eq('tenant_id', tId).eq('is_active', true),
+        supabase
+          .from('maintenance_logs')
+          .select('*, vehicles(registration_number)')
+          .eq('tenant_id', membership.tenant_id)
+          .order('date', { ascending: false }),
+        supabase
+          .from('vehicles')
+          .select('id, registration_number')
+          .eq('tenant_id', membership.tenant_id)
+          .eq('is_active', true)
+          .order('registration_number'),
       ]);
 
       if (maintenanceRes.error) throw maintenanceRes.error;
       if (vehiclesRes.error) throw vehiclesRes.error;
 
-      setMaintenance(maintenanceRes.data || []);
-      setVehicles(vehiclesRes.data || []);
-    } catch (err: any) {
-      setError(err.message);
+      setMaintenance((maintenanceRes.data || []) as Maintenance[]);
+      setVehicles((vehiclesRes.data || []).map((row) => ({ id: row.id, label: row.registration_number })));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Could not load maintenance records';
+      setLoadError(message);
+      toastError(message, 'Could not load maintenance records');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleOpenDialog = (m?: Maintenance) => {
-    if (m) {
-      setEditing(m);
-      setForm({ vehicleId: m.vehicle_id, type: m.type, description: m.description || '', cost: m.cost?.toString() || '', date: m.date, nextServiceDate: m.next_service_date || '' });
-    } else {
-      setEditing(null);
-      setForm({ vehicleId: '', type: 'service', description: '', cost: '', date: new Date().toISOString().split('T')[0], nextServiceDate: '' });
-    }
-    setOpen(true);
+  const openCreate = () => {
+    setEditing(null);
+    setForm(EMPTY_FORM);
+    setFormError(null);
+    setDialogOpen(true);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const openEdit = (record: Maintenance) => {
+    setEditing(record);
+    setForm({
+      vehicleId: record.vehicle_id,
+      type: record.type,
+      description: record.description || '',
+      cost: record.cost?.toString() || '',
+      date: record.date,
+      nextServiceDate: record.next_service_date || '',
+    });
+    setFormError(null);
+    setDialogOpen(true);
+  };
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
     setSubmitting(true);
-    setError(null);
+    setFormError(null);
     try {
-      if (!tenantId) throw new Error('No tenant found');
-      const payload: any = { tenant_id: tenantId, vehicle_id: form.vehicleId, type: form.type, description: form.description, cost: parseFloat(form.cost) || 0, date: form.date, next_service_date: form.nextServiceDate || null };
-      if (editing) {
-        const { error: err } = await supabase.from('maintenance_logs').update(payload).eq('id', editing.id);
-        if (err) throw err;
-        setSuccess('Maintenance record updated');
-      } else {
-        const { error: err } = await supabase.from('maintenance_logs').insert([payload]);
-        if (err) throw err;
-        setSuccess('Maintenance recorded successfully');
-      }
-      setOpen(false);
+      if (!tenantId) throw new Error('No fleet found for this account.');
+      const vehicleId = requireUuid(form.vehicleId, 'vehicle');
+      if (!form.description.trim()) throw new Error('Describe the work that was done');
+      if (!form.date) throw new Error('Choose the maintenance date');
+
+      const payload = {
+        tenant_id: tenantId,
+        vehicle_id: vehicleId,
+        type: form.type,
+        description: form.description.trim(),
+        cost: form.cost ? Number.parseFloat(form.cost) : null,
+        date: form.date,
+        next_service_date: form.nextServiceDate || null,
+      };
+
+      const result = editing
+        ? await supabase.from('maintenance_logs').update(payload).eq('id', editing.id).select('id')
+        : await supabase.from('maintenance_logs').insert([payload]).select('id');
+
+      assertMutationRow(result, editing ? 'Could not update the record' : 'Could not record the maintenance');
+      toastSuccess(editing ? 'Maintenance record updated.' : 'Maintenance recorded.', 'Saved');
+      setDialogOpen(false);
       await fetchData();
-      setTimeout(() => setSuccess(null), 3000);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Could not save the maintenance record';
+      setFormError(message);
+      toastError(message, 'Could not save the maintenance record');
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!window.confirm('Delete this maintenance record?')) return;
+  const handleDelete = async (record: Maintenance) => {
+    if (!window.confirm('Delete this maintenance record? This cannot be undone.')) return;
     try {
-      const { error: err } = await supabase.from('maintenance_logs').delete().eq('id', id);
-      if (err) throw err;
-      setSuccess('Maintenance record deleted');
+      const result = await supabase.from('maintenance_logs').delete().eq('id', record.id).select('id');
+      assertMutation(result, 'Could not delete the record');
+      toastSuccess('Maintenance record deleted.', 'Deleted');
       await fetchData();
-      setTimeout(() => setSuccess(null), 3000);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      toastError(err, 'Could not delete the maintenance record');
     }
   };
 
-  const totalCost = maintenance.reduce((sum, m) => sum + (m.cost || 0), 0);
-  const upcomingServices = maintenance.filter(m => m.next_service_date && new Date(m.next_service_date) > new Date()).length;
+  const totalCost = maintenance.reduce((sum, record) => sum + (record.cost || 0), 0);
+  const upcomingServices = maintenance.filter(
+    (record) => record.next_service_date && new Date(record.next_service_date) > new Date(),
+  ).length;
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 py-5 sm:px-6 sm:py-6">
-      <div className="flex items-center justify-between"><div><h1 className="text-3xl font-bold">Maintenance Scheduler</h1><p className="text-gray-600 dark:text-gray-400">Track vehicle maintenance and repairs</p></div><Dialog open={open} onOpenChange={setOpen}><DialogTrigger asChild><Button onClick={() => handleOpenDialog()} className="bg-blue-600 hover:bg-blue-700"><PlusCircle className="mr-2 h-4 w-4" />Record Maintenance</Button></DialogTrigger><DialogContent className="max-w-md max-h-[90vh] overflow-y-auto"><DialogHeader><DialogTitle>{editing ? 'Edit Maintenance' : 'Record Maintenance'}</DialogTitle></DialogHeader><form onSubmit={handleSubmit} className="space-y-4"><div><Label>Vehicle *</Label><Select value={form.vehicleId} onValueChange={(v) => setForm({ ...form, vehicleId: v })}><SelectTrigger><SelectValue placeholder="Select vehicle" /></SelectTrigger><SelectContent>{vehicles.map((v) => (<SelectItem key={v.id} value={v.id}>{v.registration_number}</SelectItem>))}</SelectContent></Select></div><div><Label>Type *</Label><Select value={form.type} onValueChange={(v) => setForm({ ...form, type: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="service">Service</SelectItem><SelectItem value="repair">Repair</SelectItem><SelectItem value="inspection">Inspection</SelectItem><SelectItem value="other">Other</SelectItem></SelectContent></Select></div><div><Label>Description *</Label><textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="What was done?" className="w-full border rounded px-2 py-2" rows={3} required /></div><div><Label>Cost (KES)</Label><Input type="number" step="0.01" value={form.cost} onChange={(e) => setForm({ ...form, cost: e.target.value })} placeholder="0.00" /></div><div><Label>Date *</Label><Input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} required /></div><div><Label>Next Service Date</Label><Input type="date" value={form.nextServiceDate} onChange={(e) => setForm({ ...form, nextServiceDate: e.target.value })} /></div>{error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}<DialogFooter><Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button><Button type="submit" disabled={submitting} className="bg-blue-600">{submitting ? 'Saving...' : editing ? 'Update' : 'Record'}</Button></DialogFooter></form></DialogContent></Dialog></div>
+    <PageShell
+      title="Maintenance"
+      description="Track services, repairs, and upcoming service dates."
+      actions={
+        <Button type="button" onClick={openCreate}>
+          <PlusCircle className="mr-2 h-4 w-4" />
+          Record maintenance
+        </Button>
+      }
+    >
+      {loadError && (
+        <Alert variant="destructive">
+          <AlertDescription>{loadError}</AlertDescription>
+        </Alert>
+      )}
 
-      {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
-      {success && <Alert className="bg-green-50 text-green-800 border-green-200"><AlertDescription>{success}</AlertDescription></Alert>}
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card><CardHeader><CardTitle className="text-lg">Total Maintenance Cost</CardTitle></CardHeader><CardContent><p className="text-3xl font-bold text-blue-600">KES {totalCost.toLocaleString()}</p></CardContent></Card>
-        <Card><CardHeader><CardTitle className="text-lg">Records</CardTitle></CardHeader><CardContent><p className="text-3xl font-bold text-purple-600">{maintenance.length}</p></CardContent></Card>
-        <Card><CardHeader><CardTitle className="text-lg">Upcoming Services</CardTitle></CardHeader><CardContent><p className="text-3xl font-bold text-orange-600">{upcomingServices}</p></CardContent></Card>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <StatCard title="Total maintenance cost" value={`KES ${totalCost.toLocaleString()}`} description="All time" Icon={Wrench} />
+        <StatCard title="Records" value={String(maintenance.length)} description="Services and repairs" Icon={Receipt} />
+        <StatCard title="Upcoming services" value={String(upcomingServices)} description="Scheduled ahead" Icon={Clock} />
       </div>
 
-      <Card><CardHeader><CardTitle>Maintenance Records</CardTitle><CardDescription>{maintenance.length} records found</CardDescription></CardHeader><CardContent>{loading ? <div className="flex justify-center py-8"><Loader2 className="h-8 w-8 animate-spin text-blue-600" /></div> : maintenance.length === 0 ? <div className="text-center py-8 text-gray-500"><p>No maintenance records yet</p></div> : <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Date</TableHead><TableHead>Vehicle</TableHead><TableHead>Type</TableHead><TableHead>Description</TableHead><TableHead>Cost</TableHead><TableHead>Next Service</TableHead><TableHead>Actions</TableHead></TableRow></TableHeader><TableBody>{maintenance.map((m) => (<TableRow key={m.id}><TableCell>{format(new Date(m.date), 'MMM dd, yyyy')}</TableCell><TableCell className="font-bold">{m.vehicles?.registration_number}</TableCell><TableCell><Badge>{m.type}</Badge></TableCell><TableCell>{m.description}</TableCell><TableCell className="font-bold">KES {(m.cost || 0).toLocaleString()}</TableCell><TableCell>{m.next_service_date ? format(new Date(m.next_service_date), 'MMM dd, yyyy') : '—'}</TableCell><TableCell><div className="flex gap-2"><Button variant="ghost" size="sm" onClick={() => handleOpenDialog(m)}><Edit className="h-4 w-4" /></Button><Button variant="ghost" size="sm" onClick={() => handleDelete(m.id)}><Trash className="h-4 w-4 text-red-600" /></Button></div></TableCell></TableRow>))}</TableBody></Table></div>}</CardContent></Card>
-    </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Maintenance records</CardTitle>
+          <CardDescription>{maintenance.length} records found</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="flex justify-center py-8">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            </div>
+          ) : maintenance.length === 0 ? (
+            <EmptyState
+              title="No maintenance records yet"
+              description="Log a service or repair to keep vehicle history and costs up to date."
+              action={
+                <Button type="button" onClick={openCreate}>
+                  <PlusCircle className="mr-2 h-4 w-4" />
+                  Record maintenance
+                </Button>
+              }
+            />
+          ) : (
+            <>
+              <div className="grid gap-3 md:hidden">
+                {maintenance.map((record) => (
+                  <article key={record.id} className="rounded-2xl border bg-card p-4 shadow-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold">{record.vehicles?.registration_number || 'Vehicle removed'}</p>
+                        <p className="text-sm text-muted-foreground">{formatDateOnly(record.date)}</p>
+                      </div>
+                      <Badge variant="secondary">{TYPE_LABELS[record.type]}</Badge>
+                    </div>
+                    <p className="mt-2 line-clamp-3 text-sm text-muted-foreground">{record.description}</p>
+                    <div className="mt-3 flex items-center justify-between text-sm">
+                      <span className="font-semibold">KES {(record.cost || 0).toLocaleString()}</span>
+                      <span className="text-muted-foreground">
+                        Next: {record.next_service_date ? formatDateOnly(record.next_service_date) : '—'}
+                      </span>
+                    </div>
+                    <div className="mt-3 flex gap-2">
+                      <Button type="button" variant="outline" className="min-h-11 flex-1" onClick={() => openEdit(record)}>
+                        <Edit className="mr-2 h-4 w-4" /> Edit
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="min-h-11 text-destructive"
+                        onClick={() => handleDelete(record)}
+                        aria-label="Delete maintenance record"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+
+              <TableScroll>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Vehicle</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Description</TableHead>
+                      <TableHead>Cost</TableHead>
+                      <TableHead>Next service</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {maintenance.map((record) => (
+                      <TableRow key={record.id}>
+                        <TableCell>{formatDateOnly(record.date)}</TableCell>
+                        <TableCell className="font-medium">{record.vehicles?.registration_number || '—'}</TableCell>
+                        <TableCell>
+                          <Badge variant="secondary">{TYPE_LABELS[record.type]}</Badge>
+                        </TableCell>
+                        <TableCell className="max-w-xs truncate">{record.description}</TableCell>
+                        <TableCell className="font-semibold">KES {(record.cost || 0).toLocaleString()}</TableCell>
+                        <TableCell>{record.next_service_date ? formatDateOnly(record.next_service_date) : '—'}</TableCell>
+                        <TableCell>
+                          <div className="flex justify-end gap-1">
+                            <Button type="button" variant="ghost" size="sm" className="min-h-11" onClick={() => openEdit(record)}>
+                              <Edit className="h-4 w-4" />
+                              <span className="sr-only">Edit maintenance record</span>
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="min-h-11 text-destructive"
+                              onClick={() => handleDelete(record)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              <span className="sr-only">Delete maintenance record</span>
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableScroll>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      <FormDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        title={editing ? 'Edit maintenance' : 'Record maintenance'}
+        description="Maintenance costs are included in your fleet profit calculations."
+      >
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="maintenance_vehicle">Vehicle *</Label>
+            <NativeSelect
+              id="maintenance_vehicle"
+              value={form.vehicleId}
+              onChange={(event) => setForm({ ...form, vehicleId: event.target.value })}
+              required
+              disabled={submitting}
+            >
+              <option value="">Select vehicle</option>
+              {vehicles.map((vehicle) => (
+                <option key={vehicle.id} value={vehicle.id}>{vehicle.label}</option>
+              ))}
+            </NativeSelect>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="maintenance_type">Type *</Label>
+            <NativeSelect
+              id="maintenance_type"
+              value={form.type}
+              onChange={(event) => setForm({ ...form, type: event.target.value as MaintenanceType })}
+              required
+              disabled={submitting}
+            >
+              {Object.entries(TYPE_LABELS).map(([value, label]) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </NativeSelect>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="maintenance_description">Description *</Label>
+            <textarea
+              id="maintenance_description"
+              value={form.description}
+              onChange={(event) => setForm({ ...form, description: event.target.value })}
+              placeholder="What was done?"
+              rows={3}
+              required
+              disabled={submitting}
+              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="maintenance_cost">Cost (KES)</Label>
+              <Input
+                id="maintenance_cost"
+                type="number"
+                inputMode="decimal"
+                step="0.01"
+                min="0"
+                value={form.cost}
+                onChange={(event) => setForm({ ...form, cost: event.target.value })}
+                placeholder="0.00"
+                disabled={submitting}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="maintenance_date">Date *</Label>
+              <Input
+                id="maintenance_date"
+                type="date"
+                value={form.date}
+                onChange={(event) => setForm({ ...form, date: event.target.value })}
+                required
+                disabled={submitting}
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="next_service">Next service date</Label>
+            <Input
+              id="next_service"
+              type="date"
+              value={form.nextServiceDate}
+              onChange={(event) => setForm({ ...form, nextServiceDate: event.target.value })}
+              disabled={submitting}
+            />
+          </div>
+
+          {formError && (
+            <Alert variant="destructive">
+              <AlertDescription>{formError}</AlertDescription>
+            </Alert>
+          )}
+
+          <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
+            <Button type="button" variant="outline" className="min-h-11" onClick={() => setDialogOpen(false)} disabled={submitting}>
+              Cancel
+            </Button>
+            <Button type="submit" className="min-h-11" disabled={submitting}>
+              {submitting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Saving…
+                </>
+              ) : editing ? (
+                'Update record'
+              ) : (
+                'Record maintenance'
+              )}
+            </Button>
+          </div>
+        </form>
+      </FormDialog>
+    </PageShell>
   );
 }

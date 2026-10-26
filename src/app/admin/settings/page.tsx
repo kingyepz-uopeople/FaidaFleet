@@ -7,11 +7,15 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { createClient } from '@/lib/supabase/client';
+import { assertMutation } from '@/lib/db';
+import { toastError, toastSuccess } from '@/lib/toast';
 import { AdminFeedback, AdminLoading, AdminPageHeader } from '@/components/admin-ui';
 import { isAdminUiPreview } from '@/lib/admin-preview';
 
 export default function SettingsPage() {
   const [loading, setLoading] = useState(!isAdminUiPreview());
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [settings, setSettings] = useState({
     mpesa_api_key: '',
@@ -46,31 +50,42 @@ export default function SettingsPage() {
         setSettings((prev) => ({ ...prev, ...settingsMap }));
       }
     } catch (error) {
-      console.error('Error fetching settings:', error);
+      const message = error instanceof Error ? error.message : 'Could not load settings';
+      setError(message);
+      toastError(message, 'Could not load settings');
     } finally {
       setLoading(false);
     }
   };
 
   const handleSave = async () => {
+    setSaving(true);
+    setError(null);
     try {
       if (isAdminUiPreview()) {
         setSaved(true);
         setTimeout(() => setSaved(false), 3000);
         return;
       }
-      for (const [key, value] of Object.entries(settings)) {
-        await supabase
+      const entries = Object.entries(settings);
+      for (const [key, value] of entries) {
+        // .select() is required: a row level security denial on upsert returns
+        // no error, only zero rows.
+        const result = await supabase
           .from('system_settings')
-          .upsert(
-            { key, value },
-            { onConflict: 'key' },
-          );
+          .upsert({ key, value }, { onConflict: 'key' })
+          .select('key');
+        assertMutation(result, `Could not save "${key}"`);
       }
       setSaved(true);
+      toastSuccess('Settings saved.');
       setTimeout(() => setSaved(false), 3000);
     } catch (error) {
-      console.error('Error saving settings:', error);
+      const message = error instanceof Error ? error.message : 'Could not save settings';
+      setError(message);
+      toastError(message, 'Could not save settings');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -86,7 +101,7 @@ export default function SettingsPage() {
   return (
     <>
       <AdminPageHeader title="Settings" description="Global platform configuration. These controls are for system administrators only." />
-      <AdminFeedback success={saved ? 'Settings saved.' : null} />
+      <AdminFeedback error={error} success={saved ? 'Settings saved.' : null} />
 
       <Card>
         <CardHeader>
@@ -164,7 +179,9 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      <Button onClick={handleSave}>Save settings</Button>
+      <Button type="button" className="min-h-11" onClick={handleSave} disabled={saving}>
+        {saving ? 'Saving…' : 'Save settings'}
+      </Button>
     </>
   );
 }

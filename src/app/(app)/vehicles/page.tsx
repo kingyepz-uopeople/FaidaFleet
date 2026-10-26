@@ -2,155 +2,454 @@
 
 import React, { useEffect, useState } from 'react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { PlusCircle, Loader2, Trash, Edit, AlertTriangle } from '@/components/icons';
-import { createClient } from '@/lib/supabase/client';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { EmptyState, PageShell, TableScroll } from '@/components/page-shell';
+import { StatCard } from '@/components/stat-card';
+import { FormDialog } from '@/components/form-dialog';
+import { NativeSelect } from '@/components/ui/native-select';
+import { PlusCircle, Loader2, Trash2, Edit, AlertTriangle, Truck, BadgeCheck } from '@/components/icons';
+import { createClient } from '@/lib/supabase/client';
+import { assertMutationRow, assertMutation } from '@/lib/db';
+import { toastError, toastSuccess } from '@/lib/toast';
 import { formatDateOnly, isDateBeforeToday } from '@/lib/dates';
 import { vehicleComplianceStatus } from '@/lib/fleet-metrics';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
-type Vehicle = { id: string; registration_number: string; make: string; model: string; year: number; capacity: number; vehicle_type: string; insurance_expiry: string | null; mot_expiry: string | null; is_active: boolean };
+type Vehicle = {
+  id: string;
+  registration_number: string;
+  make: string | null;
+  model: string | null;
+  year: number | null;
+  capacity: number | null;
+  vehicle_type: 'psv' | 'cargo' | 'pickup' | 'other' | null;
+  insurance_expiry: string | null;
+  mot_expiry: string | null;
+  is_active: boolean;
+};
+
+const EMPTY_FORM = {
+  registration: '',
+  make: '',
+  model: '',
+  year: new Date().getFullYear().toString(),
+  capacity: '',
+  vehicleType: 'psv' as NonNullable<Vehicle['vehicle_type']>,
+  insuranceExpiry: '',
+  motExpiry: '',
+};
 
 export default function VehiclesPage() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
-  const [open, setOpen] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Vehicle | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
   const [tenantId, setTenantId] = useState<string | null>(null);
-  const [form, setForm] = useState({ registration: '', make: '', model: '', year: new Date().getFullYear().toString(), capacity: '', vehicleType: 'psv', insuranceExpiry: '', motExpiry: '' });
-  const supabase = createClient();
+  const [form, setForm] = useState(EMPTY_FORM);
+  const supabase = React.useMemo(() => createClient(), []);
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => {
+    fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const fetchData = async () => {
     try {
       setLoading(true);
+      setLoadError(null);
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Not authenticated');
-      const membershipResp = await supabase.from('memberships').select('tenant_id').eq('user_id', user.id).eq('is_active', true).single();
-      const membership: any = membershipResp.data;
-      if (!membership) throw new Error('No tenant found');
-      const tId = membership.tenant_id;
-      setTenantId(tId);
-      const { data, error: err } = await supabase.from('vehicles').select('*').eq('tenant_id', tId).order('registration_number');
+      if (!user) throw new Error('You need to sign in again.');
+
+      const { data: membership, error: membershipError } = await supabase
+        .from('memberships')
+        .select('tenant_id')
+        .eq('user_id', user.id)
+        .eq('is_active', true)
+        .maybeSingle();
+
+      if (membershipError) throw membershipError;
+      if (!membership) {
+        setLoadError('No fleet is linked to this account yet. Finish onboarding to add vehicles.');
+        return;
+      }
+
+      setTenantId(membership.tenant_id);
+      const { data, error: err } = await supabase
+        .from('vehicles')
+        .select('*')
+        .eq('tenant_id', membership.tenant_id)
+        .order('registration_number');
+
       if (err) throw err;
-      setVehicles(data || []);
-    } catch (err: any) {
-      setError(err.message);
+      setVehicles((data || []) as Vehicle[]);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Could not load vehicles';
+      setLoadError(message);
+      toastError(message, 'Could not load vehicles');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleOpenDialog = (vehicle?: Vehicle) => {
-    if (vehicle) {
-      setEditing(vehicle);
-      setForm({ registration: vehicle.registration_number, make: vehicle.make || '', model: vehicle.model || '', year: vehicle.year?.toString() || new Date().getFullYear().toString(), capacity: vehicle.capacity?.toString() || '', vehicleType: vehicle.vehicle_type || 'psv', insuranceExpiry: vehicle.insurance_expiry || '', motExpiry: vehicle.mot_expiry || '' });
-    } else {
-      setEditing(null);
-      setForm({ registration: '', make: '', model: '', year: new Date().getFullYear().toString(), capacity: '', vehicleType: 'psv', insuranceExpiry: '', motExpiry: '' });
-    }
-    setOpen(true);
+  const openCreate = () => {
+    setEditing(null);
+    setForm(EMPTY_FORM);
+    setFormError(null);
+    setDialogOpen(true);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const openEdit = (vehicle: Vehicle) => {
+    setEditing(vehicle);
+    setForm({
+      registration: vehicle.registration_number,
+      make: vehicle.make || '',
+      model: vehicle.model || '',
+      year: vehicle.year?.toString() || '',
+      capacity: vehicle.capacity?.toString() || '',
+      vehicleType: vehicle.vehicle_type || 'psv',
+      insuranceExpiry: vehicle.insurance_expiry || '',
+      motExpiry: vehicle.mot_expiry || '',
+    });
+    setFormError(null);
+    setDialogOpen(true);
+  };
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
     setSubmitting(true);
-    setError(null);
+    setFormError(null);
     try {
-      if (!tenantId) throw new Error('No tenant found');
-      if (!form.registration) throw new Error('Registration number is required');
-      const payload: any = { tenant_id: tenantId, registration_number: form.registration.toUpperCase(), make: form.make || null, model: form.model || null, year: form.year ? parseInt(form.year) : null, capacity: form.capacity ? parseInt(form.capacity) : null, vehicle_type: form.vehicleType, insurance_expiry: form.insuranceExpiry || null, mot_expiry: form.motExpiry || null };
-      if (editing) {
-        const { error: err } = await supabase.from('vehicles').update(payload).eq('id', editing.id);
-        if (err) throw err;
-        setSuccess('Vehicle updated successfully');
-      } else {
-        const { error: err } = await supabase.from('vehicles').insert([{ ...payload, is_active: true }]);
-        if (err) throw err;
-        setSuccess('Vehicle added successfully');
-      }
-      setOpen(false);
+      if (!tenantId) throw new Error('No fleet found for this account.');
+      if (!form.registration.trim()) throw new Error('Registration number is required.');
+
+      const payload = {
+        tenant_id: tenantId,
+        registration_number: form.registration.trim().toUpperCase(),
+        make: form.make.trim() || null,
+        model: form.model.trim() || null,
+        year: form.year ? Number.parseInt(form.year, 10) : null,
+        capacity: form.capacity ? Number.parseInt(form.capacity, 10) : null,
+        vehicle_type: form.vehicleType,
+        insurance_expiry: form.insuranceExpiry || null,
+        mot_expiry: form.motExpiry || null,
+      };
+
+      const result = editing
+        ? await supabase.from('vehicles').update(payload).eq('id', editing.id).select('id')
+        : await supabase.from('vehicles').insert([{ ...payload, is_active: true }]).select('id');
+
+      assertMutationRow(result, editing ? 'Could not update the vehicle' : 'Could not add the vehicle');
+      toastSuccess(editing ? 'Vehicle updated.' : 'Vehicle added.', 'Saved');
+      setDialogOpen(false);
       await fetchData();
-      setTimeout(() => setSuccess(null), 3000);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Could not save the vehicle';
+      setFormError(message);
+      toastError(message, 'Could not save the vehicle');
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!window.confirm('Delete this vehicle?')) return;
+  const handleDelete = async (vehicle: Vehicle) => {
+    if (!window.confirm(`Delete ${vehicle.registration_number}? This cannot be undone.`)) return;
     try {
-      const { error: err } = await supabase.from('vehicles').delete().eq('id', id);
-      if (err) throw err;
-      setSuccess('Vehicle deleted successfully');
+      const result = await supabase.from('vehicles').delete().eq('id', vehicle.id).select('id');
+      assertMutation(result, 'Could not delete the vehicle');
+      toastSuccess(`${vehicle.registration_number} deleted.`, 'Deleted');
       await fetchData();
-      setTimeout(() => setSuccess(null), 3000);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      toastError(err, 'Could not delete the vehicle');
     }
   };
 
-  const isExpired = (date: string | null) => Boolean(date && isDateBeforeToday(date));
-  const getStatus = (v: Vehicle) => vehicleComplianceStatus(v);
+  const statusOf = (vehicle: Vehicle) => vehicleComplianceStatus(vehicle);
+  const statusClass = (status: string) =>
+    status === 'Active'
+      ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-100'
+      : status === 'Warning'
+        ? 'bg-amber-100 text-amber-800 hover:bg-amber-100'
+        : 'bg-rose-100 text-rose-800 hover:bg-rose-100';
 
   const totalVehicles = vehicles.length;
-  const activeVehicles = vehicles.filter(v => v.is_active).length;
-  const complianceIssues = vehicles.filter(v => getStatus(v) !== 'Active').length;
+  const activeVehicles = vehicles.filter((vehicle) => vehicle.is_active).length;
+  const complianceIssuesCount = vehicles.filter((vehicle) => statusOf(vehicle) !== 'Active').length;
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 py-5 sm:px-6 sm:py-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Vehicles</h1>
-          <p className="text-gray-600 dark:text-gray-400">Manage fleet vehicles and compliance</p>
-        </div>
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
-            <Button onClick={() => handleOpenDialog()} className="bg-blue-600 hover:bg-blue-700"><PlusCircle className="mr-2 h-4 w-4" />Add Vehicle</Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
-            <DialogHeader><DialogTitle>{editing ? 'Edit Vehicle' : 'Add Vehicle'}</DialogTitle></DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div><Label>Registration Number *</Label><Input value={form.registration} onChange={(e) => setForm({ ...form, registration: e.target.value })} placeholder="e.g., KCA 123A" required /></div>
-              <div className="grid grid-cols-2 gap-3"><div><Label>Make</Label><Input value={form.make} onChange={(e) => setForm({ ...form, make: e.target.value })} placeholder="Toyota" /></div><div><Label>Model</Label><Input value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} placeholder="Hiace" /></div></div>
-              <div className="grid grid-cols-2 gap-3"><div><Label>Year</Label><Input type="number" value={form.year} onChange={(e) => setForm({ ...form, year: e.target.value })} /></div><div><Label>Capacity</Label><Input type="number" value={form.capacity} onChange={(e) => setForm({ ...form, capacity: e.target.value })} placeholder="14" /></div></div>
-              <div><Label>Vehicle Type *</Label><Select value={form.vehicleType} onValueChange={(v) => setForm({ ...form, vehicleType: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="psv">PSV (Public)</SelectItem><SelectItem value="cargo">Cargo</SelectItem><SelectItem value="pickup">Pickup</SelectItem><SelectItem value="other">Other</SelectItem></SelectContent></Select></div>
-              <div><Label>Insurance Expiry</Label><Input type="date" value={form.insuranceExpiry} onChange={(e) => setForm({ ...form, insuranceExpiry: e.target.value })} /></div>
-              <div><Label>MOT Expiry</Label><Input type="date" value={form.motExpiry} onChange={(e) => setForm({ ...form, motExpiry: e.target.value })} /></div>
-              {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
-              <DialogFooter><Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button><Button type="submit" disabled={submitting} className="bg-blue-600">{submitting ? 'Saving...' : editing ? 'Update' : 'Add'}</Button></DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
-      </div>
+    <PageShell
+      title="Vehicles"
+      description="Manage fleet vehicles and compliance dates."
+      actions={
+        <Button type="button" onClick={openCreate}>
+          <PlusCircle className="mr-2 h-4 w-4" />
+          Add vehicle
+        </Button>
+      }
+    >
+      {loadError && (
+        <Alert variant="destructive">
+          <AlertDescription>{loadError}</AlertDescription>
+        </Alert>
+      )}
 
-      {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
-      {success && <Alert className="bg-green-50 text-green-800 border-green-200"><AlertDescription>{success}</AlertDescription></Alert>}
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card><CardHeader><CardTitle className="text-lg">Total Vehicles</CardTitle></CardHeader><CardContent><p className="text-3xl font-bold text-blue-600">{totalVehicles}</p><p className="text-sm text-gray-500">{activeVehicles} active</p></CardContent></Card>
-        <Card><CardHeader><CardTitle className="text-lg">Compliance Issues</CardTitle></CardHeader><CardContent><p className="text-3xl font-bold text-red-600">{complianceIssues}</p><p className="text-sm text-gray-500">Expired or expiring soon</p></CardContent></Card>
-        <Card><CardHeader><CardTitle className="text-lg">Compliance Rate</CardTitle></CardHeader><CardContent><p className="text-3xl font-bold text-green-600">{totalVehicles > 0 ? Math.round(((totalVehicles - complianceIssues) / totalVehicles) * 100) : 0}%</p><p className="text-sm text-gray-500">Vehicles in compliance</p></CardContent></Card>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <StatCard title="Total vehicles" value={String(totalVehicles)} description={`${activeVehicles} active`} Icon={Truck} />
+        <StatCard
+          title="Compliance issues"
+          value={String(complianceIssuesCount)}
+          description="Expired or expiring soon"
+          Icon={AlertTriangle}
+        />
+        <StatCard
+          title="Compliance rate"
+          value={`${totalVehicles > 0 ? Math.round(((totalVehicles - complianceIssuesCount) / totalVehicles) * 100) : 0}%`}
+          description="Vehicles in compliance"
+          Icon={BadgeCheck}
+        />
       </div>
 
       <Card>
-        <CardHeader><CardTitle>Fleet Vehicles</CardTitle><CardDescription>{vehicles.length} vehicles in your fleet</CardDescription></CardHeader>
+        <CardHeader>
+          <CardTitle>Fleet vehicles</CardTitle>
+          <CardDescription>{vehicles.length} vehicles in your fleet</CardDescription>
+        </CardHeader>
         <CardContent>
-          {loading ? <div className="flex justify-center py-8"><Loader2 className="h-8 w-8 animate-spin text-blue-600" /></div> : vehicles.length === 0 ? <div className="text-center py-8 text-gray-500"><p>No vehicles yet</p><Button onClick={() => handleOpenDialog()} className="mt-4"><PlusCircle className="mr-2 h-4 w-4" />Add Your First Vehicle</Button></div> : <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Registration</TableHead><TableHead>Make/Model</TableHead><TableHead>Type</TableHead><TableHead>Insurance</TableHead><TableHead>MOT</TableHead><TableHead>Status</TableHead><TableHead>Actions</TableHead></TableRow></TableHeader><TableBody>{vehicles.map((vehicle) => { const status = getStatus(vehicle); const statusColor = status === 'Active' ? 'bg-green-100 text-green-800' : status === 'Warning' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'; return (<TableRow key={vehicle.id}><TableCell className="font-bold">{vehicle.registration_number}</TableCell><TableCell>{vehicle.make && vehicle.model ? `${vehicle.make} ${vehicle.model}` : '—'}</TableCell><TableCell className="capitalize">{vehicle.vehicle_type || '—'}</TableCell><TableCell>{vehicle.insurance_expiry ? (<div className="flex items-center gap-1">{isExpired(vehicle.insurance_expiry) && <AlertTriangle className="h-4 w-4 text-red-600" />}{formatDateOnly(vehicle.insurance_expiry)}</div>) : '—'}</TableCell><TableCell>{vehicle.mot_expiry ? (<div className="flex items-center gap-1">{isExpired(vehicle.mot_expiry) && <AlertTriangle className="h-4 w-4 text-red-600" />}{formatDateOnly(vehicle.mot_expiry)}</div>) : '—'}</TableCell><TableCell><Badge className={statusColor}>{status}</Badge></TableCell><TableCell><div className="flex gap-2"><Button variant="ghost" size="sm" onClick={() => handleOpenDialog(vehicle)}><Edit className="h-4 w-4" /></Button><Button variant="ghost" size="sm" onClick={() => handleDelete(vehicle.id)}><Trash className="h-4 w-4 text-red-600" /></Button></div></TableCell></TableRow>); })}</TableBody></Table></div>}
+          {loading ? (
+            <div className="flex justify-center py-8">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            </div>
+          ) : vehicles.length === 0 ? (
+            <EmptyState
+              title="No vehicles yet"
+              description="Add a vehicle to start recording collections, trips, and maintenance."
+              action={
+                <Button type="button" onClick={openCreate}>
+                  <PlusCircle className="mr-2 h-4 w-4" />
+                  Add your first vehicle
+                </Button>
+              }
+            />
+          ) : (
+            <>
+              <div className="grid gap-3 md:hidden">
+                {vehicles.map((vehicle) => {
+                  const status = statusOf(vehicle);
+                  return (
+                    <article key={vehicle.id} className="rounded-2xl border bg-card p-4 shadow-sm">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate font-semibold">{vehicle.registration_number}</p>
+                          <p className="truncate text-sm text-muted-foreground">
+                            {vehicle.make && vehicle.model ? `${vehicle.make} ${vehicle.model}` : 'Make and model not set'}
+                          </p>
+                        </div>
+                        <Badge className={statusClass(status)}>{status}</Badge>
+                      </div>
+                      <dl className="mt-3 grid grid-cols-2 gap-2 text-sm">
+                        <div>
+                          <dt className="text-xs text-muted-foreground">Insurance</dt>
+                          <dd>{vehicle.insurance_expiry ? formatDateOnly(vehicle.insurance_expiry) : '—'}</dd>
+                        </div>
+                        <div>
+                          <dt className="text-xs text-muted-foreground">MOT</dt>
+                          <dd>{vehicle.mot_expiry ? formatDateOnly(vehicle.mot_expiry) : '—'}</dd>
+                        </div>
+                      </dl>
+                      <div className="mt-3 flex gap-2">
+                        <Button type="button" variant="outline" className="min-h-11 flex-1" onClick={() => openEdit(vehicle)}>
+                          <Edit className="mr-2 h-4 w-4" /> Edit
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="min-h-11 text-destructive"
+                          onClick={() => handleDelete(vehicle)}
+                          aria-label={`Delete ${vehicle.registration_number}`}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+
+              <TableScroll>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Registration</TableHead>
+                      <TableHead>Make/Model</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Insurance</TableHead>
+                      <TableHead>MOT</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {vehicles.map((vehicle) => {
+                      const status = statusOf(vehicle);
+                      return (
+                        <TableRow key={vehicle.id}>
+                          <TableCell className="font-semibold">{vehicle.registration_number}</TableCell>
+                          <TableCell>
+                            {vehicle.make && vehicle.model ? `${vehicle.make} ${vehicle.model}` : '—'}
+                          </TableCell>
+                          <TableCell className="capitalize">{vehicle.vehicle_type || '—'}</TableCell>
+                          <TableCell>
+                            {vehicle.insurance_expiry ? (
+                              <span className="flex items-center gap-1">
+                                {isDateBeforeToday(vehicle.insurance_expiry) && (
+                                  <AlertTriangle className="h-4 w-4 text-destructive" />
+                                )}
+                                {formatDateOnly(vehicle.insurance_expiry)}
+                              </span>
+                            ) : (
+                              '—'
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {vehicle.mot_expiry ? (
+                              <span className="flex items-center gap-1">
+                                {isDateBeforeToday(vehicle.mot_expiry) && (
+                                  <AlertTriangle className="h-4 w-4 text-destructive" />
+                                )}
+                                {formatDateOnly(vehicle.mot_expiry)}
+                              </span>
+                            ) : (
+                              '—'
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <Badge className={statusClass(status)}>{status}</Badge>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex justify-end gap-1">
+                              <Button type="button" variant="ghost" size="sm" className="min-h-11" onClick={() => openEdit(vehicle)}>
+                                <Edit className="h-4 w-4" />
+                                <span className="sr-only">Edit {vehicle.registration_number}</span>
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="min-h-11 text-destructive"
+                                onClick={() => handleDelete(vehicle)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                                <span className="sr-only">Delete {vehicle.registration_number}</span>
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </TableScroll>
+            </>
+          )}
         </CardContent>
       </Card>
-    </div>
+
+      <FormDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        title={editing ? 'Edit vehicle' : 'Add vehicle'}
+        description={editing ? 'Update this vehicle and its compliance dates.' : 'Register a vehicle so you can record its trips and collections.'}
+      >
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="registration">Registration number *</Label>
+            <Input
+              id="registration"
+              value={form.registration}
+              onChange={(event) => setForm({ ...form, registration: event.target.value })}
+              placeholder="e.g., KCA 123A"
+              autoComplete="off"
+              required
+              disabled={submitting}
+            />
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="make">Make</Label>
+              <Input id="make" value={form.make} onChange={(event) => setForm({ ...form, make: event.target.value })} placeholder="Toyota" disabled={submitting} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="model">Model</Label>
+              <Input id="model" value={form.model} onChange={(event) => setForm({ ...form, model: event.target.value })} placeholder="Hiace" disabled={submitting} />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="year">Year</Label>
+              <Input id="year" type="number" inputMode="numeric" value={form.year} onChange={(event) => setForm({ ...form, year: event.target.value })} disabled={submitting} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="capacity">Capacity</Label>
+              <Input id="capacity" type="number" inputMode="numeric" value={form.capacity} onChange={(event) => setForm({ ...form, capacity: event.target.value })} placeholder="14" disabled={submitting} />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="vehicle_type">Vehicle type *</Label>
+            <NativeSelect
+              id="vehicle_type"
+              value={form.vehicleType}
+              onChange={(event) => setForm({ ...form, vehicleType: event.target.value as NonNullable<Vehicle['vehicle_type']> })}
+              required
+              disabled={submitting}
+            >
+              <option value="psv">PSV (public service)</option>
+              <option value="cargo">Cargo</option>
+              <option value="pickup">Pickup</option>
+              <option value="other">Other</option>
+            </NativeSelect>
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="insurance">Insurance expiry</Label>
+              <Input id="insurance" type="date" value={form.insuranceExpiry} onChange={(event) => setForm({ ...form, insuranceExpiry: event.target.value })} disabled={submitting} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="mot">MOT expiry</Label>
+              <Input id="mot" type="date" value={form.motExpiry} onChange={(event) => setForm({ ...form, motExpiry: event.target.value })} disabled={submitting} />
+            </div>
+          </div>
+
+          {formError && (
+            <Alert variant="destructive">
+              <AlertDescription>{formError}</AlertDescription>
+            </Alert>
+          )}
+
+          <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
+            <Button type="button" variant="outline" className="min-h-11" onClick={() => setDialogOpen(false)} disabled={submitting}>
+              Cancel
+            </Button>
+            <Button type="submit" className="min-h-11" disabled={submitting}>
+              {submitting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Saving…
+                </>
+              ) : editing ? (
+                'Update vehicle'
+              ) : (
+                'Add vehicle'
+              )}
+            </Button>
+          </div>
+        </form>
+      </FormDialog>
+    </PageShell>
   );
 }

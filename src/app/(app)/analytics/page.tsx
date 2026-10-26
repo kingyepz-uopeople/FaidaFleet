@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { NativeSelect } from '@/components/ui/native-select';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2, TrendingUp, TrendingDown, DollarSign, Percent } from '@/components/icons';
 import { createClient } from '@/lib/supabase/client';
@@ -67,13 +67,22 @@ export default function AnalyticsPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 py-5 sm:px-6 sm:py-6">
-      <div><h1 className="text-3xl font-bold">Financial Analytics</h1><p className="text-gray-600 dark:text-gray-400">Revenue, expenses, and profitability reports</p></div>
+      <div>
+        <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">Financial analytics</h1>
+        <p className="mt-1 text-sm text-muted-foreground">Revenue, expenses, and profitability reports.</p>
+      </div>
 
       {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
 
       <Card>
         <CardHeader><CardTitle>Date Range</CardTitle></CardHeader>
-        <CardContent><Select value={dateRange} onValueChange={setDateRange}><SelectTrigger className="w-48"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="7">Last 7 Days</SelectItem><SelectItem value="30">Last 30 Days</SelectItem><SelectItem value="90">Last 90 Days</SelectItem></SelectContent></Select></CardContent>
+        <CardContent>
+          <NativeSelect id="date_range" className="sm:w-56" value={dateRange} onChange={(event) => setDateRange(event.target.value)}>
+            <option value="7">Last 7 days</option>
+            <option value="30">Last 30 days</option>
+            <option value="90">Last 90 days</option>
+          </NativeSelect>
+        </CardContent>
       </Card>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
