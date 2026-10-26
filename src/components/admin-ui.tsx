@@ -1,6 +1,7 @@
 'use client'
 
-import type { ComponentType, ReactNode } from 'react'
+import { forwardRef } from 'react'
+import type { ComponentPropsWithoutRef, ComponentType, ReactNode } from 'react'
 import { Search, TrendingDown, TrendingUp } from '@/components/icons'
 import type { IconProps } from '@/components/icons'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -258,10 +259,21 @@ export function AdminRecordList<T>({
   )
 }
 
-export function RowActionsTrigger({ children }: { children: ReactNode }) {
+export const RowActionsTrigger = forwardRef<
+  HTMLButtonElement,
+  Omit<ComponentPropsWithoutRef<typeof Button>, 'variant' | 'size'>
+>(function RowActionsTrigger({ children, className, ...props }, ref) {
   return (
-    <Button variant="ghost" size="icon" className="h-11 w-11" aria-label="Row actions">
+    <Button
+      ref={ref}
+      type="button"
+      variant="ghost"
+      size="icon"
+      className={cn('h-11 w-11', className)}
+      aria-label="Row actions"
+      {...props}
+    >
       {children}
     </Button>
   )
-}
+})
