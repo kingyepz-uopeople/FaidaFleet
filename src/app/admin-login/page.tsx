@@ -9,9 +9,10 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Loader2, Shield, Mail, Lock } from '@/components/icons'
+import { Loader2, Mail, Lock } from '@/components/icons'
 import { friendlyAuthError, isPhoneAuthEmail } from '@/lib/phone'
 import { AuthShell } from '@/components/auth-shell'
+import { BrandMark } from '@/components/brand'
 
 export default function AdminLoginPage() {
   const [email, setEmail] = useState('')
@@ -75,9 +76,7 @@ export default function AdminLoginPage() {
       <Card className="border-0 shadow-xl">
         <CardHeader>
           <div className="mb-2 flex items-center justify-center gap-2">
-            <div className="rounded-xl bg-rose-600 p-2">
-              <Shield className="h-6 w-6 text-white" />
-            </div>
+            <BrandMark className="p-2" iconClassName="h-6 w-6" />
             <span className="text-2xl font-semibold">FaidaFleet</span>
           </div>
           <CardTitle className="text-center text-2xl">System admin</CardTitle>

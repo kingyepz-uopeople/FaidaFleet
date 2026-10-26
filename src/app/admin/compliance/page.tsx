@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { createClient } from '@/lib/supabase/client';
 import { AlertTriangle, CheckCircle, Clock } from '@/components/icons';
-import { AdminKpi, AdminPageHeader, AdminRecordList, AdminSearch, StatusBadge, formatDate } from '@/components/admin-ui';
+import { AdminFeedback, AdminKpi, AdminPageHeader, AdminRecordList, AdminSearch, StatusBadge, formatDate } from '@/components/admin-ui';
 import { isAdminUiPreview, previewDrivers } from '@/lib/admin-preview';
 
 type Driver = {
@@ -30,25 +30,29 @@ export default function CompliancePage() {
   );
   const [loading, setLoading] = useState(!preview);
   const [query, setQuery] = useState('');
+  const [loadError, setLoadError] = useState<string | null>(null);
   const supabase = createClient();
 
   useEffect(() => {
-    fetchComplianceData();
+    void fetchComplianceData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchComplianceData = async () => {
     try {
+      setLoadError(null);
       if (isAdminUiPreview()) {
-        setDrivers(previewDrivers.map((d) => ({ id: d.id, full_name: d.full_name, license_expiry: d.license_expiry, license_number: d.license_number, tenants: d.tenants })));
+        setDrivers(previewDrivers.map((d) => ({ id: d.id, full_name: d.full_name, license_expiry: d.license_expiry, license_number: d.license_number, tenants: d.tenants })) as unknown as Driver[]);
         return;
       }
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('drivers')
         .select('id, full_name, license_expiry, license_number, tenants(name)')
         .eq('is_active', true);
-      setDrivers((data || []) as Driver[]);
+      if (error) throw error;
+      setDrivers((data || []) as unknown as Driver[]);
     } catch (error) {
-      console.error('Error fetching compliance data:', error);
+      setLoadError(error instanceof Error ? error.message : 'Could not load compliance data.');
     } finally {
       setLoading(false);
     }
@@ -98,6 +102,7 @@ export default function CompliancePage() {
   return (
     <>
       <AdminPageHeader title="Compliance" description="Driver licence expiry across every fleet." />
+      <AdminFeedback error={loadError} />
       <AdminSearch value={query} onChange={setQuery} placeholder="Search driver or fleet…" />
 
       {expiredLicenses.length > 0 && (

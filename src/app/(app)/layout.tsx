@@ -4,12 +4,12 @@ import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-  Car,
   ChevronLeft,
   ChevronRight,
   Moon,
   Sun,
 } from '@/components/icons';
+import { BrandMark } from '@/components/brand';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { AppHeader } from '@/components/app-header';
 import { PlaceHolderImages } from '@/lib/placeholder-images';
@@ -55,6 +55,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           .select('role')
           .eq('user_id', user.id)
           .eq('is_active', true)
+          .order('created_at', { ascending: true })
+          .limit(1)
           .maybeSingle();
 
         if (membership) {
@@ -122,9 +124,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       >
         <div className={cn('flex h-14 items-center border-b border-white/10', isCollapsed ? 'justify-center' : 'px-4')}>
           <Link href="/dashboard" className="flex items-center gap-2">
-            <div className="rounded-lg bg-primary p-1.5">
-              <Car className="h-5 w-5" />
-            </div>
+            <BrandMark />
             {!isCollapsed && <span className="text-base font-semibold">FaidaFleet</span>}
           </Link>
         </div>
@@ -172,7 +172,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <SheetContent side="left" className="w-[min(20rem,calc(100vw-1.5rem))] bg-[#152238] p-0 text-white">
           <SheetHeader className="border-b border-white/10 p-4 text-left">
             <SheetTitle className="flex items-center gap-2 text-white">
-              <Car className="h-5 w-5" />
+              <BrandMark />
               FaidaFleet
             </SheetTitle>
           </SheetHeader>

@@ -5,21 +5,22 @@
  *
  * Strategies:
  * - App shell assets (offline page, icons) are precached on install.
- * - Page navigations: network-first, falling back to the last cached page
- *   and finally to /offline.
+ * - Page navigations are NETWORK ONLY. HTML pages depend on the auth session,
+ *   so caching them served stale dashboards and post-logout pages. When the
+ *   network is unavailable we show the precached /offline page instead.
  * - Next.js build assets (/_next/static/) and other static files: cache-first
  *   (they are content-hashed / immutable).
- * - Everything else same-origin: stale-while-revalidate.
- * - API routes, non-GET requests and cross-origin requests (Supabase, fonts…)
- *   are never intercepted, so auth and live data always hit the network.
+ * - Other same-origin, non-document GETs: stale-while-revalidate.
+ * - API routes (/api/*), auth routes (/auth/*), non-GET requests and
+ *   cross-origin requests (Supabase, fonts…) are never intercepted, so auth
+ *   and live data always hit the network.
  *
  * Bump VERSION whenever the caching behaviour changes so old caches are purged.
  */
-const VERSION = 'v3'
+const VERSION = 'v4'
 const STATIC_CACHE = `faidafleet-static-${VERSION}`
-const PAGES_CACHE = `faidafleet-pages-${VERSION}`
 const ASSETS_CACHE = `faidafleet-assets-${VERSION}`
-const KNOWN_CACHES = [STATIC_CACHE, PAGES_CACHE, ASSETS_CACHE]
+const KNOWN_CACHES = [STATIC_CACHE, ASSETS_CACHE]
 
 const OFFLINE_URL = '/offline'
 
@@ -42,10 +43,10 @@ self.addEventListener('install', (event) => {
         PRECACHE_URLS.map(async (url) => {
           const response = await fetch(url, { cache: 'reload' })
           if (response.ok) await cache.put(url, response)
-        })
+        }),
       )
       await self.skipWaiting()
-    })()
+    })(),
   )
 })
 
@@ -56,10 +57,10 @@ self.addEventListener('activate', (event) => {
       await Promise.all(
         keys
           .filter((key) => key.startsWith('faidafleet-') && !KNOWN_CACHES.includes(key))
-          .map((key) => caches.delete(key))
+          .map((key) => caches.delete(key)),
       )
       await self.clients.claim()
-    })()
+    })(),
   )
 })
 
@@ -77,19 +78,12 @@ function isStaticAsset(pathname) {
   )
 }
 
-async function networkFirstPage(request) {
-  const cache = await caches.open(PAGES_CACHE)
+async function networkOnlyNavigation(request) {
   try {
-    const response = await fetch(request)
-    // Only cache full, direct responses — never cache auth redirects
-    // (e.g. /dashboard -> /login) under the requested URL.
-    if (response.ok && !response.redirected) {
-      cache.put(request, response.clone())
-    }
-    return response
+    return await fetch(request)
   } catch {
-    const cachedPage = await cache.match(request)
-    if (cachedPage) return cachedPage
+    // Offline (or DNS failure): never serve a stale authenticated page,
+    // only the standalone offline shell.
     const offlinePage = await caches.match(OFFLINE_URL)
     if (offlinePage) return offlinePage
     return new Response('You are offline.', {
@@ -134,13 +128,24 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return
   const url = new URL(request.url)
   if (url.origin !== self.location.origin) return
+
+  // Never intercept API/auth traffic, including Supabase auth helpers and
+  // the service worker script itself.
   if (url.pathname.startsWith('/api/')) return
   if (url.pathname.startsWith('/auth/')) return
   if (url.pathname === '/sw.js') return
 
   if (request.mode === 'navigate') {
-    event.respondWith(networkFirstPage(request))
-  } else if (isStaticAsset(url.pathname)) {
+    // HTML documents carry session state: always go to the network, fall
+    // back to the offline shell rather than a cached (possibly stale) page.
+    event.respondWith(networkOnlyNavigation(request))
+    return
+  }
+
+  // Defense in depth: never cache a document response outside navigations.
+  if (request.destination === 'document') return
+
+  if (isStaticAsset(url.pathname)) {
     event.respondWith(cacheFirst(request))
   } else {
     event.respondWith(staleWhileRevalidate(request, event))

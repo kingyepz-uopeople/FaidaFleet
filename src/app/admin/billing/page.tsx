@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { createClient } from '@/lib/supabase/client';
-import { AdminKpi, AdminPageHeader, AdminRecordList, AdminSearch, StatusBadge, formatDate, formatKes, planTone, titleCase } from '@/components/admin-ui';
+import { AdminFeedback, AdminKpi, AdminPageHeader, AdminRecordList, AdminSearch, StatusBadge, formatDate, formatKes, planTone, titleCase } from '@/components/admin-ui';
 import { isAdminUiPreview, previewPlans, previewTenants } from '@/lib/admin-preview';
 
 type Tenant = {
@@ -30,6 +30,7 @@ export default function BillingPage() {
     return planMap;
   });
   const [loading, setLoading] = useState(!preview);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const supabase = createClient();
 
@@ -51,6 +52,9 @@ export default function BillingPage() {
         supabase.from('plans').select('*'),
       ]);
 
+      if (tenantsRes.error) throw tenantsRes.error;
+      if (plansRes.error) throw plansRes.error;
+
       setTenants(tenantsRes.data || []);
       const planMap: Record<string, Plan> = {};
       plansRes.data?.forEach((p) => {
@@ -58,7 +62,7 @@ export default function BillingPage() {
       });
       setPlans(planMap);
     } catch (error) {
-      console.error('Error fetching billing data:', error);
+      setLoadError(error instanceof Error ? error.message : 'Could not load billing data.');
     } finally {
       setLoading(false);
     }
@@ -82,6 +86,7 @@ export default function BillingPage() {
   return (
     <>
       <AdminPageHeader title="Billing" description="Subscriptions and monthly plan revenue across fleets." />
+      <AdminFeedback error={loadError} />
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <AdminKpi title="Monthly revenue" value={formatKes(totalMonthlyRevenue)} hint="From current plans" />

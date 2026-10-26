@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { createClient } from '@/lib/supabase/client';
 import { Building2, Car, DollarSign, Users } from '@/components/icons';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { AdminKpi, AdminLoading, AdminPageHeader, formatKes } from '@/components/admin-ui';
+import { AdminFeedback, AdminKpi, AdminLoading, AdminPageHeader, formatKes } from '@/components/admin-ui';
 import { isAdminUiPreview } from '@/lib/admin-preview';
 
 export default function AnalyticsPage() {
@@ -37,6 +37,7 @@ export default function AnalyticsPage() {
       : [],
   );
   const [loading, setLoading] = useState(!preview);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const supabase = createClient();
 
   useEffect(() => {
@@ -66,6 +67,11 @@ export default function AnalyticsPage() {
         supabase.from('tenants').select('plan'),
       ]);
 
+      const responseError = [fleets, activeFleets, drivers, vehicles, collections, plans]
+        .map((response) => response.error)
+        .find(Boolean);
+      if (responseError) throw responseError;
+
       const totalCollections = collections.data?.reduce((sum, c) => sum + (c.amount || 0), 0) || 0;
 
       setStats({
@@ -91,7 +97,7 @@ export default function AnalyticsPage() {
 
       setChartData(generateWeeklyChart(collections.data || []));
     } catch (error) {
-      console.error('Error fetching analytics:', error);
+      setLoadError(error instanceof Error ? error.message : 'Could not load analytics.');
     } finally {
       setLoading(false);
     }
@@ -137,6 +143,7 @@ export default function AnalyticsPage() {
   return (
     <>
       <AdminPageHeader title="Analytics" description="Platform-wide statistics and insights" />
+      <AdminFeedback error={loadError} />
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <AdminKpi title="Total fleets" value={stats.totalFleets.toString()} hint="All companies" Icon={Building2} />

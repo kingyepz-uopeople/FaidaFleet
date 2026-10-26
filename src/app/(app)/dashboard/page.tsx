@@ -47,7 +47,9 @@ export default async function DashboardPage() {
     .select('tenant_id')
     .eq('user_id', user.id)
     .eq('is_active', true)
-    .single()
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle()
 
   if (!membership) redirect('/onboarding')
 
@@ -68,7 +70,7 @@ export default async function DashboardPage() {
   const vehicles = (vehiclesRes.data || []) as VehicleRow[]
   const collections = (collectionsRes.data || []) as CollectionRow[]
   const expenses = (expensesRes.data || []) as MoneyRow[]
-  const recentRows = (recentRes.data || []) as RecentRow[]
+  const recentRows = (recentRes.data || []) as unknown as RecentRow[]
 
   const recent: RecentCollection[] = recentRows.map((row) => ({
     id: row.id,

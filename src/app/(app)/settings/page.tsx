@@ -62,7 +62,9 @@ export default function SettingsPage() {
           .select('tenant_id, role')
           .eq('user_id', user.id)
           .eq('is_active', true)
-          .single();
+          .order('created_at', { ascending: true })
+          .limit(1)
+          .maybeSingle();
         if (membershipResp.error) throw membershipResp.error;
 
         const membership = membershipResp.data as { tenant_id: string; role: string };

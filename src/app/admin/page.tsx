@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { createClient } from '@/lib/supabase/client';
 import { Building2, Car, KeyRound, Truck, Users } from '@/components/icons';
-import { AdminKpi, AdminPageHeader, AdminRecordList, StatusBadge, formatDate, planTone, titleCase } from '@/components/admin-ui';
+import { AdminFeedback, AdminKpi, AdminPageHeader, AdminRecordList, StatusBadge, formatDate, planTone, titleCase } from '@/components/admin-ui';
 import { isAdminUiPreview, previewTenants } from '@/lib/admin-preview';
 
 type RecentTenant = {
@@ -29,6 +29,7 @@ export default function AdminOverviewPage() {
   });
   const [recent, setRecent] = useState<RecentTenant[]>(preview ? previewTenants : []);
   const [loading, setLoading] = useState(!preview);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const supabase = createClient();
 
   useEffect(() => {
@@ -71,6 +72,19 @@ export default function AdminOverviewPage() {
         supabase.from('tenants').select('*', { count: 'exact', head: true }).gte('created_at', lastMonth).lt('created_at', thisMonth),
       ]);
 
+      const responseError = [
+        tenantsCount,
+        driversCount,
+        vehiclesCount,
+        ownersCount,
+        recentTenants,
+        thisMonthTenants,
+        lastMonthTenants,
+      ]
+        .map((response) => response.error)
+        .find(Boolean);
+      if (responseError) throw responseError;
+
       setStats({
         fleetOwners: ownersCount.count || 0,
         totalDrivers: driversCount.count || 0,
@@ -81,7 +95,7 @@ export default function AdminOverviewPage() {
       });
       setRecent((recentTenants.data || []) as RecentTenant[]);
     } catch (error) {
-      console.error('Error fetching stats:', error);
+      setLoadError(error instanceof Error ? error.message : 'Could not load platform stats.');
     } finally {
       setLoading(false);
     }
@@ -107,6 +121,8 @@ export default function AdminOverviewPage() {
           </Button>
         }
       />
+
+      <AdminFeedback error={loadError} />
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <AdminKpi title="Active fleets" value={stats.activeTenants.toString()} hint="Companies on the platform" Icon={Building2} trend={tenantTrend} />

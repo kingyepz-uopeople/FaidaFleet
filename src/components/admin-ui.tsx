@@ -90,9 +90,7 @@ export function AdminKpi({
           )}
         </div>
         {Icon && (
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-            <Icon className="h-5 w-5" />
-          </div>
+          <Icon className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
         )}
       </CardContent>
     </Card>

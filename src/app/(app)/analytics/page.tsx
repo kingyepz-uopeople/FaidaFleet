@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { NativeSelect } from '@/components/native-select';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2, TrendingUp, TrendingDown, DollarSign, Percent } from '@/components/icons';
 import { createClient } from '@/lib/supabase/client';
@@ -29,7 +29,7 @@ export default function AnalyticsPage() {
       setLoading(true);
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
-      const membershipResp = await supabase.from('memberships').select('tenant_id').eq('user_id', user.id).eq('is_active', true).single();
+      const membershipResp = await supabase.from('memberships').select('tenant_id').eq('user_id', user.id).eq('is_active', true).order('created_at', { ascending: true }).limit(1).maybeSingle();
       const membership: any = membershipResp.data;
       if (!membership) throw new Error('No tenant found');
 
@@ -73,7 +73,7 @@ export default function AnalyticsPage() {
 
       <Card>
         <CardHeader><CardTitle>Date Range</CardTitle></CardHeader>
-        <CardContent><Select value={dateRange} onValueChange={setDateRange}><SelectTrigger className="w-48"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="7">Last 7 Days</SelectItem><SelectItem value="30">Last 30 Days</SelectItem><SelectItem value="90">Last 90 Days</SelectItem></SelectContent></Select></CardContent>
+        <CardContent><NativeSelect className="w-48" value={dateRange} onChange={(e) => setDateRange(e.target.value)} aria-label="Date range"><option value="7">Last 7 Days</option><option value="30">Last 30 Days</option><option value="90">Last 90 Days</option></NativeSelect></CardContent>
       </Card>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">

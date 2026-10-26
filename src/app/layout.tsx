@@ -1,14 +1,20 @@
 import type { Metadata, Viewport } from 'next';
-import { PT_Sans } from 'next/font/google';
+import localFont from 'next/font/local';
 import Script from 'next/script';
 import './globals.css';
 import { Toaster } from "@/components/ui/toaster"
 import { RegisterSW } from '@/components/pwa/register-sw'
 
-const ptSans = PT_Sans({
-  subsets: ['latin'],
-  weight: ['400', '700'],
+// Self-hosted PT Sans (SIL OFL 1.1, see src/fonts/ptsans/OFL.txt).
+// Local fonts keep production builds hermetic and remove the runtime
+// dependency on Google Fonts, which matters for the offline-first PWA.
+const ptSans = localFont({
+  src: [
+    { path: '../fonts/ptsans/PT_Sans-Web-Regular.ttf', weight: '400', style: 'normal' },
+    { path: '../fonts/ptsans/PT_Sans-Web-Bold.ttf', weight: '700', style: 'normal' },
+  ],
   variable: '--font-pt-sans',
+  display: 'swap',
 });
 
 export const viewport: Viewport = {

@@ -8,6 +8,9 @@ import { cn } from "@/lib/utils"
 
 const Dialog = DialogPrimitive.Root
 
+export type DialogProps = React.ComponentPropsWithoutRef<typeof DialogPrimitive.Root>
+export type DialogContentProps = React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
+
 const DialogTrigger = DialogPrimitive.Trigger
 
 const DialogPortal = DialogPrimitive.Portal
