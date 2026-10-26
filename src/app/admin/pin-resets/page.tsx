@@ -1,10 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Alert, AlertDescription } from '@/components/ui/alert'
+import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { EmptyState, LoadingState } from '@/components/page-shell'
+import { AdminFeedback, AdminPageHeader, AdminRecordList, AdminSearch, StatusBadge, formatDate, titleCase } from '@/components/admin-ui'
+import { isAdminUiPreview, previewPinResets } from '@/lib/admin-preview'
 
 type PinResetRow = {
   id: string
@@ -18,12 +17,19 @@ type PinResetRow = {
 }
 
 export default function PinResetsPage() {
-  const [rows, setRows] = useState<PinResetRow[]>([])
-  const [loading, setLoading] = useState(true)
+  const preview = isAdminUiPreview()
+  const [rows, setRows] = useState<PinResetRow[]>(preview ? previewPinResets : [])
+  const [loading, setLoading] = useState(!preview)
   const [error, setError] = useState<string | null>(null)
+  const [query, setQuery] = useState('')
 
   useEffect(() => {
     const load = async () => {
+      if (isAdminUiPreview()) {
+        setRows(previewPinResets)
+        setLoading(false)
+        return
+      }
       const supabase = createClient()
       const { data, error: loadError } = await supabase
         .from('pin_reset_log')
@@ -45,50 +51,36 @@ export default function PinResetsPage() {
     load()
   }, [])
 
+  const filtered = useMemo(() => {
+    const needle = query.toLowerCase()
+    if (!needle) return rows
+    return rows.filter((row) =>
+      `${row.actor_role} ${row.target_kind} ${row.actor_user_id} ${row.tenant_id || ''}`.toLowerCase().includes(needle),
+    )
+  }, [query, rows])
+
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">PIN resets</h1>
-        <p className="text-sm text-muted-foreground">Recent PIN set and reset events. PINs themselves are never stored or shown here.</p>
-      </div>
-      {error && (
-        <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-      <Card>
-        <CardHeader>
-          <CardTitle>Last 50 events</CardTitle>
-          <CardDescription>Who reset whose login, and when.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <LoadingState />
-          ) : rows.length === 0 ? (
-            <EmptyState title="No PIN resets yet" description="When a fleet owner or system admin sets a PIN, it appears here." />
-          ) : (
-            <ul className="divide-y">
-              {rows.map((row) => (
-                <li key={row.id} className="flex flex-col gap-1 py-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium capitalize">
-                      {row.actor_role.replace('_', ' ')} reset a {row.target_kind.replace('_', ' ')} PIN
-                    </p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      Actor {row.actor_user_id.slice(0, 8)}
-                      {row.tenant_id ? ` · fleet ${row.tenant_id.slice(0, 8)}` : ''}
-                      {row.target_driver_id ? ` · driver ${row.target_driver_id.slice(0, 8)}` : ''}
-                    </p>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    {new Date(row.created_at).toLocaleString()}
-                  </p>
-                </li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+    <>
+      <AdminPageHeader
+        title="PIN resets"
+        description="Who set or reset a login PIN, and when. PINs themselves are never stored or shown here."
+      />
+      <AdminFeedback error={error} />
+      <AdminSearch value={query} onChange={setQuery} placeholder="Search by role, target, or id…" />
+      <AdminRecordList
+        rows={filtered}
+        rowKey={(row) => row.id}
+        loading={loading}
+        emptyTitle="No PIN resets yet"
+        emptyDescription="When a fleet owner or system admin sets a PIN, it appears here."
+        columns={[
+          { id: 'event', header: 'Event', cell: (row) => `${titleCase(row.actor_role)} reset a ${row.target_kind.replace('_', ' ')} PIN` },
+          { id: 'actor', header: 'Actor', cell: (row) => <span className="font-mono text-xs">{row.actor_user_id.slice(0, 8)}</span> },
+          { id: 'target', header: 'Target', cell: (row) => <StatusBadge tone="info">{titleCase(row.target_kind)}</StatusBadge> },
+          { id: 'fleet', header: 'Fleet', cell: (row) => row.tenant_id ? <span className="font-mono text-xs">{row.tenant_id.slice(0, 8)}</span> : '—', hideOnMobile: true },
+          { id: 'when', header: 'When', cell: (row) => formatDate(row.created_at) },
+        ]}
+      />
+    </>
   )
 }
