@@ -9,6 +9,8 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Loader2, ArrowLeft } from '@/components/icons'
+import { AuthShell } from '@/components/auth-shell'
+import { isPhoneAuthEmail } from '@/lib/phone'
 
 export default function ResetPasswordPage() {
   const [email, setEmail] = useState('')
@@ -23,6 +25,12 @@ export default function ResetPasswordPage() {
     setError(null)
     setSuccess(false)
 
+    if (isPhoneAuthEmail(email.trim())) {
+      setError('Fleet owners and drivers do not use email reset. Ask a system administrator to reset the PIN.')
+      setLoading(false)
+      return
+    }
+
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/auth/update-password`,
@@ -33,7 +41,7 @@ export default function ResetPasswordPage() {
       } else {
         setSuccess(true)
       }
-    } catch (err) {
+    } catch {
       setError('An unexpected error occurred')
     } finally {
       setLoading(false)
@@ -41,12 +49,12 @@ export default function ResetPasswordPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="space-y-1">
-          <CardTitle className="text-2xl font-bold text-center">Reset admin password</CardTitle>
+    <AuthShell variant="admin" headline="Admin password reset" subhead="Email password reset is only for system administrators.">
+      <Card className="border-0 shadow-xl">
+        <CardHeader>
+          <CardTitle className="text-center text-2xl">Reset admin password</CardTitle>
           <CardDescription className="text-center">
-            System administrators can reset an email password here. Fleet owners and drivers change their PIN in Settings.
+            System administrators can reset an email password here. Fleet owners and drivers cannot recover a forgotten PIN themselves — ask a system administrator to set a new one. Signed-in users can change a remembered PIN in Settings.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -56,20 +64,19 @@ export default function ResetPasswordPage() {
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             )}
-
             {success && (
-              <Alert className="bg-green-50 text-green-900 border-green-200">
+              <Alert className="border-emerald-200 bg-emerald-50 text-emerald-900">
                 <AlertDescription>
                   Password reset link has been sent to your email. Please check your inbox.
                 </AlertDescription>
               </Alert>
             )}
-
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <Input
                 id="email"
                 type="email"
+                autoComplete="username"
                 placeholder="you@example.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -77,33 +84,25 @@ export default function ResetPasswordPage() {
                 disabled={loading || success}
               />
             </div>
-
-            <Button 
-              type="submit" 
-              className="w-full" 
-              disabled={loading || success}
-            >
+            <Button type="submit" className="w-full" disabled={loading || success}>
               {loading ? (
                 <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  <Loader2 className="h-4 w-4 animate-spin" />
                   Sending link...
                 </>
               ) : (
-                'Send Reset Link'
+                'Send reset link'
               )}
             </Button>
           </form>
         </CardContent>
-        <CardFooter className="flex flex-col space-y-2">
-          <Link 
-            href="/admin-login" 
-            className="text-sm text-blue-600 hover:underline flex items-center gap-1"
-          >
+        <CardFooter>
+          <Link href="/admin-login" className="flex min-h-11 items-center gap-1 text-sm text-primary">
             <ArrowLeft className="h-4 w-4" />
             Back to admin sign-in
           </Link>
         </CardFooter>
       </Card>
-    </div>
+    </AuthShell>
   )
 }

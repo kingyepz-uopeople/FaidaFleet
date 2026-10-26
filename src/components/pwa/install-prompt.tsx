@@ -53,7 +53,7 @@ export function InstallPrompt() {
 
   if (showIOSHint) {
     return (
-      <div className="fixed bottom-4 left-4 right-4 z-50 rounded-2xl bg-[#1e3a5f] text-white shadow-2xl p-4 flex items-start gap-3 max-w-sm mx-auto">
+      <div className="fixed bottom-[calc(5.25rem+env(safe-area-inset-bottom))] left-4 right-4 z-50 rounded-2xl bg-[#1e3a5f] text-white shadow-2xl p-4 flex items-start gap-3 max-w-sm mx-auto md:bottom-4">
         <div className="flex-shrink-0 h-10 w-10 rounded-xl bg-white/10 flex items-center justify-center text-lg font-bold">
           FF
         </div>
@@ -65,7 +65,7 @@ export function InstallPrompt() {
         </div>
         <button
           onClick={dismiss}
-          className="flex-shrink-0 text-white/60 hover:text-white transition-colors text-xl leading-none"
+          className="flex h-11 w-11 flex-shrink-0 items-center justify-center text-white/60 hover:text-white transition-colors text-xl leading-none"
           aria-label="Dismiss"
         >
           ×
@@ -77,7 +77,7 @@ export function InstallPrompt() {
   if (!showBanner) return null
 
   return (
-    <div className="fixed bottom-4 left-4 right-4 z-50 rounded-2xl bg-[#1e3a5f] text-white shadow-2xl p-4 flex items-center gap-3 max-w-sm mx-auto">
+    <div className="fixed bottom-[calc(5.25rem+env(safe-area-inset-bottom))] left-4 right-4 z-50 rounded-2xl bg-[#1e3a5f] text-white shadow-2xl p-4 flex items-center gap-3 max-w-sm mx-auto md:bottom-4">
       <div className="flex-shrink-0 h-10 w-10 rounded-xl bg-white/10 flex items-center justify-center text-lg font-bold">
         FF
       </div>
@@ -88,7 +88,7 @@ export function InstallPrompt() {
       <div className="flex gap-2 flex-shrink-0">
         <button
           onClick={handleInstall}
-          className="rounded-full bg-white text-[#1e3a5f] px-3 py-1.5 text-xs font-semibold hover:bg-white/90 transition-colors"
+          className="min-h-11 rounded-full bg-white px-3 text-xs font-semibold text-[#1e3a5f] hover:bg-white/90 transition-colors"
         >
           Install
         </button>

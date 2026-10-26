@@ -30,11 +30,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { PlusCircle, Loader2 } from '@/components/icons';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { PlusCircle, Loader2, KeyRound } from '@/components/icons';
 import { normalizeKenyanPhone, validatePin } from '@/lib/phone';
 import { createClient } from '@/lib/supabase/client';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { PinResetDialog } from '@/components/pin-reset-dialog';
+import { EmptyState, PageShell, TableScroll } from '@/components/page-shell';
 
 type Driver = {
   id: string;
@@ -60,7 +62,7 @@ export default function DriversPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tenantId, setTenantId] = useState<string | null>(null);
-  const [selectedDriver, setSelectedDriver] = useState<string>('');
+  const [resetDriver, setResetDriver] = useState<Driver | null>(null);
   
   const [formData, setFormData] = useState({
     full_name: '',
@@ -265,17 +267,18 @@ export default function DriversPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+      <div className="flex min-h-[40dvh] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col gap-6 p-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Drivers</h1>
-        <div className="flex gap-2">
+    <PageShell
+      title="Drivers"
+      description="Add drivers with a phone number and PIN. Reset a forgotten PIN from the driver record."
+      actions={
+        <div className="flex flex-wrap gap-2">
           <Dialog open={assignDialogOpen} onOpenChange={setAssignDialogOpen}>
             <DialogTrigger asChild>
               <Button variant="outline" disabled={drivers.length === 0 || vehicles.length === 0}>
@@ -415,6 +418,9 @@ export default function DriversPage() {
                     <Label htmlFor="phone">Phone Number *</Label>
                     <Input
                       id="phone"
+                      type="tel"
+                      inputMode="tel"
+                      autoComplete="tel"
                       placeholder="0712345678"
                       value={formData.phone}
                       onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
@@ -429,6 +435,7 @@ export default function DriversPage() {
                       id="pin"
                       type="password"
                       inputMode="numeric"
+                      autoComplete="new-password"
                       maxLength={6}
                       placeholder="4 to 6 digits"
                       value={formData.pin}
@@ -511,58 +518,118 @@ export default function DriversPage() {
             </DialogContent>
           </Dialog>
         </div>
-      </div>
-
+      }
+    >
       <Card>
         <CardHeader>
-          <CardTitle>Driver Roster</CardTitle>
+          <CardTitle>Driver roster</CardTitle>
           <CardDescription>A list of all drivers in your fleet.</CardDescription>
         </CardHeader>
         <CardContent>
           {drivers.length === 0 ? (
-            <div className="text-center py-12">
-              <p className="text-muted-foreground mb-4">No drivers yet. Add your first driver to get started!</p>
-              <Button onClick={() => setDialogOpen(true)}>
-                <PlusCircle className="mr-2 h-4 w-4" /> Add Your First Driver
-              </Button>
-            </div>
+            <EmptyState
+              title="No drivers yet"
+              description="Add a driver with a phone number and PIN so they can sign in."
+              action={
+                <Button onClick={() => setDialogOpen(true)}>
+                  <PlusCircle className="mr-2 h-4 w-4" /> Add your first driver
+                </Button>
+              }
+            />
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Driver</TableHead>
-                  <TableHead>Phone</TableHead>
-                  <TableHead>License Number</TableHead>
-                  <TableHead>License Expiry</TableHead>
-                  <TableHead>Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
+            <>
+              <div className="grid gap-3 md:hidden">
                 {drivers.map((driver) => (
-                  <TableRow key={driver.id}>
-                    <TableCell>
-                      <div className="flex items-center gap-3">
-                        <Avatar className="h-9 w-9">
+                  <div key={driver.id} className="rounded-2xl border bg-card p-4 shadow-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <Avatar className="h-10 w-10">
                           <AvatarFallback>{getInitials(driver.full_name)}</AvatarFallback>
                         </Avatar>
-                        <span className="font-medium">{driver.full_name}</span>
+                        <div className="min-w-0">
+                          <p className="truncate font-medium">{driver.full_name}</p>
+                          <p className="text-sm text-muted-foreground">{driver.phone}</p>
+                        </div>
                       </div>
-                    </TableCell>
-                    <TableCell>{driver.phone}</TableCell>
-                    <TableCell>{driver.license_number || '-'}</TableCell>
-                    <TableCell>
-                      {driver.license_expiry 
-                        ? new Date(driver.license_expiry).toLocaleDateString()
-                        : '-'}
-                    </TableCell>
-                    <TableCell>{getStatusBadge(driver.is_active)}</TableCell>
-                  </TableRow>
+                      {getStatusBadge(driver.is_active)}
+                    </div>
+                    <p className="mt-3 text-sm text-muted-foreground">
+                      License {driver.license_number || '—'}
+                      {driver.license_expiry ? ` · expires ${new Date(driver.license_expiry).toLocaleDateString()}` : ''}
+                    </p>
+                    <Button
+                      variant="outline"
+                      className="mt-3 w-full"
+                      onClick={() => setResetDriver(driver)}
+                    >
+                      <KeyRound className="h-4 w-4" />
+                      Reset PIN
+                    </Button>
+                  </div>
                 ))}
-              </TableBody>
-            </Table>
+              </div>
+              <TableScroll>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Driver</TableHead>
+                      <TableHead>Phone</TableHead>
+                      <TableHead>License Number</TableHead>
+                      <TableHead>License Expiry</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">PIN</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {drivers.map((driver) => (
+                      <TableRow key={driver.id}>
+                        <TableCell>
+                          <div className="flex items-center gap-3">
+                            <Avatar className="h-9 w-9">
+                              <AvatarFallback>{getInitials(driver.full_name)}</AvatarFallback>
+                            </Avatar>
+                            <span className="font-medium">{driver.full_name}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell>{driver.phone}</TableCell>
+                        <TableCell>{driver.license_number || '-'}</TableCell>
+                        <TableCell>
+                          {driver.license_expiry
+                            ? new Date(driver.license_expiry).toLocaleDateString()
+                            : '-'}
+                        </TableCell>
+                        <TableCell>{getStatusBadge(driver.is_active)}</TableCell>
+                        <TableCell className="text-right">
+                          <Button variant="outline" size="sm" onClick={() => setResetDriver(driver)}>
+                            <KeyRound className="h-4 w-4" />
+                            Reset PIN
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableScroll>
+            </>
           )}
         </CardContent>
       </Card>
-    </div>
+      <PinResetDialog
+        open={Boolean(resetDriver)}
+        onOpenChange={(open) => { if (!open) setResetDriver(null) }}
+        title="Reset driver PIN"
+        description="Set a new PIN for this driver. The current PIN cannot be viewed. Share the new PIN once."
+        name={resetDriver?.full_name}
+        submit={async ({ pin, generate }) => {
+          if (!resetDriver) return { error: 'No driver selected', pin: undefined, generated: false }
+          const response = await fetch(`/api/drivers/${resetDriver.id}/pin`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pin, generate }),
+          })
+          return response.json()
+        }}
+      />
+    </PageShell>
   );
 }

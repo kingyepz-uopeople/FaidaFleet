@@ -2,7 +2,7 @@
 
 export default function OfflinePage() {
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-[#f5f7fa] px-6">
+    <div className="flex min-h-dvh flex-col items-center justify-center bg-background px-6 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
       <div className="max-w-md w-full text-center">
         <div className="mb-6 inline-flex h-20 w-20 items-center justify-center rounded-full bg-[#1e3a5f] text-white text-3xl font-bold shadow-lg">
           FF

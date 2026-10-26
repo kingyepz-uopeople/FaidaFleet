@@ -1,17 +1,7 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -23,15 +13,28 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { Search, MoreHorizontal, Trash2, Edit, Plus } from '@/components/icons';
+import { MoreHorizontal, Trash2, Edit, Plus, KeyRound } from '@/components/icons';
+import { PinResetDialog } from '@/components/pin-reset-dialog';
 import { createClient } from '@/lib/supabase/client';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  AdminFeedback,
+  AdminPageHeader,
+  AdminRecordList,
+  AdminSearch,
+  RowActionsTrigger,
+  StatusBadge,
+  adminSelectClass,
+  formatDate,
+  planTone,
+  titleCase,
+} from '@/components/admin-ui';
+import { isAdminUiPreview, previewTenants } from '@/lib/admin-preview';
 
 type Tenant = {
   id: string;
@@ -47,15 +50,17 @@ type Tenant = {
 const PLANS = ['starter', 'pro', 'enterprise'];
 
 export default function FleetOwnersPage() {
-  const [tenants, setTenants] = useState<Tenant[]>([]);
-  const [filteredTenants, setFilteredTenants] = useState<Tenant[]>([]);
-  const [loading, setLoading] = useState(true);
+  const preview = isAdminUiPreview();
+  const [tenants, setTenants] = useState<Tenant[]>(preview ? previewTenants : []);
+  const [loading, setLoading] = useState(!preview);
   const [searchQuery, setSearchQuery] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [resetTenant, setResetTenant] = useState<Tenant | null>(null);
+  const [resetPhone, setResetPhone] = useState('');
   const [formData, setFormData] = useState({
     name: '',
     business_name: '',
@@ -69,23 +74,14 @@ export default function FleetOwnersPage() {
     fetchTenants();
   }, []);
 
-  useEffect(() => {
-    const filtered = tenants.filter((tenant) =>
-      tenant.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      tenant.business_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      tenant.email?.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-    setFilteredTenants(filtered);
-  }, [searchQuery, tenants]);
-
   const fetchTenants = async () => {
     try {
       setLoading(true);
-      const { data, error: err } = await supabase
-        .from('tenants')
-        .select('*')
-        .order('created_at', { ascending: false });
-
+      if (isAdminUiPreview()) {
+        setTenants(previewTenants);
+        return;
+      }
+      const { data, error: err } = await supabase.from('tenants').select('*').order('created_at', { ascending: false });
       if (err) throw err;
       setTenants(data || []);
     } catch (err) {
@@ -94,6 +90,15 @@ export default function FleetOwnersPage() {
       setLoading(false);
     }
   };
+
+  const filteredTenants = useMemo(() => {
+    const needle = searchQuery.toLowerCase();
+    return tenants.filter((tenant) =>
+      tenant.name.toLowerCase().includes(needle) ||
+      tenant.business_name?.toLowerCase().includes(needle) ||
+      tenant.email?.toLowerCase().includes(needle),
+    );
+  }, [searchQuery, tenants]);
 
   const handleOpenDialog = (tenant?: Tenant) => {
     if (tenant) {
@@ -107,13 +112,7 @@ export default function FleetOwnersPage() {
       });
     } else {
       setEditingId(null);
-      setFormData({
-        name: '',
-        business_name: '',
-        email: '',
-        phone: '',
-        plan: 'starter',
-      });
+      setFormData({ name: '', business_name: '', email: '', phone: '', plan: 'starter' });
     }
     setDialogOpen(true);
   };
@@ -122,38 +121,29 @@ export default function FleetOwnersPage() {
     e.preventDefault();
     setSubmitting(true);
     setError(null);
-
     try {
       if (editingId) {
-        const { error: err } = await supabase
-          .from('tenants')
-          .update({
-            name: formData.name,
-            business_name: formData.business_name || null,
-            email: formData.email || null,
-            phone: formData.phone || null,
-            plan: formData.plan,
-          } as Record<string, unknown>)
-          .eq('id', editingId);
-
+        const { error: err } = await supabase.from('tenants').update({
+          name: formData.name,
+          business_name: formData.business_name || null,
+          email: formData.email || null,
+          phone: formData.phone || null,
+          plan: formData.plan as 'starter' | 'pro' | 'enterprise',
+        }).eq('id', editingId);
         if (err) throw err;
         setSuccess('Fleet owner updated successfully');
       } else {
-        const { error: err } = await supabase
-          .from('tenants')
-          .insert([{
-            name: formData.name,
-            business_name: formData.business_name || null,
-            email: formData.email || null,
-            phone: formData.phone || null,
-            plan: formData.plan,
-            is_active: true,
-          }] as Record<string, unknown>[]);
-
+        const { error: err } = await supabase.from('tenants').insert([{
+          name: formData.name,
+          business_name: formData.business_name || null,
+          email: formData.email || null,
+          phone: formData.phone || null,
+          plan: formData.plan as 'starter' | 'pro' | 'enterprise',
+          is_active: true,
+        }]);
         if (err) throw err;
         setSuccess('Fleet owner created successfully');
       }
-
       setDialogOpen(false);
       await fetchTenants();
       setTimeout(() => setSuccess(null), 3000);
@@ -166,13 +156,8 @@ export default function FleetOwnersPage() {
 
   const handleDelete = async (tenantId: string) => {
     if (!window.confirm('Are you sure you want to delete this fleet owner? This action cannot be undone.')) return;
-    
     try {
-      const { error: err } = await supabase
-        .from('tenants')
-        .delete()
-        .eq('id', tenantId);
-
+      const { error: err } = await supabase.from('tenants').delete().eq('id', tenantId);
       if (err) throw err;
       setSuccess('Fleet owner deleted successfully');
       await fetchTenants();
@@ -184,11 +169,7 @@ export default function FleetOwnersPage() {
 
   const toggleTenantStatus = async (tenantId: string, currentStatus: boolean) => {
     try {
-      const { error: err } = await supabase
-        .from('tenants')
-        .update({ is_active: !currentStatus } as Record<string, unknown>)
-        .eq('id', tenantId);
-
+      const { error: err } = await supabase.from('tenants').update({ is_active: !currentStatus }).eq('id', tenantId);
       if (err) throw err;
       await fetchTenants();
     } catch (err) {
@@ -196,226 +177,127 @@ export default function FleetOwnersPage() {
     }
   };
 
-  const getPlanColor = (plan: string) => {
-    switch (plan) {
-      case 'enterprise':
-        return 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300';
-      case 'pro':
-        return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300';
-      default:
-        return 'bg-gray-100 text-gray-800 dark:bg-gray-800/30 dark:text-gray-300';
-    }
-  };
-
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Fleet Owners</h1>
-          <p className="text-gray-600 dark:text-gray-400">Manage all fleet companies in the system</p>
-        </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button onClick={() => handleOpenDialog()} className="bg-red-600 hover:bg-red-700">
-              <Plus className="h-4 w-4 mr-2" />
-              Add Fleet Owner
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle>{editingId ? 'Edit Fleet Owner' : 'Create Fleet Owner'}</DialogTitle>
-              <DialogDescription>
-                {editingId ? 'Update fleet owner information' : 'Add a new fleet company to the system'}
-              </DialogDescription>
-            </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <Label htmlFor="name">Company Name *</Label>
-                <Input
-                  id="name"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="Acme Fleet Ltd"
-                  required
-                />
-              </div>
-              <div>
-                <Label htmlFor="business_name">Business Name</Label>
-                <Input
-                  id="business_name"
-                  value={formData.business_name}
-                  onChange={(e) => setFormData({ ...formData, business_name: e.target.value })}
-                  placeholder="Official business name"
-                />
-              </div>
-              <div>
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  placeholder="owner@company.com"
-                />
-              </div>
-              <div>
-                <Label htmlFor="phone">Phone</Label>
-                <Input
-                  id="phone"
-                  value={formData.phone}
-                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                  placeholder="+254 700 000000"
-                />
-              </div>
-              <div>
-                <Label htmlFor="plan">Plan *</Label>
-                <select
-                  id="plan"
-                  value={formData.plan}
-                  onChange={(e) => setFormData({ ...formData, plan: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md dark:bg-gray-800 dark:border-gray-600"
-                  required
-                >
-                  {PLANS.map((p) => (
-                    <option key={p} value={p}>
-                      {p.charAt(0).toUpperCase() + p.slice(1)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={submitting} className="bg-red-600 hover:bg-red-700">
-                  {submitting ? 'Saving...' : editingId ? 'Update' : 'Create'}
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
-      </div>
+    <>
+      <AdminPageHeader
+        title="Fleet owners"
+        description="Companies on FaidaFleet. Set a PIN for owners who signed up without one."
+        actions={
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <DialogTrigger asChild>
+              <Button onClick={() => handleOpenDialog()}>
+                <Plus className="h-4 w-4" />
+                Add fleet owner
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>{editingId ? 'Edit fleet owner' : 'Create fleet owner'}</DialogTitle>
+                <DialogDescription>{editingId ? 'Update fleet owner information' : 'Add a new fleet company. They will not have a PIN until you set one.'}</DialogDescription>
+              </DialogHeader>
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="name">Company name *</Label>
+                  <Input id="name" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="business_name">Business name</Label>
+                  <Input id="business_name" value={formData.business_name} onChange={(e) => setFormData({ ...formData, business_name: e.target.value })} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="email">Email</Label>
+                  <Input id="email" type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="phone">Phone</Label>
+                  <Input id="phone" type="tel" inputMode="tel" autoComplete="tel" value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="plan">Plan *</Label>
+                  <select id="plan" value={formData.plan} onChange={(e) => setFormData({ ...formData, plan: e.target.value })} className={adminSelectClass} required>
+                    {PLANS.map((p) => <option key={p} value={p}>{titleCase(p)}</option>)}
+                  </select>
+                </div>
+                <DialogFooter>
+                  <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
+                  <Button type="submit" disabled={submitting}>{submitting ? 'Saving…' : editingId ? 'Update' : 'Create'}</Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+        }
+      />
 
-      {error && (
-        <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
+      <AdminFeedback error={error} success={success} />
+      <AdminSearch value={searchQuery} onChange={setSearchQuery} placeholder="Search by name, business, or email…" />
 
-      {success && (
-        <Alert className="bg-green-50 text-green-800 border-green-200 dark:bg-green-900/20 dark:border-green-800">
-          <AlertDescription>{success}</AlertDescription>
-        </Alert>
-      )}
+      <AdminRecordList
+        rows={filteredTenants}
+        rowKey={(row) => row.id}
+        loading={loading}
+        emptyTitle="No fleet owners found"
+        columns={[
+          { id: 'name', header: 'Company', cell: (row) => <span className="font-medium">{row.name}</span> },
+          { id: 'business', header: 'Business', cell: (row) => row.business_name || '—', hideOnMobile: true },
+          { id: 'email', header: 'Email', cell: (row) => row.email || '—', hideOnMobile: true },
+          { id: 'phone', header: 'Phone', cell: (row) => row.phone || '—' },
+          { id: 'plan', header: 'Plan', cell: (row) => <StatusBadge tone={planTone(row.plan)}>{titleCase(row.plan)}</StatusBadge> },
+          { id: 'status', header: 'Status', cell: (row) => <StatusBadge tone={row.is_active ? 'success' : 'neutral'}>{row.is_active ? 'Active' : 'Inactive'}</StatusBadge> },
+          { id: 'joined', header: 'Joined', cell: (row) => formatDate(row.created_at), hideOnMobile: true },
+        ]}
+        actions={(tenant) => (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <RowActionsTrigger><MoreHorizontal className="h-4 w-4" /></RowActionsTrigger>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => { setResetTenant(tenant); setResetPhone(tenant.phone || ''); }} className="cursor-pointer min-h-11">
+                <KeyRound className="h-4 w-4 mr-2" /> Set / reset PIN
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleOpenDialog(tenant)} className="cursor-pointer min-h-11">
+                <Edit className="h-4 w-4 mr-2" /> Edit
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => toggleTenantStatus(tenant.id, tenant.is_active)} className="cursor-pointer min-h-11">
+                {tenant.is_active ? 'Deactivate' : 'Activate'}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleDelete(tenant.id)} className="cursor-pointer min-h-11 text-destructive">
+                <Trash2 className="h-4 w-4 mr-2" /> Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+      />
 
-      {/* Search Bar */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-        <Input
-          placeholder="Search by name, business, or email..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="pl-10"
-        />
-      </div>
-
-      {/* Tenants Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Fleet Companies</CardTitle>
-          <CardDescription>Total: {filteredTenants.length} companies</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <div className="flex items-center justify-center h-32">Loading...</div>
-          ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Company Name</TableHead>
-                    <TableHead>Business Name</TableHead>
-                    <TableHead>Email</TableHead>
-                    <TableHead>Phone</TableHead>
-                    <TableHead>Plan</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Joined</TableHead>
-                    <TableHead className="w-10">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredTenants.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={8} className="text-center py-8 text-gray-500">
-                        No fleet owners found
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    filteredTenants.map((tenant) => (
-                      <TableRow key={tenant.id}>
-                        <TableCell className="font-medium">{tenant.name}</TableCell>
-                        <TableCell>{tenant.business_name || '-'}</TableCell>
-                        <TableCell className="text-sm">{tenant.email || '-'}</TableCell>
-                        <TableCell className="text-sm">{tenant.phone || '-'}</TableCell>
-                        <TableCell>
-                          <Badge className={getPlanColor(tenant.plan)}>
-                            {tenant.plan.charAt(0).toUpperCase() + tenant.plan.slice(1)}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Badge
-                            className={
-                              tenant.is_active
-                                ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
-                                : 'bg-gray-100 text-gray-800 dark:bg-gray-800/30 dark:text-gray-300'
-                            }
-                          >
-                            {tenant.is_active ? 'Active' : 'Inactive'}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-sm text-gray-500">
-                          {new Date(tenant.created_at).toLocaleDateString()}
-                        </TableCell>
-                        <TableCell>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="sm">
-                                <MoreHorizontal className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem
-                                onClick={() => handleOpenDialog(tenant)}
-                                className="cursor-pointer"
-                              >
-                                <Edit className="h-4 w-4 mr-2" />
-                                Edit
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() => toggleTenantStatus(tenant.id, tenant.is_active)}
-                                className="cursor-pointer"
-                              >
-                                {tenant.is_active ? 'Deactivate' : 'Activate'}
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() => handleDelete(tenant.id)}
-                                className="cursor-pointer text-red-600"
-                              >
-                                <Trash2 className="h-4 w-4 mr-2" />
-                                Delete
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+      <PinResetDialog
+        open={Boolean(resetTenant)}
+        onOpenChange={(open) => { if (!open) setResetTenant(null) }}
+        title="Set fleet owner PIN"
+        description="Create or reset the owner login PIN. If this fleet has no login yet, enter the owner's Kenyan phone number. The PIN is shown once."
+        name={resetTenant?.name}
+        extraFields={
+          <div className="space-y-2">
+            <Label htmlFor="owner-reset-phone">Owner phone</Label>
+            <Input
+              id="owner-reset-phone"
+              type="tel"
+              inputMode="tel"
+              autoComplete="tel"
+              placeholder="0712345678"
+              value={resetPhone}
+              onChange={(e) => setResetPhone(e.target.value)}
+            />
+          </div>
+        }
+        submit={async ({ pin, generate }) => {
+          if (!resetTenant) return { error: 'No fleet selected', generated: false }
+          const response = await fetch('/api/admin/pin', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ target: 'fleet_owner', tenantId: resetTenant.id, phone: resetPhone, pin, generate }),
+          })
+          return response.json()
+        }}
+      />
+    </>
   );
 }

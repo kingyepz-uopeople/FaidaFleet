@@ -2,22 +2,41 @@
 
 import React, { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { StatCard } from '@/components/stat-card';
 import { createClient } from '@/lib/supabase/client';
-import { TrendingUp, Users, Truck, DollarSign } from '@/components/icons';
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { Building2, Car, DollarSign, Users } from '@/components/icons';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { AdminKpi, AdminLoading, AdminPageHeader, formatKes } from '@/components/admin-ui';
+import { isAdminUiPreview } from '@/lib/admin-preview';
 
 export default function AnalyticsPage() {
+  const preview = isAdminUiPreview();
   const [stats, setStats] = useState({
-    totalFleets: 0,
-    activeFleets: 0,
-    totalDrivers: 0,
-    totalVehicles: 0,
-    totalCollections: 0,
+    totalFleets: preview ? 41 : 0,
+    activeFleets: preview ? 38 : 0,
+    totalDrivers: preview ? 318 : 0,
+    totalVehicles: preview ? 196 : 0,
+    totalCollections: preview ? 4820000 : 0,
   });
-  const [chartData, setChartData] = useState<any[]>([]);
-  const [planDistribution, setPlanDistribution] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [chartData, setChartData] = useState<{ name: string; collections: number }[]>(
+    preview
+      ? [
+          { name: 'Week 1', collections: 980 },
+          { name: 'Week 2', collections: 1120 },
+          { name: 'Week 3', collections: 870 },
+          { name: 'Week 4', collections: 1340 },
+        ]
+      : [],
+  );
+  const [planDistribution, setPlanDistribution] = useState<{ name: string; value: number }[]>(
+    preview
+      ? [
+          { name: 'Starter', value: 45 },
+          { name: 'Pro', value: 40 },
+          { name: 'Enterprise', value: 15 },
+        ]
+      : [],
+  );
+  const [loading, setLoading] = useState(!preview);
   const supabase = createClient();
 
   useEffect(() => {
@@ -26,30 +45,41 @@ export default function AnalyticsPage() {
 
   const fetchAnalytics = async () => {
     try {
-      // Get system stats
-      const [fleets, drivers, vehicles, collections, plans] = await Promise.all([
+      if (isAdminUiPreview()) {
+        setStats({ totalFleets: 41, activeFleets: 38, totalDrivers: 318, totalVehicles: 196, totalCollections: 4820000 });
+        setPlanDistribution([{ name: 'Starter', value: 45 }, { name: 'Pro', value: 40 }, { name: 'Enterprise', value: 15 }]);
+        setChartData([
+          { name: 'Week 1', collections: 980 },
+          { name: 'Week 2', collections: 1120 },
+          { name: 'Week 3', collections: 870 },
+          { name: 'Week 4', collections: 1340 },
+        ]);
+        return;
+      }
+
+      const [fleets, activeFleets, drivers, vehicles, collections, plans] = await Promise.all([
         supabase.from('tenants').select('*', { count: 'exact', head: true }),
+        supabase.from('tenants').select('*', { count: 'exact', head: true }).eq('is_active', true),
         supabase.from('drivers').select('*', { count: 'exact', head: true }).eq('is_active', true),
         supabase.from('vehicles').select('*', { count: 'exact', head: true }).eq('is_active', true),
         supabase.from('collections').select('amount, date'),
         supabase.from('tenants').select('plan'),
       ]);
 
-      const totalCollections = (collections.data as any[])?.reduce((sum, c: any) => sum + (c.amount || 0), 0) || 0;
+      const totalCollections = collections.data?.reduce((sum, c) => sum + (c.amount || 0), 0) || 0;
 
       setStats({
         totalFleets: fleets.count || 0,
-        activeFleets: fleets.data?.filter((f: any) => f.is_active).length || 0,
+        activeFleets: activeFleets.count || 0,
         totalDrivers: drivers.count || 0,
         totalVehicles: vehicles.count || 0,
         totalCollections,
       });
 
-      // Calculate plan distribution
       const planCounts = {
-        Starter: plans.data?.filter((p: any) => p.plan === 'starter').length || 0,
-        Pro: plans.data?.filter((p: any) => p.plan === 'pro').length || 0,
-        Enterprise: plans.data?.filter((p: any) => p.plan === 'enterprise').length || 0,
+        Starter: plans.data?.filter((p) => p.plan === 'starter').length || 0,
+        Pro: plans.data?.filter((p) => p.plan === 'pro').length || 0,
+        Enterprise: plans.data?.filter((p) => p.plan === 'enterprise').length || 0,
       };
 
       const total = Object.values(planCounts).reduce((a, b) => a + b, 0) || 1;
@@ -59,9 +89,7 @@ export default function AnalyticsPage() {
         { name: 'Enterprise', value: Math.round((planCounts.Enterprise / total) * 100) },
       ]);
 
-      // Calculate weekly data from collections
-      const last4Weeks = generateWeeklyChart(collections.data || []);
-      setChartData(last4Weeks);
+      setChartData(generateWeeklyChart(collections.data || []));
     } catch (error) {
       console.error('Error fetching analytics:', error);
     } finally {
@@ -69,121 +97,104 @@ export default function AnalyticsPage() {
     }
   };
 
-  const generateWeeklyChart = (collections: any[]) => {
+  const generateWeeklyChart = (collections: { amount?: number; date?: string }[]) => {
     const weeks = [];
     const today = new Date();
 
     for (let i = 3; i >= 0; i--) {
       const weekStart = new Date(today);
       weekStart.setDate(weekStart.getDate() - i * 7);
-
       const weekEnd = new Date(weekStart);
       weekEnd.setDate(weekEnd.getDate() + 7);
 
       const weekCollections = collections
         .filter((c) => {
-          const date = new Date(c.date);
+          const date = new Date(c.date || '');
           return date >= weekStart && date < weekEnd;
         })
         .reduce((sum, c) => sum + (c.amount || 0), 0);
 
       weeks.push({
         name: `Week ${4 - i}`,
-        collections: weekCollections / 1000,
-        expenses: Math.random() * 20,
+        collections: Math.round(weekCollections / 1000),
       });
     }
 
     return weeks;
   };
 
-  const COLORS = ['#3b82f6', '#8b5cf6', '#ec4899'];
+  const COLORS = ['hsl(231 48% 48%)', 'hsl(174 44% 40%)', 'hsl(43 74% 46%)'];
 
   if (loading) {
-    return <div className="flex items-center justify-center h-screen">Loading analytics...</div>;
+    return (
+      <>
+        <AdminPageHeader title="Analytics" description="Platform-wide statistics and insights" />
+        <AdminLoading rows={6} />
+      </>
+    );
   }
 
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">System Analytics</h1>
-        <p className="text-gray-600 dark:text-gray-400">Platform-wide statistics and insights</p>
+    <>
+      <AdminPageHeader title="Analytics" description="Platform-wide statistics and insights" />
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <AdminKpi title="Total fleets" value={stats.totalFleets.toString()} hint="All companies" Icon={Building2} />
+        <AdminKpi title="Active fleets" value={stats.activeFleets.toString()} hint="Currently active" Icon={Users} />
+        <AdminKpi title="Drivers" value={stats.totalDrivers.toString()} hint="System-wide" Icon={Car} />
+        <AdminKpi title="Vehicles" value={stats.totalVehicles.toString()} hint="Active vehicles" Icon={Car} />
+        <AdminKpi title="Collections" value={formatKes(stats.totalCollections)} hint="All time" Icon={DollarSign} />
       </div>
 
-      {/* Key Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-        <StatCard title="Total Fleets" value={stats.totalFleets.toString()} description="All fleet companies" Icon={TrendingUp} />
-        <StatCard title="Active Fleets" value={stats.activeFleets.toString()} description="Currently active" Icon={Users} />
-        <StatCard title="Total Drivers" value={stats.totalDrivers.toString()} description="System-wide" Icon={Truck} />
-        <StatCard title="Total Vehicles" value={stats.totalVehicles.toString()} description="Active vehicles" Icon={Truck} />
-        <StatCard title="Total Collections" value={`KES ${(stats.totalCollections / 1000).toFixed(0)}K`} description="All time" Icon={DollarSign} />
-      </div>
-
-      {/* Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Weekly Collections</CardTitle>
-            <CardDescription>Last 4 weeks performance</CardDescription>
+            <CardTitle>Weekly collections</CardTitle>
+            <CardDescription>Last 4 weeks, in thousands of KES</CardDescription>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name" />
-                <YAxis />
-                <Tooltip />
-                <Legend />
-                <Bar dataKey="collections" fill="#3b82f6" name="Collections (KES 000s)" />
-              </BarChart>
-            </ResponsiveContainer>
+            <div className="h-[280px] w-full min-w-0">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(240 5.9% 90%)" />
+                  <XAxis dataKey="name" fontSize={12} />
+                  <YAxis fontSize={12} />
+                  <Tooltip />
+                  <Bar dataKey="collections" fill="hsl(231 48% 48%)" name="Collections (KES 000s)" radius={[8, 8, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle>Plan Distribution</CardTitle>
+            <CardTitle>Plan mix</CardTitle>
             <CardDescription>Fleet owners by plan</CardDescription>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie data={planDistribution} cx="50%" cy="50%" labelLine={false} label={({ name, value }) => `${name}: ${value}%`} outerRadius={80} fill="#8884d8" dataKey="value">
-                  {planDistribution.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
+            <div className="h-[280px] w-full min-w-0">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={planDistribution} cx="50%" cy="50%" labelLine={false} label={({ name, value }) => `${name} ${value}%`} outerRadius={80} dataKey="value">
+                    {planDistribution.map((entry, index) => (
+                      <Cell key={entry.name} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Summary Card */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Platform Summary</CardTitle>
-        </CardHeader>
-        <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div>
-            <p className="text-sm text-gray-600 dark:text-gray-400">Total Revenue</p>
-            <p className="text-2xl font-bold">KES {(stats.totalCollections / 1000).toFixed(0)}K</p>
-          </div>
-          <div>
-            <p className="text-sm text-gray-600 dark:text-gray-400">Fleet Utilization</p>
-            <p className="text-2xl font-bold">{stats.totalFleets > 0 ? Math.round((stats.activeFleets / stats.totalFleets) * 100) : 0}%</p>
-          </div>
-          <div>
-            <p className="text-sm text-gray-600 dark:text-gray-400">Avg Drivers/Fleet</p>
-            <p className="text-2xl font-bold">{stats.totalFleets > 0 ? Math.round(stats.totalDrivers / stats.totalFleets) : 0}</p>
-          </div>
-          <div>
-            <p className="text-sm text-gray-600 dark:text-gray-400">Avg Vehicles/Fleet</p>
-            <p className="text-2xl font-bold">{stats.totalFleets > 0 ? Math.round(stats.totalVehicles / stats.totalFleets) : 0}</p>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <AdminKpi title="Total collections" value={formatKes(stats.totalCollections)} />
+        <AdminKpi title="Fleet utilization" value={`${stats.totalFleets > 0 ? Math.round((stats.activeFleets / stats.totalFleets) * 100) : 0}%`} />
+        <AdminKpi title="Avg drivers / fleet" value={`${stats.totalFleets > 0 ? Math.round(stats.totalDrivers / stats.totalFleets) : 0}`} />
+        <AdminKpi title="Avg vehicles / fleet" value={`${stats.totalFleets > 0 ? Math.round(stats.totalVehicles / stats.totalFleets) : 0}`} />
+      </div>
+    </>
   );
 }

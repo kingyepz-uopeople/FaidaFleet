@@ -55,7 +55,7 @@ export default function DriverAnalyticsPage() {
   const avgProfit = drivers.length > 0 ? Math.round(totalProfit / drivers.length) : 0;
 
   return (
-    <div className="flex flex-col gap-6 p-6">
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 py-5 sm:px-6 sm:py-6">
       <div><h1 className="text-3xl font-bold">Driver Performance</h1><p className="text-gray-600 dark:text-gray-400">Collections minus the costs recorded on each driver&apos;s trips</p></div>
 
       {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}

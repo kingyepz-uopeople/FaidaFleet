@@ -12,6 +12,9 @@ const ptSans = PT_Sans({
 });
 
 export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
   themeColor: '#1e3a5f',
 }
 
@@ -21,7 +24,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     title: 'FaidaFleet',
-    statusBarStyle: 'default',
+    statusBarStyle: 'black-translucent',
   },
 };
 

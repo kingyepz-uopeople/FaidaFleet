@@ -38,6 +38,7 @@ export interface Database {
           created_at?: string
           updated_at?: string
         }
+        Relationships: []
       }
       profiles: {
         Row: {
@@ -64,6 +65,7 @@ export interface Database {
           created_at?: string
           updated_at?: string
         }
+        Relationships: []
       }
       memberships: {
         Row: {
@@ -93,6 +95,7 @@ export interface Database {
           invited_by?: string | null
           joined_at?: string
         }
+        Relationships: []
       }
       drivers: {
         Row: {
@@ -134,6 +137,7 @@ export interface Database {
           created_at?: string
           updated_at?: string
         }
+        Relationships: []
       }
       vehicles: {
         Row: {
@@ -184,6 +188,7 @@ export interface Database {
           created_at?: string
           updated_at?: string
         }
+        Relationships: []
       }
       driver_assignments: {
         Row: {
@@ -219,6 +224,7 @@ export interface Database {
           notes?: string | null
           created_at?: string
         }
+        Relationships: []
       }
       collections: {
         Row: {
@@ -275,6 +281,7 @@ export interface Database {
           created_at?: string
           updated_at?: string
         }
+        Relationships: []
       }
       mpesa_transactions: {
         Row: {
@@ -334,6 +341,7 @@ export interface Database {
           raw_data?: any | null
           created_at?: string
         }
+        Relationships: []
       }
       expenses: {
         Row: {
@@ -375,6 +383,7 @@ export interface Database {
           created_at?: string
           updated_at?: string
         }
+        Relationships: []
       }
       maintenance_logs: {
         Row: {
@@ -422,22 +431,307 @@ export interface Database {
           created_at?: string
           updated_at?: string
         }
+        Relationships: []
       }
-      kpi_daily: {
+      admin_users: {
         Row: {
-          tenant_id: string
-          date: string
-          active_vehicles: number
-          active_drivers: number
-          cash_total: number | null
-          mpesa_total: number | null
-          pochi_total: number | null
-          total_collections: number
-          reconciled_count: number
-          unreconciled_count: number
-          total_expenses: number
-          net_profit: number
+          id: string
+          user_id: string | null
+          email: string
+          full_name: string
+          role: 'super_admin' | 'admin' | 'moderator'
+          permissions: string[]
+          is_active: boolean
+          created_at: string
+          last_login: string | null
         }
+        Insert: {
+          id?: string
+          user_id?: string | null
+          email: string
+          full_name: string
+          role?: 'super_admin' | 'admin' | 'moderator'
+          permissions?: string[]
+          is_active?: boolean
+          created_at?: string
+          last_login?: string | null
+        }
+        Update: {
+          id?: string
+          user_id?: string | null
+          email?: string
+          full_name?: string
+          role?: 'super_admin' | 'admin' | 'moderator'
+          permissions?: string[]
+          is_active?: boolean
+          created_at?: string
+          last_login?: string | null
+        }
+        Relationships: []
+      }
+      pin_reset_log: {
+        Row: {
+          id: string
+          actor_user_id: string
+          actor_role: 'system_admin' | 'owner' | 'admin'
+          target_kind: 'driver' | 'fleet_owner'
+          target_user_id: string | null
+          target_driver_id: string | null
+          tenant_id: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          actor_user_id: string
+          actor_role: 'system_admin' | 'owner' | 'admin'
+          target_kind: 'driver' | 'fleet_owner'
+          target_user_id?: string | null
+          target_driver_id?: string | null
+          tenant_id?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          actor_user_id?: string
+          actor_role?: 'system_admin' | 'owner' | 'admin'
+          target_kind?: 'driver' | 'fleet_owner'
+          target_user_id?: string | null
+          target_driver_id?: string | null
+          tenant_id?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      trips: {
+        Row: {
+          id: string
+          tenant_id: string
+          vehicle_id: string
+          driver_id: string
+          trip_date: string
+          start_time: string | null
+          end_time: string | null
+          start_location: string | null
+          end_location: string | null
+          distance_km: number | null
+          fuel_consumed: number | null
+          earnings: number | null
+          expenses: number | null
+          status: 'planned' | 'in_progress' | 'completed' | 'cancelled' | null
+          notes: string | null
+          recorded_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          tenant_id: string
+          vehicle_id: string
+          driver_id: string
+          trip_date?: string
+          start_time?: string | null
+          end_time?: string | null
+          start_location?: string | null
+          end_location?: string | null
+          distance_km?: number | null
+          fuel_consumed?: number | null
+          earnings?: number | null
+          expenses?: number | null
+          status?: 'planned' | 'in_progress' | 'completed' | 'cancelled' | null
+          notes?: string | null
+          recorded_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          tenant_id?: string
+          vehicle_id?: string
+          driver_id?: string
+          trip_date?: string
+          start_time?: string | null
+          end_time?: string | null
+          start_location?: string | null
+          end_location?: string | null
+          distance_km?: number | null
+          fuel_consumed?: number | null
+          earnings?: number | null
+          expenses?: number | null
+          status?: 'planned' | 'in_progress' | 'completed' | 'cancelled' | null
+          notes?: string | null
+          recorded_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      plans: {
+        Row: {
+          id: string
+          name: string
+          price: number
+          description: string | null
+          max_vehicles: number
+          max_drivers: number
+          features: string[] | null
+          is_active: boolean | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          price?: number
+          description?: string | null
+          max_vehicles?: number
+          max_drivers?: number
+          features?: string[] | null
+          is_active?: boolean | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          price?: number
+          description?: string | null
+          max_vehicles?: number
+          max_drivers?: number
+          features?: string[] | null
+          is_active?: boolean | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      support_tickets: {
+        Row: {
+          id: string
+          tenant_id: string
+          title: string
+          description: string | null
+          status: 'open' | 'pending' | 'resolved' | 'closed'
+          priority: 'low' | 'medium' | 'high' | null
+          assigned_to: string | null
+          created_by: string
+          resolved_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          tenant_id: string
+          title: string
+          description?: string | null
+          status?: 'open' | 'pending' | 'resolved' | 'closed'
+          priority?: 'low' | 'medium' | 'high' | null
+          assigned_to?: string | null
+          created_by: string
+          resolved_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          tenant_id?: string
+          title?: string
+          description?: string | null
+          status?: 'open' | 'pending' | 'resolved' | 'closed'
+          priority?: 'low' | 'medium' | 'high' | null
+          assigned_to?: string | null
+          created_by?: string
+          resolved_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      support_messages: {
+        Row: {
+          id: string
+          ticket_id: string
+          sender_id: string
+          message: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          ticket_id: string
+          sender_id: string
+          message: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          ticket_id?: string
+          sender_id?: string
+          message?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
+      system_settings: {
+        Row: {
+          id: string
+          key: string
+          value: unknown
+          description: string | null
+          category: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          key: string
+          value?: unknown
+          description?: string | null
+          category?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          key?: string
+          value?: unknown
+          description?: string | null
+          category?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      audit_logs: {
+        Row: {
+          id: string
+          user_id: string | null
+          action: string
+          entity_type: string | null
+          entity_id: string | null
+          changes: unknown
+          ip_address: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id?: string | null
+          action: string
+          entity_type?: string | null
+          entity_id?: string | null
+          changes?: unknown
+          ip_address?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string | null
+          action?: string
+          entity_type?: string | null
+          entity_id?: string | null
+          changes?: unknown
+          ip_address?: string | null
+          created_at?: string
+        }
+        Relationships: []
       }
     }
     Views: {
@@ -456,6 +750,7 @@ export interface Database {
           total_expenses: number
           net_profit: number
         }
+        Relationships: []
       }
     }
     Functions: {
@@ -481,7 +776,30 @@ export interface Database {
         Args: Record<string, never>
         Returns: void
       }
+      is_system_admin: {
+        Args: Record<string, never>
+        Returns: boolean
+      }
+      provision_driver_login: {
+        Args: {
+          p_driver_id: string
+          p_user_id: string
+        }
+        Returns: undefined
+      }
+      create_tenant_with_owner: {
+        Args: {
+          tenant_name: string
+          tenant_business_name?: string | null
+          tenant_phone?: string | null
+          tenant_email?: string | null
+          tenant_plan?: 'starter' | 'pro' | 'enterprise'
+        }
+        Returns: string
+      }
     }
+    Enums: Record<string, never>
+    CompositeTypes: Record<string, never>
   }
 }
 
@@ -496,7 +814,7 @@ export type Collection = Database['public']['Tables']['collections']['Row']
 export type MpesaTransaction = Database['public']['Tables']['mpesa_transactions']['Row']
 export type Expense = Database['public']['Tables']['expenses']['Row']
 export type MaintenanceLog = Database['public']['Tables']['maintenance_logs']['Row']
-export type KpiDaily = Database['public']['Tables']['kpi_daily']['Row']
+export type KpiDaily = Database['public']['Views']['kpi_daily']['Row']
 
 // Insert types
 export type TenantInsert = Database['public']['Tables']['tenants']['Insert']
