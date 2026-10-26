@@ -7,7 +7,7 @@ html {
 }
 
 body {
-  font-family: var(--font-pt-sans), 'PT Sans', sans-serif;
+  font-family: 'PT Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
   min-height: 100dvh;
   overflow-x: hidden;
 }

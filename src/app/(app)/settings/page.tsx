@@ -22,6 +22,8 @@ import { createClient } from '@/lib/supabase/client';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { formatDateOnly } from '@/lib/dates';
 import { accountPhone, friendlyAuthError, isPhoneAccount, validatePin } from '@/lib/phone';
+import { assertMutationRow } from '@/lib/db';
+import { toastError, toastSuccess } from '@/lib/toast';
 
 type TeamMember = {
   id: string;
@@ -109,12 +111,18 @@ export default function SettingsPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
 
-      const upsertResp = await supabase.from('profiles').upsert({ id: user.id, full_name: form.name, phone: phone || null });
-      if (upsertResp.error) throw upsertResp.error;
+      const upsertResp = await supabase
+        .from('profiles')
+        .upsert({ id: user.id, full_name: form.name, phone: phone || null })
+        .select('id');
+      assertMutationRow(upsertResp, 'Could not save your profile');
 
       setMessage('Profile updated successfully.');
+      toastSuccess('Profile updated.');
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Could not save profile');
+      const message = err instanceof Error ? err.message : 'Could not save profile';
+      setError(message);
+      toastError(message, 'Could not save profile');
     }
   };
 
@@ -163,19 +171,26 @@ export default function SettingsPage() {
       if (!name) throw new Error('Fleet name is required');
 
       const supabase = createClient();
-      const { error: updateError } = await supabase.from('tenants').update({ name }).eq('id', tenantId);
-      if (updateError) throw updateError;
+      const updateResult = await supabase
+        .from('tenants')
+        .update({ name })
+        .eq('id', tenantId)
+        .select('id');
+      assertMutationRow(updateResult, 'Could not rename the fleet');
       setFleetName(name);
       setMessage('Fleet name updated.');
+      toastSuccess('Fleet name updated.');
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Could not save fleet settings');
+      const message = err instanceof Error ? err.message : 'Could not save fleet settings';
+      setError(message);
+      toastError(message, 'Could not save fleet settings');
     } finally {
       setSavingFleet(false);
     }
   };
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 py-5 sm:px-6 sm:py-6">
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 py-5 sm:gap-6 sm:px-6 sm:py-6 lg:px-8">
       <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">Settings</h1>
       {error && (
         <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>

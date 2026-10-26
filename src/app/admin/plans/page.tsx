@@ -2,20 +2,14 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { MoreHorizontal, Trash2, Edit, Plus } from '@/components/icons';
+import { FormDialog } from '@/components/form-dialog';
 import { createClient } from '@/lib/supabase/client';
+import { assertMutation, assertMutationRow } from '@/lib/db';
+import { toastError, toastSuccess } from '@/lib/toast';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -37,12 +31,21 @@ type Plan = {
   id: string;
   name: string;
   price: number;
-  description: string;
+  description: string | null;
   max_vehicles: number;
   max_drivers: number;
   features: string[];
   is_active: boolean;
   created_at: string;
+};
+
+const EMPTY_FORM = {
+  name: '',
+  price: '',
+  description: '',
+  max_vehicles: '',
+  max_drivers: '',
+  features: '',
 };
 
 export default function PlansPage() {
@@ -55,18 +58,13 @@ export default function PlansPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [formData, setFormData] = useState({
-    name: '',
-    price: '',
-    description: '',
-    max_vehicles: '',
-    max_drivers: '',
-    features: '',
-  });
-  const supabase = createClient();
+  const [formError, setFormError] = useState<string | null>(null);
+  const [formData, setFormData] = useState(EMPTY_FORM);
+  const supabase = useMemo(() => createClient(), []);
 
   useEffect(() => {
     fetchPlans();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchPlans = async () => {
@@ -80,7 +78,9 @@ export default function PlansPage() {
       if (err) throw err;
       setPlans((data || []) as Plan[]);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch plans');
+      const message = err instanceof Error ? err.message : 'Could not load plans';
+      setError(message);
+      toastError(message, 'Could not load plans');
     } finally {
       setLoading(false);
     }
@@ -88,86 +88,99 @@ export default function PlansPage() {
 
   const filteredPlans = useMemo(() => {
     const needle = searchQuery.toLowerCase();
-    return plans.filter((plan) => plan.name.toLowerCase().includes(needle) || (plan.description || '').toLowerCase().includes(needle));
+    return plans.filter(
+      (plan) => plan.name.toLowerCase().includes(needle) || (plan.description || '').toLowerCase().includes(needle),
+    );
   }, [searchQuery, plans]);
 
-  const handleOpenDialog = (plan?: Plan) => {
-    if (plan) {
-      setEditingId(plan.id);
-      setFormData({
-        name: plan.name,
-        price: plan.price.toString(),
-        description: plan.description || '',
-        max_vehicles: plan.max_vehicles.toString(),
-        max_drivers: plan.max_drivers.toString(),
-        features: (plan.features || []).join(', '),
-      });
-    } else {
-      setEditingId(null);
-      setFormData({ name: '', price: '', description: '', max_vehicles: '', max_drivers: '', features: '' });
-    }
+  const openCreate = () => {
+    setEditingId(null);
+    setFormData(EMPTY_FORM);
+    setFormError(null);
     setDialogOpen(true);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const openEdit = (plan: Plan) => {
+    setEditingId(plan.id);
+    setFormData({
+      name: plan.name,
+      price: plan.price.toString(),
+      description: plan.description || '',
+      max_vehicles: plan.max_vehicles.toString(),
+      max_drivers: plan.max_drivers.toString(),
+      features: (plan.features || []).join(', '),
+    });
+    setFormError(null);
+    setDialogOpen(true);
+  };
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
     setSubmitting(true);
-    setError(null);
+    setFormError(null);
     try {
-      const features = formData.features.split(',').map((f) => f.trim()).filter(Boolean);
-      if (editingId) {
-        const { error: err } = await supabase.from('plans').update({
-          name: formData.name,
-          price: parseFloat(formData.price),
-          description: formData.description,
-          max_vehicles: parseInt(formData.max_vehicles),
-          max_drivers: parseInt(formData.max_drivers),
-          features,
-        }).eq('id', editingId);
-        if (err) throw err;
-        setSuccess('Plan updated successfully');
-      } else {
-        const { error: err } = await supabase.from('plans').insert([{
-          name: formData.name,
-          price: parseFloat(formData.price),
-          description: formData.description,
-          max_vehicles: parseInt(formData.max_vehicles),
-          max_drivers: parseInt(formData.max_drivers),
-          features,
-        }]);
-        if (err) throw err;
-        setSuccess('Plan created successfully');
-      }
+      if (!formData.name.trim()) throw new Error('Plan name is required');
+      const price = Number.parseFloat(formData.price);
+      const maxVehicles = Number.parseInt(formData.max_vehicles, 10);
+      const maxDrivers = Number.parseInt(formData.max_drivers, 10);
+      if (!Number.isFinite(price) || price < 0) throw new Error('Enter a valid price');
+      if (!Number.isFinite(maxVehicles) || maxVehicles < 1) throw new Error('Max vehicles must be at least 1');
+      if (!Number.isFinite(maxDrivers) || maxDrivers < 1) throw new Error('Max drivers must be at least 1');
+
+      const payload = {
+        name: formData.name.trim(),
+        price,
+        description: formData.description.trim() || null,
+        max_vehicles: maxVehicles,
+        max_drivers: maxDrivers,
+        features: formData.features.split(',').map((feature) => feature.trim()).filter(Boolean),
+      };
+
+      const result = editingId
+        ? await supabase.from('plans').update(payload).eq('id', editingId).select('id')
+        : await supabase.from('plans').insert([payload]).select('id');
+
+      assertMutationRow(result, editingId ? 'Could not update the plan' : 'Could not create the plan');
+      setSuccess(editingId ? 'Plan updated.' : 'Plan created.');
+      toastSuccess(editingId ? 'Plan updated.' : 'Plan created.', 'Saved');
       setDialogOpen(false);
       await fetchPlans();
-      setTimeout(() => setSuccess(null), 3000);
+      setTimeout(() => setSuccess(null), 4000);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save plan');
+      const message = err instanceof Error ? err.message : 'Could not save the plan';
+      setFormError(message);
+      toastError(message, 'Could not save the plan');
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleDelete = async (planId: string) => {
-    if (!window.confirm('Are you sure you want to delete this plan?')) return;
+  const handleDelete = async (plan: Plan) => {
+    if (!window.confirm(`Delete the ${plan.name} plan? Fleets on this plan keep their data.`)) return;
     try {
-      const { error: err } = await supabase.from('plans').delete().eq('id', planId);
-      if (err) throw err;
-      setSuccess('Plan deleted successfully');
+      const result = await supabase.from('plans').delete().eq('id', plan.id).select('id');
+      assertMutation(result, 'Could not delete the plan');
+      setSuccess('Plan deleted.');
+      toastSuccess('Plan deleted.', 'Deleted');
       await fetchPlans();
-      setTimeout(() => setSuccess(null), 3000);
+      setTimeout(() => setSuccess(null), 4000);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete plan');
+      toastError(err, 'Could not delete the plan');
     }
   };
 
-  const togglePlanStatus = async (planId: string, currentStatus: boolean) => {
+  const togglePlanStatus = async (plan: Plan) => {
     try {
-      const { error: err } = await supabase.from('plans').update({ is_active: !currentStatus }).eq('id', planId);
-      if (err) throw err;
+      const result = await supabase
+        .from('plans')
+        .update({ is_active: !plan.is_active })
+        .eq('id', plan.id)
+        .select('id');
+      assertMutation(result, 'Could not update the plan');
+      toastSuccess(plan.is_active ? 'Plan deactivated.' : 'Plan activated.');
       await fetchPlans();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update plan');
+      toastError(err, 'Could not update the plan');
     }
   };
 
@@ -177,35 +190,10 @@ export default function PlansPage() {
         title="Plans"
         description="Pricing tiers and feature limits for fleet subscriptions."
         actions={
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger asChild>
-              <Button onClick={() => handleOpenDialog()}>
-                <Plus className="h-4 w-4" />
-                Add plan
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-h-[90dvh] max-w-md overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle>{editingId ? 'Edit plan' : 'Create plan'}</DialogTitle>
-                <DialogDescription>{editingId ? 'Update plan details' : 'Add a new subscription plan'}</DialogDescription>
-              </DialogHeader>
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="space-y-2"><Label htmlFor="name">Plan name *</Label><Input id="name" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required /></div>
-                <div className="space-y-2"><Label htmlFor="price">Monthly price (KES) *</Label><Input id="price" type="number" inputMode="decimal" step="0.01" value={formData.price} onChange={(e) => setFormData({ ...formData, price: e.target.value })} required /></div>
-                <div className="space-y-2"><Label htmlFor="description">Description *</Label><Input id="description" value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} required /></div>
-                <div className="space-y-2"><Label htmlFor="max_vehicles">Max vehicles *</Label><Input id="max_vehicles" type="number" inputMode="numeric" value={formData.max_vehicles} onChange={(e) => setFormData({ ...formData, max_vehicles: e.target.value })} required /></div>
-                <div className="space-y-2"><Label htmlFor="max_drivers">Max drivers *</Label><Input id="max_drivers" type="number" inputMode="numeric" value={formData.max_drivers} onChange={(e) => setFormData({ ...formData, max_drivers: e.target.value })} required /></div>
-                <div className="space-y-2">
-                  <Label htmlFor="features">Features (comma-separated) *</Label>
-                  <textarea id="features" value={formData.features} onChange={(e) => setFormData({ ...formData, features: e.target.value })} className="min-h-20 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" required />
-                </div>
-                <DialogFooter>
-                  <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-                  <Button type="submit" disabled={submitting}>{submitting ? 'Saving…' : editingId ? 'Update' : 'Create'}</Button>
-                </DialogFooter>
-              </form>
-            </DialogContent>
-          </Dialog>
+          <Button type="button" onClick={openCreate}>
+            <Plus className="h-4 w-4" />
+            Add plan
+          </Button>
         }
       />
 
@@ -217,9 +205,10 @@ export default function PlansPage() {
         rowKey={(row) => row.id}
         loading={loading}
         emptyTitle="No plans found"
+        emptyDescription="Create a plan to describe what fleets get."
         columns={[
           { id: 'name', header: 'Plan', cell: (row) => <span className="font-medium">{row.name}</span> },
-          { id: 'price', header: 'Price', cell: (row) => row.price === 0 ? 'Free' : formatKes(row.price) },
+          { id: 'price', header: 'Price', cell: (row) => (row.price === 0 ? 'Free' : formatKes(row.price)) },
           { id: 'vehicles', header: 'Vehicles', cell: (row) => String(row.max_vehicles), hideOnMobile: true },
           { id: 'drivers', header: 'Drivers', cell: (row) => String(row.max_drivers), hideOnMobile: true },
           { id: 'status', header: 'Status', cell: (row) => <StatusBadge tone={row.is_active ? 'success' : 'neutral'}>{row.is_active ? 'Active' : 'Inactive'}</StatusBadge> },
@@ -227,34 +216,82 @@ export default function PlansPage() {
         actions={(plan) => (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <RowActionsTrigger><MoreHorizontal className="h-4 w-4" /></RowActionsTrigger>
+              <RowActionsTrigger>
+                <MoreHorizontal className="h-4 w-4" />
+              </RowActionsTrigger>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => handleOpenDialog(plan)} className="cursor-pointer min-h-11"><Edit className="h-4 w-4 mr-2" /> Edit</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => togglePlanStatus(plan.id, plan.is_active)} className="cursor-pointer min-h-11">{plan.is_active ? 'Deactivate' : 'Activate'}</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleDelete(plan.id)} className="cursor-pointer min-h-11 text-destructive"><Trash2 className="h-4 w-4 mr-2" /> Delete</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => openEdit(plan)} className="min-h-11 cursor-pointer">
+                <Edit className="mr-2 h-4 w-4" /> Edit
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => togglePlanStatus(plan)} className="min-h-11 cursor-pointer">
+                {plan.is_active ? 'Deactivate' : 'Activate'}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleDelete(plan)} className="min-h-11 cursor-pointer text-destructive">
+                <Trash2 className="mr-2 h-4 w-4" /> Delete
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         )}
       />
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        {filteredPlans.map((plan) => (
-          <Card key={plan.id} className={plan.is_active ? '' : 'opacity-60'}>
-            <CardHeader>
-              <CardTitle>{plan.name}</CardTitle>
-              <CardDescription>{plan.description}</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <p className="text-2xl font-semibold">{plan.price === 0 ? 'Free' : formatKes(plan.price)}<span className="text-sm font-normal text-muted-foreground"> /month</span></p>
-              <p className="text-sm text-muted-foreground">{plan.max_vehicles} vehicles · {plan.max_drivers} drivers</p>
-              <ul className="space-y-1 text-sm text-muted-foreground">
-                {(plan.features || []).map((feature) => <li key={feature}>{feature}</li>)}
-              </ul>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      <FormDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        title={editingId ? 'Edit plan' : 'Create plan'}
+        description="Limits are enforced when a fleet adds vehicles or drivers."
+      >
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="name">Plan name *</Label>
+            <Input id="name" value={formData.name} onChange={(event) => setFormData({ ...formData, name: event.target.value })} required disabled={submitting} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="price">Monthly price (KES) *</Label>
+            <Input id="price" type="number" inputMode="decimal" step="0.01" min="0" value={formData.price} onChange={(event) => setFormData({ ...formData, price: event.target.value })} required disabled={submitting} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="description">Description *</Label>
+            <Input id="description" value={formData.description} onChange={(event) => setFormData({ ...formData, description: event.target.value })} required disabled={submitting} />
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="max_vehicles">Max vehicles *</Label>
+              <Input id="max_vehicles" type="number" inputMode="numeric" min="1" value={formData.max_vehicles} onChange={(event) => setFormData({ ...formData, max_vehicles: event.target.value })} required disabled={submitting} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="max_drivers">Max drivers *</Label>
+              <Input id="max_drivers" type="number" inputMode="numeric" min="1" value={formData.max_drivers} onChange={(event) => setFormData({ ...formData, max_drivers: event.target.value })} required disabled={submitting} />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="features">Features (comma-separated) *</Label>
+            <textarea
+              id="features"
+              value={formData.features}
+              onChange={(event) => setFormData({ ...formData, features: event.target.value })}
+              className="min-h-20 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50"
+              required
+              disabled={submitting}
+            />
+          </div>
+
+          {formError && (
+            <Alert variant="destructive">
+              <AlertDescription>{formError}</AlertDescription>
+            </Alert>
+          )}
+
+          <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
+            <Button type="button" variant="outline" className="min-h-11" onClick={() => setDialogOpen(false)} disabled={submitting}>
+              Cancel
+            </Button>
+            <Button type="submit" className="min-h-11" disabled={submitting}>
+              {submitting ? 'Saving…' : editingId ? 'Update' : 'Create'}
+            </Button>
+          </div>
+        </form>
+      </FormDialog>
     </>
   );
 }

@@ -86,36 +86,36 @@ export async function createTenant(data: {
   plan?: 'starter' | 'pro' | 'enterprise'
 }): Promise<Tenant> {
   const supabase = createBrowserClient()
-  
+
   // Get current user
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Not authenticated')
 
-  // Create tenant
-  const { data: tenant, error: tenantError } = await supabase
+  // Tenants and the owner membership are created together by a SECURITY
+  // DEFINER function. Migration 009 removes the raw tenants INSERT policy, so
+  // inserting here would fail RLS and leave an orphan tenant behind.
+  const { data: created, error: createError } = await supabase.rpc('create_tenant_with_owner', {
+    tenant_name: data.name,
+    tenant_business_name: data.businessName || null,
+    tenant_phone: data.phone || null,
+    tenant_email: data.email || null,
+    tenant_plan: data.plan || 'starter',
+  })
+
+  if (createError) throw createError
+
+  const tenantId = (created as { tenant_id?: string } | null)?.tenant_id
+  if (!tenantId) throw new Error('The fleet was created but no id came back. Reload and try again.')
+
+  const { data: tenant, error: readError } = await supabase
     .from('tenants')
-    .insert({
-      name: data.name,
-      business_name: data.businessName,
-      phone: data.phone,
-      email: data.email,
-      plan: data.plan || 'starter'
-    } as any)
-    .select()
+    .select('*')
+    .eq('id', tenantId)
     .single()
 
-  if (tenantError || !tenant) throw tenantError
-
-  // Add user as owner
-  const { error: membershipError } = await supabase
-    .from('memberships')
-    .insert({
-      user_id: user.id,
-      tenant_id: (tenant as any).id,
-      role: 'owner'
-    } as any)
-
-  if (membershipError) throw membershipError
+  if (readError || !tenant) {
+    throw readError || new Error('The fleet was created but could not be read back.')
+  }
 
   return tenant as Tenant
 }

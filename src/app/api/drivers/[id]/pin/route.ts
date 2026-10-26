@@ -109,7 +109,18 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       p_user_id: applied.userId,
     })
     if (linkError) {
-      await admin.from('drivers').update({ user_id: applied.userId }).eq('id', driver.id)
+      const { error: fallbackError } = await admin
+        .from('drivers')
+        .update({ user_id: applied.userId })
+        .eq('id', driver.id)
+        .select('id')
+
+      if (fallbackError) {
+        return NextResponse.json(
+          { error: `PIN set, but the driver record could not be linked: ${fallbackError.message}` },
+          { status: 500 },
+        )
+      }
     }
   }
 

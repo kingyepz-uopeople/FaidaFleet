@@ -3,7 +3,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { createClient } from '@/lib/supabase/client';
-import { AdminKpi, AdminPageHeader, AdminRecordList, AdminSearch, StatusBadge, formatDate, formatKes, planTone, titleCase } from '@/components/admin-ui';
+import { AdminFeedback, AdminKpi, AdminPageHeader, AdminRecordList, AdminSearch, StatusBadge, formatDate, formatKes, planTone, titleCase } from '@/components/admin-ui';
+import { toastError } from '@/lib/toast';
 import { isAdminUiPreview, previewPlans, previewTenants } from '@/lib/admin-preview';
 
 type Tenant = {
@@ -31,6 +32,7 @@ export default function BillingPage() {
   });
   const [loading, setLoading] = useState(!preview);
   const [query, setQuery] = useState('');
+  const [error, setError] = useState<string | null>(null);
   const supabase = createClient();
 
   useEffect(() => {
@@ -51,14 +53,19 @@ export default function BillingPage() {
         supabase.from('plans').select('*'),
       ]);
 
-      setTenants(tenantsRes.data || []);
+      if (tenantsRes.error) throw tenantsRes.error;
+      if (plansRes.error) throw plansRes.error;
+
+      setTenants((tenantsRes.data || []) as Tenant[]);
       const planMap: Record<string, Plan> = {};
       plansRes.data?.forEach((p) => {
         planMap[p.name.toLowerCase()] = p;
       });
       setPlans(planMap);
-    } catch (error) {
-      console.error('Error fetching billing data:', error);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Could not load billing data';
+      setError(message);
+      toastError(message, 'Could not load billing data');
     } finally {
       setLoading(false);
     }
@@ -82,6 +89,8 @@ export default function BillingPage() {
   return (
     <>
       <AdminPageHeader title="Billing" description="Subscriptions and monthly plan revenue across fleets." />
+
+      <AdminFeedback error={error} />
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <AdminKpi title="Monthly revenue" value={formatKes(totalMonthlyRevenue)} hint="From current plans" />

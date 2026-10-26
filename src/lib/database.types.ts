@@ -38,7 +38,8 @@ export interface Database {
           created_at?: string
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+        ]
       }
       profiles: {
         Row: {
@@ -65,7 +66,8 @@ export interface Database {
           created_at?: string
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+        ]
       }
       memberships: {
         Row: {
@@ -95,7 +97,15 @@ export interface Database {
           invited_by?: string | null
           joined_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "memberships_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       drivers: {
         Row: {
@@ -137,7 +147,15 @@ export interface Database {
           created_at?: string
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "drivers_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       vehicles: {
         Row: {
@@ -188,7 +206,15 @@ export interface Database {
           created_at?: string
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "vehicles_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       driver_assignments: {
         Row: {
@@ -224,7 +250,29 @@ export interface Database {
           notes?: string | null
           created_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "driver_assignments_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "driver_assignments_driver_id_fkey"
+            columns: ["driver_id"]
+            isOneToOne: false
+            referencedRelation: "drivers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "driver_assignments_vehicle_id_fkey"
+            columns: ["vehicle_id"]
+            isOneToOne: false
+            referencedRelation: "vehicles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       collections: {
         Row: {
@@ -281,7 +329,29 @@ export interface Database {
           created_at?: string
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "collections_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "collections_vehicle_id_fkey"
+            columns: ["vehicle_id"]
+            isOneToOne: false
+            referencedRelation: "vehicles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "collections_driver_id_fkey"
+            columns: ["driver_id"]
+            isOneToOne: false
+            referencedRelation: "drivers"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       mpesa_transactions: {
         Row: {
@@ -341,7 +411,22 @@ export interface Database {
           raw_data?: any | null
           created_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "mpesa_transactions_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mpesa_transactions_matched_collection_id_fkey"
+            columns: ["matched_collection_id"]
+            isOneToOne: false
+            referencedRelation: "collections"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       expenses: {
         Row: {
@@ -383,7 +468,22 @@ export interface Database {
           created_at?: string
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "expenses_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "expenses_vehicle_id_fkey"
+            columns: ["vehicle_id"]
+            isOneToOne: false
+            referencedRelation: "vehicles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       maintenance_logs: {
         Row: {
@@ -431,7 +531,22 @@ export interface Database {
           created_at?: string
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "maintenance_logs_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "maintenance_logs_vehicle_id_fkey"
+            columns: ["vehicle_id"]
+            isOneToOne: false
+            referencedRelation: "vehicles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       admin_users: {
         Row: {
@@ -467,7 +582,8 @@ export interface Database {
           created_at?: string
           last_login?: string | null
         }
-        Relationships: []
+        Relationships: [
+        ]
       }
       pin_reset_log: {
         Row: {
@@ -500,7 +616,22 @@ export interface Database {
           tenant_id?: string | null
           created_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "pin_reset_log_target_driver_id_fkey"
+            columns: ["target_driver_id"]
+            isOneToOne: false
+            referencedRelation: "drivers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pin_reset_log_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       trips: {
         Row: {
@@ -563,7 +694,29 @@ export interface Database {
           created_at?: string
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "trips_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trips_vehicle_id_fkey"
+            columns: ["vehicle_id"]
+            isOneToOne: false
+            referencedRelation: "vehicles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trips_driver_id_fkey"
+            columns: ["driver_id"]
+            isOneToOne: false
+            referencedRelation: "drivers"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       plans: {
         Row: {
@@ -602,7 +755,8 @@ export interface Database {
           created_at?: string
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+        ]
       }
       support_tickets: {
         Row: {
@@ -644,7 +798,15 @@ export interface Database {
           created_at?: string
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "support_tickets_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       support_messages: {
         Row: {
@@ -668,7 +830,15 @@ export interface Database {
           message?: string
           created_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "support_messages_ticket_id_fkey"
+            columns: ["ticket_id"]
+            isOneToOne: false
+            referencedRelation: "support_tickets"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       system_settings: {
         Row: {
@@ -698,7 +868,8 @@ export interface Database {
           created_at?: string
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+        ]
       }
       audit_logs: {
         Row: {
@@ -731,7 +902,8 @@ export interface Database {
           ip_address?: string | null
           created_at?: string
         }
-        Relationships: []
+        Relationships: [
+        ]
       }
     }
     Views: {

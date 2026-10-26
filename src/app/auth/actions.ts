@@ -9,8 +9,10 @@ export async function logout() {
 
   const { error } = await supabase.auth.signOut()
 
+  // There is no /error route, and a failed sign-out must never trap the user
+  // in the console. Log it, clear the cached tree and send them to /login.
   if (error) {
-    redirect('/error')
+    console.error('Sign out failed:', error.message)
   }
 
   revalidatePath('/', 'layout')

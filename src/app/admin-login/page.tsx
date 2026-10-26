@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Loader2, Shield, Mail, Lock } from '@/components/icons'
+import { Loader2, Car, Mail, Lock } from '@/components/icons'
 import { friendlyAuthError, isPhoneAuthEmail } from '@/lib/phone'
 import { AuthShell } from '@/components/auth-shell'
 
@@ -75,8 +75,8 @@ export default function AdminLoginPage() {
       <Card className="border-0 shadow-xl">
         <CardHeader>
           <div className="mb-2 flex items-center justify-center gap-2">
-            <div className="rounded-xl bg-rose-600 p-2">
-              <Shield className="h-6 w-6 text-white" />
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary text-primary-foreground">
+              <Car className="h-6 w-6" />
             </div>
             <span className="text-2xl font-semibold">FaidaFleet</span>
           </div>
@@ -112,7 +112,7 @@ export default function AdminLoginPage() {
             <div className="space-y-2">
               <div className="flex items-center justify-between gap-2">
                 <Label htmlFor="password">Password</Label>
-                <Link href="/reset-password" className="text-sm font-medium text-rose-700">
+                <Link href="/reset-password" className="text-sm font-medium text-primary">
                   Forgot password?
                 </Link>
               </div>
@@ -130,7 +130,7 @@ export default function AdminLoginPage() {
                 />
               </div>
             </div>
-            <Button type="submit" className="w-full bg-rose-600 hover:bg-rose-700" disabled={loading}>
+            <Button type="submit" className="w-full" disabled={loading}>
               {loading ? (
                 <>
                   <Loader2 className="h-5 w-5 animate-spin" />
@@ -145,7 +145,7 @@ export default function AdminLoginPage() {
         <CardFooter>
           <p className="w-full text-center text-sm text-muted-foreground">
             Fleet owner or driver?{' '}
-            <Link href="/login" className="font-semibold text-rose-700">Sign in with phone and PIN</Link>
+            <Link href="/login" className="font-semibold text-primary">Sign in with phone and PIN</Link>
           </p>
         </CardFooter>
       </Card>
