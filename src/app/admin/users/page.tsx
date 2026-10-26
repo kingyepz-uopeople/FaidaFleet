@@ -12,7 +12,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { MoreHorizontal, Trash2, Edit, Plus } from '@/components/icons';
+import { MoreHorizontal, Trash2, Edit, PlusCircle } from '@/components/icons';
 import { createClient } from '@/lib/supabase/client';
 import {
   DropdownMenu,
@@ -185,7 +185,7 @@ export default function AdminUsersPage() {
             {currentUserRole === 'super_admin' && (
               <DialogTrigger asChild>
                 <Button onClick={() => handleOpenDialog()}>
-                  <Plus className="h-4 w-4" />
+                  <PlusCircle className="h-4 w-4" />
                   Add admin
                 </Button>
               </DialogTrigger>

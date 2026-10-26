@@ -6,7 +6,7 @@ import type { IconProps } from '@/components/icons'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/page-shell'
@@ -65,33 +65,28 @@ export function AdminKpi({
   trend?: { direction: 'up' | 'down' | 'flat'; label: string }
 }) {
   return (
-    <Card className="border-border/80 shadow-sm">
-      <CardContent className="flex items-start justify-between gap-3 p-4 sm:p-5">
-        <div className="min-w-0">
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{title}</p>
-          <p className="mt-1 truncate text-2xl font-semibold tracking-tight">{value}</p>
-          {(hint || trend) && (
-            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-              {trend && (
-                <span
-                  className={cn(
-                    'inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium',
-                    trend.direction === 'up' && 'bg-emerald-50 text-emerald-700',
-                    trend.direction === 'down' && 'bg-rose-50 text-rose-700',
-                    trend.direction === 'flat' && 'bg-muted text-muted-foreground',
-                  )}
-                >
-                  {trend.direction === 'down' ? <TrendingDown className="h-3.5 w-3.5" /> : <TrendingUp className="h-3.5 w-3.5" />}
-                  {trend.label}
-                </span>
-              )}
-              {hint && <span>{hint}</span>}
-            </div>
-          )}
-        </div>
-        {Icon && (
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-            <Icon className="h-5 w-5" />
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <CardTitle className="text-sm font-medium">{title}</CardTitle>
+        {Icon && <Icon className="h-5 w-5 text-muted-foreground" />}
+      </CardHeader>
+      <CardContent>
+        <p className="truncate text-2xl font-bold">{value}</p>
+        {(hint || trend) && (
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            {trend && (
+              <span
+                className={cn(
+                  'inline-flex items-center gap-1 font-medium',
+                  trend.direction === 'up' && 'text-emerald-700',
+                  trend.direction === 'down' && 'text-rose-700',
+                )}
+              >
+                {trend.direction === 'down' ? <TrendingDown className="h-4 w-4" /> : <TrendingUp className="h-4 w-4" />}
+                {trend.label}
+              </span>
+            )}
+            {hint && <span>{hint}</span>}
           </div>
         )}
       </CardContent>

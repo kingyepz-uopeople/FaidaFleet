@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { createClient } from '@/lib/supabase/client';
-import { Building2, Car, DollarSign, Users } from '@/components/icons';
+import { Building2, Truck, Users, Wallet } from '@/components/icons';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { AdminKpi, AdminLoading, AdminPageHeader, formatKes } from '@/components/admin-ui';
 import { isAdminUiPreview } from '@/lib/admin-preview';
@@ -140,10 +140,10 @@ export default function AnalyticsPage() {
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <AdminKpi title="Total fleets" value={stats.totalFleets.toString()} hint="All companies" Icon={Building2} />
-        <AdminKpi title="Active fleets" value={stats.activeFleets.toString()} hint="Currently active" Icon={Users} />
-        <AdminKpi title="Drivers" value={stats.totalDrivers.toString()} hint="System-wide" Icon={Car} />
-        <AdminKpi title="Vehicles" value={stats.totalVehicles.toString()} hint="Active vehicles" Icon={Car} />
-        <AdminKpi title="Collections" value={formatKes(stats.totalCollections)} hint="All time" Icon={DollarSign} />
+        <AdminKpi title="Active fleets" value={stats.activeFleets.toString()} hint="Currently active" Icon={Building2} />
+        <AdminKpi title="Drivers" value={stats.totalDrivers.toString()} hint="System-wide" Icon={Users} />
+        <AdminKpi title="Vehicles" value={stats.totalVehicles.toString()} hint="Active vehicles" Icon={Truck} />
+        <AdminKpi title="Collections" value={formatKes(stats.totalCollections)} hint="All time" Icon={Wallet} />
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">

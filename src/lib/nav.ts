@@ -2,7 +2,6 @@ import {
   AlertCircle,
   AlertTriangle,
   BarChart3,
-  Car,
   CircleHelp,
   KeyRound,
   LayoutDashboard,
@@ -38,7 +37,7 @@ export const adminNavGroups = [
     label: 'Overview',
     items: [
       { href: '/admin', label: 'Overview', Icon: LayoutDashboard },
-      { href: '/admin/analytics', label: 'Analytics', Icon: TrendingUp },
+      { href: '/admin/analytics', label: 'Analytics', Icon: BarChart3 },
     ],
   },
   {
@@ -53,7 +52,7 @@ export const adminNavGroups = [
     label: 'Directory',
     items: [
       { href: '/admin/fleet-owners', label: 'Fleet owners', Icon: Users },
-      { href: '/admin/drivers', label: 'Drivers', Icon: Car },
+      { href: '/admin/drivers', label: 'Drivers', Icon: Users },
     ],
   },
   {

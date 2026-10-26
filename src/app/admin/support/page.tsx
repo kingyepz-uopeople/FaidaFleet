@@ -12,7 +12,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { Plus, MoreHorizontal } from '@/components/icons';
+import { PlusCircle, MoreHorizontal } from '@/components/icons';
 import { createClient } from '@/lib/supabase/client';
 import {
   DropdownMenu,
@@ -148,7 +148,7 @@ export default function SupportPage() {
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
               <Button>
-                <Plus className="h-4 w-4" />
+                <PlusCircle className="h-4 w-4" />
                 New ticket
               </Button>
             </DialogTrigger>

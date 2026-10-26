@@ -13,7 +13,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { MoreHorizontal, Trash2, Edit, Plus, KeyRound } from '@/components/icons';
+import { MoreHorizontal, Trash2, Edit, PlusCircle, KeyRound } from '@/components/icons';
 import { PinResetDialog } from '@/components/pin-reset-dialog';
 import { createClient } from '@/lib/supabase/client';
 import {
@@ -217,7 +217,7 @@ export default function AllDriversPage() {
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
               <Button onClick={() => handleOpenDialog()}>
-                <Plus className="h-4 w-4" />
+                <PlusCircle className="h-4 w-4" />
                 Add driver
               </Button>
             </DialogTrigger>

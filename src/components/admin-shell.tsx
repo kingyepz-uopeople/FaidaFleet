@@ -4,13 +4,13 @@ import { useEffect, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
+  AdministratorDeveloper,
+  Car,
   ChevronLeft,
   ChevronRight,
   LogOut,
   Menu,
-  Shield,
 } from '@/components/icons'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import {
   Sheet,
@@ -25,13 +25,27 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { adminNavGroups, adminPageMeta, isAdminNavActive } from '@/lib/nav'
-import { accountInitials, accountLabel } from '@/lib/phone'
+import { accountLabel } from '@/lib/phone'
 import { isAdminUiPreview } from '@/lib/admin-preview'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 import type { User } from '@supabase/supabase-js'
 
 const SIDEBAR_KEY = 'faidafleet-admin-sidebar'
+
+function AdminAvatar({ className }: { className?: string }) {
+  return (
+    <span
+      className={cn(
+        'inline-flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary text-primary-foreground',
+        className,
+      )}
+      aria-hidden="true"
+    >
+      <AdministratorDeveloper className="h-5 w-5" />
+    </span>
+  )
+}
 
 export function AdminShell({ children }: { children: ReactNode }) {
   const preview = isAdminUiPreview()
@@ -104,7 +118,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
   const displayEmail = preview ? 'ian@faidafleet.com' : user?.email || 'System admin'
 
   const nav = (compact: boolean) => (
-    <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-4">
+    <nav className="min-h-0 flex-1 space-y-5 overflow-y-auto px-3 py-4">
       <TooltipProvider delayDuration={0}>
         {adminNavGroups.map((group) => (
           <div key={group.label}>
@@ -121,7 +135,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
                     href={item.href}
                     className={cn(
                       'flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm font-medium transition-colors',
-                      active ? 'bg-white/12 text-white shadow-sm' : 'text-white/70 hover:bg-white/5 hover:text-white',
+                      active ? 'bg-white/10 text-white' : 'text-white/70 hover:bg-white/5 hover:text-white',
                       compact && 'justify-center px-0',
                     )}
                     aria-current={active ? 'page' : undefined}
@@ -154,25 +168,38 @@ export function AdminShell({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="flex min-h-dvh overflow-hidden bg-[hsl(220_20%_97%)]">
+    <div className="flex min-h-dvh overflow-hidden bg-background">
       <aside
         className={cn(
-          'relative hidden shrink-0 flex-col bg-[#161b2c] text-white lg:flex',
-          collapsed ? 'w-[4.5rem]' : 'w-64',
+          'relative hidden h-dvh min-h-0 shrink-0 flex-col bg-[#152238] text-white md:flex',
+          collapsed ? 'w-16' : 'w-60',
         )}
       >
-        <div className={cn('flex h-14 items-center border-b border-white/10', collapsed ? 'justify-center' : 'gap-2 px-4')}>
-          <div className="rounded-lg bg-primary p-1.5">
-            <Shield className="h-5 w-5" />
-          </div>
-          {!collapsed && (
-            <div className="min-w-0">
-              <p className="truncate text-sm font-semibold">FaidaFleet</p>
-              <p className="truncate text-[11px] text-white/55">System admin</p>
+        <div className={cn('flex h-14 items-center border-b border-white/10', collapsed ? 'justify-center' : 'px-4')}>
+          <div className="flex items-center gap-2">
+            <div className="rounded-lg bg-primary p-1.5">
+              <Car className="h-5 w-5" />
             </div>
-          )}
+            {!collapsed && (
+              <div className="min-w-0">
+                <p className="truncate text-base font-semibold">FaidaFleet</p>
+                <p className="truncate text-[11px] text-white/55">System admin</p>
+              </div>
+            )}
+          </div>
         </div>
         {nav(collapsed)}
+        <div className="space-y-2 border-t border-white/10 p-3">
+          <div className={cn('flex min-h-11 items-center gap-3 rounded-xl p-2', collapsed && 'justify-center')}>
+            <AdminAvatar className="h-8 w-8" />
+            {!collapsed && (
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium">{displayName}</p>
+                <p className="truncate text-xs text-white/60">{displayEmail}</p>
+              </div>
+            )}
+          </div>
+        </div>
         <button
           type="button"
           onClick={toggleCollapsed}
@@ -184,38 +211,42 @@ export function AdminShell({ children }: { children: ReactNode }) {
       </aside>
 
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
-        <SheetContent side="left" className="w-[min(20rem,calc(100vw-1.5rem))] bg-[#161b2c] p-0 text-white">
+        <SheetContent side="left" className="w-[min(20rem,calc(100vw-1.5rem))] bg-[#152238] p-0 text-white">
           <SheetHeader className="border-b border-white/10 p-4 text-left">
             <SheetTitle className="flex items-center gap-2 text-white">
-              <Shield className="h-5 w-5" />
-              FaidaFleet admin
+              <Car className="h-5 w-5" />
+              FaidaFleet
             </SheetTitle>
           </SheetHeader>
           <div className="flex h-[calc(100dvh-4rem)] flex-col pb-[env(safe-area-inset-bottom)]">
             {nav(false)}
+            <div className="border-t border-white/10 p-3">
+              <div className="flex min-h-11 items-center gap-3 rounded-xl p-2">
+                <AdminAvatar className="h-8 w-8" />
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">{displayName}</p>
+                  <p className="truncate text-xs text-white/60">{displayEmail}</p>
+                </div>
+              </div>
+            </div>
           </div>
         </SheetContent>
       </Sheet>
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <header className="sticky top-0 z-20 flex min-h-14 items-center gap-3 border-b bg-background/95 px-3 backdrop-blur pt-[env(safe-area-inset-top)] sm:px-6">
+        <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b bg-background/90 px-3 backdrop-blur sm:h-16 sm:px-6 pt-[env(safe-area-inset-top)]">
           <button
             type="button"
             onClick={() => setMobileOpen(true)}
-            className="inline-flex h-11 w-11 items-center justify-center rounded-xl hover:bg-muted lg:hidden"
+            className="inline-flex h-11 w-11 items-center justify-center rounded-xl hover:bg-muted md:hidden"
             aria-label="Open menu"
           >
             <Menu className="h-5 w-5" />
           </button>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold sm:text-base">{page.label}</p>
-            <p className="hidden truncate text-xs text-muted-foreground sm:block">System administration</p>
-          </div>
-          <div className="hidden items-center gap-2 sm:flex">
-            <Avatar className="h-9 w-9">
-              <AvatarFallback className="bg-primary text-xs text-primary-foreground">{preview ? 'IN' : accountInitials(user)}</AvatarFallback>
-            </Avatar>
-            <div className="min-w-0">
+          <h1 className="min-w-0 flex-1 truncate text-lg font-semibold tracking-tight sm:text-xl">{page.label}</h1>
+          <div className="flex items-center gap-2">
+            <AdminAvatar />
+            <div className="hidden min-w-0 sm:block">
               <p className="truncate text-sm font-medium">{displayName}</p>
               <p className="truncate text-xs text-muted-foreground">{displayEmail}</p>
             </div>

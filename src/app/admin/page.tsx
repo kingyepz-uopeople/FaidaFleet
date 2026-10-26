@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { createClient } from '@/lib/supabase/client';
-import { Building2, Car, KeyRound, Truck, Users } from '@/components/icons';
+import { Building2, KeyRound, Truck, Users } from '@/components/icons';
 import { AdminKpi, AdminPageHeader, AdminRecordList, StatusBadge, formatDate, planTone, titleCase } from '@/components/admin-ui';
 import { isAdminUiPreview, previewTenants } from '@/lib/admin-preview';
 
@@ -111,7 +111,7 @@ export default function AdminOverviewPage() {
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <AdminKpi title="Active fleets" value={stats.activeTenants.toString()} hint="Companies on the platform" Icon={Building2} trend={tenantTrend} />
         <AdminKpi title="Fleet owners" value={stats.fleetOwners.toString()} hint="Owner memberships" Icon={Users} />
-        <AdminKpi title="Drivers" value={stats.totalDrivers.toString()} hint="Active driver records" Icon={Car} />
+        <AdminKpi title="Drivers" value={stats.totalDrivers.toString()} hint="Active driver records" Icon={Users} />
         <AdminKpi title="Vehicles" value={stats.totalVehicles.toString()} hint="Active vehicles" Icon={Truck} />
       </div>
 

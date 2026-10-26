@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { createClient } from '@/lib/supabase/client';
-import { AlertTriangle, CheckCircle, Clock } from '@/components/icons';
+import { AlertTriangle, CheckCircle, Clock, Users } from '@/components/icons';
 import { AdminKpi, AdminPageHeader, AdminRecordList, AdminSearch, StatusBadge, formatDate } from '@/components/admin-ui';
 import { isAdminUiPreview, previewDrivers } from '@/lib/admin-preview';
 
@@ -102,7 +102,7 @@ export default function CompliancePage() {
 
       {expiredLicenses.length > 0 && (
         <Alert className="border-rose-200 bg-rose-50">
-          <AlertTriangle className="h-4 w-4 text-rose-600" />
+          <AlertTriangle className="h-5 w-5 text-rose-600" />
           <AlertDescription className="font-medium text-rose-800">
             {expiredLicenses.length} drivers have expired licences.
           </AlertDescription>
@@ -110,7 +110,7 @@ export default function CompliancePage() {
       )}
       {expiringSoon.length > 0 && (
         <Alert className="border-amber-200 bg-amber-50">
-          <Clock className="h-4 w-4 text-amber-600" />
+          <Clock className="h-5 w-5 text-amber-600" />
           <AlertDescription className="font-medium text-amber-800">
             {expiringSoon.length} licences expire within 30 days.
           </AlertDescription>
@@ -118,16 +118,16 @@ export default function CompliancePage() {
       )}
       {compliantDrivers.length > 0 && expiredLicenses.length === 0 && (
         <Alert className="border-emerald-200 bg-emerald-50">
-          <CheckCircle className="h-4 w-4 text-emerald-600" />
+          <CheckCircle className="h-5 w-5 text-emerald-600" />
           <AlertDescription className="font-medium text-emerald-800">All visible drivers are compliant.</AlertDescription>
         </Alert>
       )}
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <AdminKpi title="Drivers" value={String(visible.length)} hint="Active" />
-        <AdminKpi title="Expired" value={String(expiredLicenses.length)} hint="Action needed" />
-        <AdminKpi title="Expiring soon" value={String(expiringSoon.length)} hint="Next 30 days" />
-        <AdminKpi title="Compliant" value={String(compliantDrivers.length)} hint="Good standing" />
+        <AdminKpi title="Drivers" value={String(visible.length)} hint="Active" Icon={Users} />
+        <AdminKpi title="Expired" value={String(expiredLicenses.length)} hint="Action needed" Icon={AlertTriangle} />
+        <AdminKpi title="Expiring soon" value={String(expiringSoon.length)} hint="Next 30 days" Icon={Clock} />
+        <AdminKpi title="Compliant" value={String(compliantDrivers.length)} hint="Good standing" Icon={CheckCircle} />
       </div>
 
       {expiredLicenses.length > 0 && (
