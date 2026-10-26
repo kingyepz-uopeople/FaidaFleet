@@ -1,96 +1,148 @@
-// FaidaFleet Service Worker
-// Strategy:
-//   - Precache: /offline + icons
-//   - Navigation: network-first → /offline fallback
-//   - Static assets (/_next/static/*, icons, fonts): cache-first
-//   - Supabase / auth / POST / Authorization: network-only (never cached)
+/**
+ * FaidaFleet service worker — offline support.
+ *
+ * Single PWA stack: Next.js manifest.webmanifest + /offline page + RegisterSW.
+ *
+ * Strategies:
+ * - App shell assets (offline page, icons) are precached on install.
+ * - Page navigations: network-first, falling back to the last cached page
+ *   and finally to /offline.
+ * - Next.js build assets (/_next/static/) and other static files: cache-first
+ *   (they are content-hashed / immutable).
+ * - Everything else same-origin: stale-while-revalidate.
+ * - API routes, non-GET requests and cross-origin requests (Supabase, fonts…)
+ *   are never intercepted, so auth and live data always hit the network.
+ *
+ * Bump VERSION whenever the caching behaviour changes so old caches are purged.
+ */
+const VERSION = 'v3'
+const STATIC_CACHE = `faidafleet-static-${VERSION}`
+const PAGES_CACHE = `faidafleet-pages-${VERSION}`
+const ASSETS_CACHE = `faidafleet-assets-${VERSION}`
+const KNOWN_CACHES = [STATIC_CACHE, PAGES_CACHE, ASSETS_CACHE]
 
-const CACHE_VERSION = 'v1'
-const STATIC_CACHE = `faidafleet-static-${CACHE_VERSION}`
-const NAV_CACHE = `faidafleet-nav-${CACHE_VERSION}`
-const ALL_CACHES = [STATIC_CACHE, NAV_CACHE]
+const OFFLINE_URL = '/offline'
 
 const PRECACHE_URLS = [
-  '/offline',
+  OFFLINE_URL,
+  '/favicon.ico',
+  '/icons/icon.svg',
   '/icons/icon-192.png',
   '/icons/icon-512.png',
   '/icons/icon-maskable-512.png',
+  '/icons/apple-touch-icon.png',
 ]
 
-// ─── Install ────────────────────────────────────────────────────────────────
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(STATIC_CACHE).then((cache) => cache.addAll(PRECACHE_URLS))
+    (async () => {
+      const cache = await caches.open(STATIC_CACHE)
+      // Cache each asset individually so one failure doesn't abort the rest.
+      await Promise.allSettled(
+        PRECACHE_URLS.map(async (url) => {
+          const response = await fetch(url, { cache: 'reload' })
+          if (response.ok) await cache.put(url, response)
+        })
+      )
+      await self.skipWaiting()
+    })()
   )
-  self.skipWaiting()
 })
 
-// ─── Activate ───────────────────────────────────────────────────────────────
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(
-        keys.filter((k) => !ALL_CACHES.includes(k)).map((k) => caches.delete(k))
+    (async () => {
+      const keys = await caches.keys()
+      await Promise.all(
+        keys
+          .filter((key) => key.startsWith('faidafleet-') && !KNOWN_CACHES.includes(key))
+          .map((key) => caches.delete(key))
       )
-    )
+      await self.clients.claim()
+    })()
   )
-  self.clients.claim()
 })
 
-// ─── Helpers ────────────────────────────────────────────────────────────────
-function shouldBypassCache(request) {
-  const url = new URL(request.url)
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting()
+  }
+})
 
-  // Never cache non-GET
-  if (request.method !== 'GET') return true
-
-  // Never cache Supabase API / auth
-  if (url.hostname.includes('supabase.co')) return true
-
-  // Never cache our auth routes
-  if (url.pathname.startsWith('/auth/') || url.pathname.startsWith('/api/')) return true
-
-  // Never cache requests with Authorization header
-  if (request.headers.get('Authorization')) return true
-
-  return false
-}
-
-function isStaticAsset(url) {
+function isStaticAsset(pathname) {
   return (
-    url.pathname.startsWith('/_next/static/') ||
-    url.pathname.startsWith('/icons/') ||
-    url.pathname.match(/\.(woff2?|ttf|otf|eot)$/)
+    pathname.startsWith('/_next/static/') ||
+    pathname.startsWith('/icons/') ||
+    /\.(?:css|js|mjs|png|jpg|jpeg|gif|webp|svg|ico|woff|woff2|ttf|otf)$/.test(pathname)
   )
 }
 
-// ─── Fetch ───────────────────────────────────────────────────────────────────
+async function networkFirstPage(request) {
+  const cache = await caches.open(PAGES_CACHE)
+  try {
+    const response = await fetch(request)
+    // Only cache full, direct responses — never cache auth redirects
+    // (e.g. /dashboard -> /login) under the requested URL.
+    if (response.ok && !response.redirected) {
+      cache.put(request, response.clone())
+    }
+    return response
+  } catch {
+    const cachedPage = await cache.match(request)
+    if (cachedPage) return cachedPage
+    const offlinePage = await caches.match(OFFLINE_URL)
+    if (offlinePage) return offlinePage
+    return new Response('You are offline.', {
+      status: 503,
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+    })
+  }
+}
+
+async function cacheFirst(request) {
+  const cached = await caches.match(request)
+  if (cached) return cached
+  const response = await fetch(request)
+  if (response.ok) {
+    const cache = await caches.open(ASSETS_CACHE)
+    cache.put(request, response.clone())
+  }
+  return response
+}
+
+async function staleWhileRevalidate(request, event) {
+  const cache = await caches.open(ASSETS_CACHE)
+  const cached = await cache.match(request)
+  const network = fetch(request)
+    .then((response) => {
+      if (response.ok) cache.put(request, response.clone())
+      return response
+    })
+    .catch(() => cached)
+  if (cached) {
+    event.waitUntil(network)
+    return cached
+  }
+  return network
+}
+
 self.addEventListener('fetch', (event) => {
   const { request } = event
+
+  // Only handle same-origin GET requests. Everything else (Supabase API,
+  // auth, form posts, analytics…) goes straight to the network.
+  if (request.method !== 'GET') return
   const url = new URL(request.url)
+  if (url.origin !== self.location.origin) return
+  if (url.pathname.startsWith('/api/')) return
+  if (url.pathname.startsWith('/auth/')) return
+  if (url.pathname === '/sw.js') return
 
-  // Bypass: non-GET, Supabase, auth, Authorization header
-  if (shouldBypassCache(request)) return
-
-  // Static assets (Next.js chunks, icons, fonts) → cache-first
-  if (isStaticAsset(url)) {
-    event.respondWith(
-      caches.open(STATIC_CACHE).then(async (cache) => {
-        const cached = await cache.match(request)
-        if (cached) return cached
-        const response = await fetch(request)
-        if (response.ok) cache.put(request, response.clone())
-        return response
-      })
-    )
-    return
-  }
-
-  // Navigation requests → network-first, fallback to /offline
   if (request.mode === 'navigate') {
-    event.respondWith(
-      fetch(request).catch(() => caches.match('/offline'))
-    )
-    return
+    event.respondWith(networkFirstPage(request))
+  } else if (isStaticAsset(url.pathname)) {
+    event.respondWith(cacheFirst(request))
+  } else {
+    event.respondWith(staleWhileRevalidate(request, event))
   }
 })
