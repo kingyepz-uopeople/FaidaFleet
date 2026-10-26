@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { Suspense, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import {
   Table,
   TableBody,
@@ -17,13 +18,17 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { PlusCircle, Loader2, Trash2, Edit, Receipt, TrendingDown } from '@/components/icons';
 import { createClient } from '@/lib/supabase/client';
-import { assertMutation, assertMutationRow } from '@/lib/db';
+import { assertMutation, assertMutationRow, requireUuid } from '@/lib/db';
 import { toastError, toastSuccess } from '@/lib/toast';
 import { formatDateOnly } from '@/lib/dates';
 import { EmptyState, PageShell, TableScroll } from '@/components/page-shell';
 import { FormDialog } from '@/components/form-dialog';
 import { NativeSelect } from '@/components/ui/native-select';
 import { StatCard } from '@/components/stat-card';
+import { useFleetAccess } from '@/components/fleet-access-provider';
+import { DriverScopeNotice, LockedValue } from '@/components/driver-scope';
+
+const NO_MATCH_UUID = '00000000-0000-0000-0000-000000000000';
 
 type ExpenseCategory = 'fuel' | 'maintenance' | 'insurance' | 'license' | 'parking' | 'fine' | 'other';
 
@@ -57,7 +62,7 @@ const EMPTY_FORM = {
   description: '',
 };
 
-export default function ExpensesPage() {
+function ExpensesView() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [vehicles, setVehicles] = useState<Option[]>([]);
   const [loading, setLoading] = useState(true);
@@ -66,49 +71,62 @@ export default function ExpensesPage() {
   const [editing, setEditing] = useState<Expense | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
-  const [tenantId, setTenantId] = useState<string | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const supabase = useMemo(() => createClient(), []);
+  const {
+    loading: accessLoading,
+    tenantId,
+    isDriver,
+    vehicleId,
+    vehicleLabel,
+    loadError: accessError,
+  } = useFleetAccess();
+  const canRecord = !isDriver || Boolean(vehicleId);
+  const searchParams = useSearchParams();
+  const quickFuel = searchParams.get('new') === 'fuel';
 
   useEffect(() => {
-    fetchData();
+    if (!accessLoading) fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [accessLoading, tenantId, isDriver, vehicleId]);
+
+  // Quick "Log fuel" entry from the driver menu: /expenses?new=fuel
+  useEffect(() => {
+    if (accessLoading || !canRecord || !quickFuel) return;
+    setEditing(null);
+    setForm({
+      ...EMPTY_FORM,
+      vehicleId: isDriver ? vehicleId || '' : '',
+      category: 'fuel',
+    });
+    setFormError(null);
+    setDialogOpen(true);
+  }, [accessLoading, canRecord, isDriver, vehicleId, quickFuel]);
 
   const fetchData = async () => {
     try {
       setLoading(true);
       setLoadError(null);
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('You need to sign in again.');
-
-      const { data: membership, error: membershipError } = await supabase
-        .from('memberships')
-        .select('tenant_id')
-        .eq('user_id', user.id)
-        .eq('is_active', true)
-        .maybeSingle();
-
-      if (membershipError) throw membershipError;
-      if (!membership) {
-        setLoadError('No fleet is linked to this account yet. Finish onboarding to record expenses.');
+      if (!tenantId) {
+        setLoadError(accessError || 'No fleet is linked to this account yet. Finish onboarding to record expenses.');
         return;
       }
 
-      setTenantId(membership.tenant_id);
-
       const [expensesRes, vehiclesRes] = await Promise.all([
-        supabase
-          .from('expenses')
-          .select('*, vehicles(registration_number)')
-          .eq('tenant_id', membership.tenant_id)
-          .order('date', { ascending: false }),
-        supabase
-          .from('vehicles')
-          .select('id, registration_number')
-          .eq('tenant_id', membership.tenant_id)
-          .eq('is_active', true)
-          .order('registration_number'),
+        (isDriver
+          ? supabase
+              .from('expenses')
+              .select('*, vehicles(registration_number)')
+              .eq('tenant_id', tenantId)
+              .eq('vehicle_id', vehicleId || NO_MATCH_UUID)
+          : supabase
+              .from('expenses')
+              .select('*, vehicles(registration_number)')
+              .eq('tenant_id', tenantId)
+        ).order('date', { ascending: false }),
+        isDriver
+          ? supabase.from('vehicles').select('id, registration_number').eq('id', vehicleId || NO_MATCH_UUID).limit(1)
+          : supabase.from('vehicles').select('id, registration_number').eq('tenant_id', tenantId).eq('is_active', true).order('registration_number'),
       ]);
 
       if (expensesRes.error) throw expensesRes.error;
@@ -126,13 +144,18 @@ export default function ExpensesPage() {
   };
 
   const openCreate = () => {
+    if (!canRecord) return;
     setEditing(null);
-    setForm(EMPTY_FORM);
+    setForm({
+      ...EMPTY_FORM,
+      vehicleId: isDriver ? vehicleId || '' : '',
+    });
     setFormError(null);
     setDialogOpen(true);
   };
 
   const openEdit = (expense: Expense) => {
+    if (isDriver) return;
     setEditing(expense);
     setForm({
       vehicleId: expense.vehicle_id || '',
@@ -152,13 +175,16 @@ export default function ExpensesPage() {
 
     try {
       if (!tenantId) throw new Error('No fleet found for this account.');
+      if (isDriver && editing) throw new Error('Drivers cannot edit recorded expenses.');
+      if (!canRecord) throw new Error('Ask your fleet owner to assign you a current vehicle first.');
+      const selectedVehicleId = isDriver ? requireUuid(vehicleId, 'vehicle') : form.vehicleId || null;
       const amount = Number.parseFloat(form.amount);
       if (!Number.isFinite(amount) || amount < 0) throw new Error('Enter a valid amount');
       if (!form.date) throw new Error('Choose the expense date');
 
       const payload = {
         tenant_id: tenantId,
-        vehicle_id: form.vehicleId || null,
+        vehicle_id: selectedVehicleId,
         category: form.category,
         amount,
         date: form.date,
@@ -183,6 +209,7 @@ export default function ExpensesPage() {
   };
 
   const handleDelete = async (expense: Expense) => {
+    if (isDriver) return;
     if (!window.confirm('Delete this expense? This cannot be undone.')) return;
     try {
       const result = await supabase.from('expenses').delete().eq('id', expense.id).select('id');
@@ -199,10 +226,10 @@ export default function ExpensesPage() {
 
   return (
     <PageShell
-      title="Expenses"
-      description="Track fuel, maintenance, and other operating costs."
+      title={isDriver ? 'My expenses & fuel' : 'Expenses'}
+      description={isDriver ? 'Log fuel and other costs for your assigned vehicle.' : 'Track fuel, maintenance, and other operating costs.'}
       actions={
-        <Button type="button" onClick={openCreate}>
+        <Button type="button" className="min-h-11" onClick={openCreate} disabled={!canRecord}>
           <PlusCircle className="mr-2 h-4 w-4" />
           Add expense
         </Button>
@@ -213,6 +240,7 @@ export default function ExpensesPage() {
           <AlertDescription>{loadError}</AlertDescription>
         </Alert>
       )}
+      {isDriver && accessError && <DriverScopeNotice message={accessError} />}
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <StatCard
@@ -230,7 +258,7 @@ export default function ExpensesPage() {
           <CardDescription>{expenses.length} expenses recorded</CardDescription>
         </CardHeader>
         <CardContent>
-          {loading ? (
+          {loading || accessLoading ? (
             <div className="flex justify-center py-8">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
             </div>
@@ -238,12 +266,12 @@ export default function ExpensesPage() {
             <EmptyState
               title="No expenses recorded yet"
               description="Add an expense to keep your profit figures accurate."
-              action={
+              action={canRecord ? (
                 <Button type="button" onClick={openCreate}>
                   <PlusCircle className="mr-2 h-4 w-4" />
                   Record your first expense
                 </Button>
-              }
+              ) : undefined}
             />
           ) : (
             <>
@@ -262,20 +290,22 @@ export default function ExpensesPage() {
                     {expense.description && (
                       <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">{expense.description}</p>
                     )}
-                    <div className="mt-3 flex gap-2">
-                      <Button type="button" variant="outline" className="min-h-11 flex-1" onClick={() => openEdit(expense)}>
-                        <Edit className="mr-2 h-4 w-4" /> Edit
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="min-h-11 text-destructive"
-                        onClick={() => handleDelete(expense)}
-                        aria-label="Delete expense"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
+                    {!isDriver && (
+                      <div className="mt-3 flex gap-2">
+                        <Button type="button" variant="outline" className="min-h-11 flex-1" onClick={() => openEdit(expense)}>
+                          <Edit className="mr-2 h-4 w-4" /> Edit
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="min-h-11 text-destructive"
+                          onClick={() => handleDelete(expense)}
+                          aria-label="Delete expense"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    )}
                   </article>
                 ))}
               </div>
@@ -289,7 +319,7 @@ export default function ExpensesPage() {
                       <TableHead>Type</TableHead>
                       <TableHead>Amount</TableHead>
                       <TableHead>Description</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
+                      {!isDriver && <TableHead className="text-right">Actions</TableHead>}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -302,18 +332,20 @@ export default function ExpensesPage() {
                         </TableCell>
                         <TableCell className="font-semibold">KES {expense.amount.toLocaleString()}</TableCell>
                         <TableCell className="max-w-xs truncate">{expense.description || '—'}</TableCell>
-                        <TableCell>
-                          <div className="flex justify-end gap-1">
-                            <Button type="button" variant="ghost" size="sm" className="min-h-11" onClick={() => openEdit(expense)}>
-                              <Edit className="h-4 w-4" />
-                              <span className="sr-only">Edit expense</span>
-                            </Button>
-                            <Button type="button" variant="ghost" size="sm" className="min-h-11 text-destructive" onClick={() => handleDelete(expense)}>
-                              <Trash2 className="h-4 w-4" />
-                              <span className="sr-only">Delete expense</span>
-                            </Button>
-                          </div>
-                        </TableCell>
+                        {!isDriver && (
+                          <TableCell>
+                            <div className="flex justify-end gap-1">
+                              <Button type="button" variant="ghost" size="sm" className="min-h-11" onClick={() => openEdit(expense)}>
+                                <Edit className="h-4 w-4" />
+                                <span className="sr-only">Edit expense</span>
+                              </Button>
+                              <Button type="button" variant="ghost" size="sm" className="min-h-11 text-destructive" onClick={() => handleDelete(expense)}>
+                                <Trash2 className="h-4 w-4" />
+                                <span className="sr-only">Delete expense</span>
+                              </Button>
+                            </div>
+                          </TableCell>
+                        )}
                       </TableRow>
                     ))}
                   </TableBody>
@@ -328,23 +360,27 @@ export default function ExpensesPage() {
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         title={editing ? 'Edit expense' : 'Add expense'}
-        description="Vehicle is optional for costs that are not tied to one vehicle."
+        description={isDriver ? `Log ${form.category === 'fuel' ? 'fuel' : 'an expense'} for your assigned vehicle.` : 'Vehicle is optional for costs that are not tied to one vehicle.'}
       >
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="expense_vehicle">Vehicle</Label>
-            <NativeSelect
-              id="expense_vehicle"
-              value={form.vehicleId}
-              onChange={(event) => setForm({ ...form, vehicleId: event.target.value })}
-              disabled={submitting}
-            >
-              <option value="">General expense</option>
-              {vehicles.map((vehicle) => (
-                <option key={vehicle.id} value={vehicle.id}>{vehicle.label}</option>
-              ))}
-            </NativeSelect>
-          </div>
+          {isDriver ? (
+            <LockedValue id="expense_vehicle_locked" label="Vehicle" value={vehicleLabel || 'No vehicle assigned'} hint="Fuel is always logged against your current vehicle." />
+          ) : (
+            <div className="space-y-2">
+              <Label htmlFor="expense_vehicle">Vehicle</Label>
+              <NativeSelect
+                id="expense_vehicle"
+                value={form.vehicleId}
+                onChange={(event) => setForm({ ...form, vehicleId: event.target.value })}
+                disabled={submitting}
+              >
+                <option value="">General expense</option>
+                {vehicles.map((vehicle) => (
+                  <option key={vehicle.id} value={vehicle.id}>{vehicle.label}</option>
+                ))}
+              </NativeSelect>
+            </div>
+          )}
 
           <div className="space-y-2">
             <Label htmlFor="expense_category">Type *</Label>
@@ -429,5 +465,13 @@ export default function ExpensesPage() {
         </form>
       </FormDialog>
     </PageShell>
+  );
+}
+
+export default function ExpensesPage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">Loading expenses…</div>}>
+      <ExpensesView />
+    </Suspense>
   );
 }

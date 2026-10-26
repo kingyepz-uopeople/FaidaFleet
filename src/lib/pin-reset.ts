@@ -1,5 +1,6 @@
 import type { User } from '@supabase/supabase-js'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { authPasswordFromPin } from '@/lib/pin-auth'
 import {
   actorRoleLabel,
   MUST_CHANGE_PIN_KEY,
@@ -61,10 +62,12 @@ export async function setAuthUserPin(input: {
     account_type: input.accountType,
     [MUST_CHANGE_PIN_KEY]: true,
   }
+  // Every create / update / verify path uses the same server-only transform.
+  const password = authPasswordFromPin(input.pin)
 
   if (input.userId) {
     const { error } = await input.admin.auth.admin.updateUserById(input.userId, {
-      password: input.pin,
+      password,
       email_confirm: true,
       user_metadata: metadata,
     })
@@ -74,7 +77,7 @@ export async function setAuthUserPin(input: {
 
   const created = await input.admin.auth.admin.createUser({
     email: input.email,
-    password: input.pin,
+    password,
     email_confirm: true,
     user_metadata: metadata,
   })
@@ -94,7 +97,7 @@ export async function setAuthUserPin(input: {
       return { ok: false, error: 'That phone number already has a login, but it could not be updated', status: 400 }
     }
     const { error } = await input.admin.auth.admin.updateUserById(existing.id, {
-      password: input.pin,
+      password,
       email_confirm: true,
       user_metadata: metadata,
     })

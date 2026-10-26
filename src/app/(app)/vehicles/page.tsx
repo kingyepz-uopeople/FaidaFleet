@@ -14,6 +14,7 @@ import { FormDialog } from '@/components/form-dialog';
 import { NativeSelect } from '@/components/ui/native-select';
 import { PlusCircle, Loader2, Trash2, Edit, AlertTriangle, Truck, BadgeCheck } from '@/components/icons';
 import { createClient } from '@/lib/supabase/client';
+import { primaryMembership } from '@/lib/fleet-access';
 import { assertMutationRow, assertMutation } from '@/lib/db';
 import { toastError, toastSuccess } from '@/lib/toast';
 import { formatDateOnly, isDateBeforeToday } from '@/lib/dates';
@@ -67,14 +68,14 @@ export default function VehiclesPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('You need to sign in again.');
 
-      const { data: membership, error: membershipError } = await supabase
+      const { data: membershipRows, error: membershipError } = await supabase
         .from('memberships')
-        .select('tenant_id')
+        .select('tenant_id, role')
         .eq('user_id', user.id)
-        .eq('is_active', true)
-        .maybeSingle();
+        .eq('is_active', true);
 
       if (membershipError) throw membershipError;
+      const membership = primaryMembership(membershipRows || []);
       if (!membership) {
         setLoadError('No fleet is linked to this account yet. Finish onboarding to add vehicles.');
         return;

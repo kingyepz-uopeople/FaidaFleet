@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { authPasswordFromPin } from './pin-auth'
 import { friendlyAuthError } from './phone'
 
 export type DriverAuthResult = { userId: string } | { error: string }
@@ -44,6 +45,7 @@ export async function createDriverAuthUser(input: {
     phone: input.phone,
     account_type: 'driver',
   }
+  const password = authPasswordFromPin(input.pin)
 
   if (input.serviceRoleKey) {
     const admin = createClient(input.url, input.serviceRoleKey, {
@@ -51,7 +53,7 @@ export async function createDriverAuthUser(input: {
     })
     const { data, error } = await admin.auth.admin.createUser({
       email: input.email,
-      password: input.pin,
+      password,
       email_confirm: true,
       user_metadata: metadata,
     })
@@ -68,7 +70,7 @@ export async function createDriverAuthUser(input: {
   })
   const { data, error } = await anon.auth.signUp({
     email: input.email,
-    password: input.pin,
+    password,
     options: { data: metadata },
   })
   const confirmed = Boolean(data.session || data.user?.email_confirmed_at || data.user?.confirmed_at)

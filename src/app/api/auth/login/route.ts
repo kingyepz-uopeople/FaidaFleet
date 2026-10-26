@@ -1,4 +1,7 @@
 import { NextResponse } from 'next/server'
+import { homePathForRole, isDriverOnly, primaryMembership } from '@/lib/fleet-access'
+import { authPasswordFromPin } from '@/lib/pin-auth'
+import { needsPinChange } from '@/lib/pin'
 import { friendlyAuthError, normalizeKenyanPhone, phoneAuthEmail, validatePin } from '@/lib/phone'
 import {
   clientIpFromRequest,
@@ -45,9 +48,21 @@ export async function POST(request: Request) {
   }
 
   const supabase = await createClient()
+  let password: string
+  try {
+    // ONE shared transform: 6-digit PINs stay unchanged, 4/5-digit PINs get
+    // the server-only pepper before Supabase sees them.
+    password = authPasswordFromPin(pin)
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : 'Invalid PIN' },
+      { status: 400 },
+    )
+  }
+
   const { data, error } = await supabase.auth.signInWithPassword({
     email: phoneAuthEmail(phone),
-    password: pin,
+    password,
   })
 
   if (error || !data.user) {
@@ -80,14 +95,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'System administrators sign in with email.' }, { status: 403 })
   }
 
-  const { data: memberships } = await supabase
+  // Read every active membership: a person can belong to more than one fleet.
+  const { data: membershipRows } = await supabase
     .from('memberships')
-    .select('id')
+    .select('tenant_id, role')
     .eq('user_id', data.user.id)
     .eq('is_active', true)
-    .limit(1)
 
-  if (!memberships || memberships.length === 0) {
+  const membership = primaryMembership(membershipRows)
+  const mustChangePin = needsPinChange(data.user)
+
+  if (!membership) {
     if (data.user.user_metadata?.account_type === 'driver') {
       await supabase.auth.signOut()
       return NextResponse.json(
@@ -95,11 +113,11 @@ export async function POST(request: Request) {
         { status: 403 },
       )
     }
-    return NextResponse.json({ redirect: '/onboarding', mustChangePin: data.user.user_metadata?.must_change_pin === true })
+    return NextResponse.json({ redirect: '/onboarding', mustChangePin })
   }
 
   return NextResponse.json({
-    redirect: '/dashboard',
-    mustChangePin: data.user.user_metadata?.must_change_pin === true,
+    redirect: homePathForRole(isDriverOnly(membershipRows) ? 'driver' : membership.role),
+    mustChangePin,
   })
 }

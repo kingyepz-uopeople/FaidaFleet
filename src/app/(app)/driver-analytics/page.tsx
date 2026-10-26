@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Loader2 } from '@/components/icons';
 import { createClient } from '@/lib/supabase/client';
+import { primaryMembership } from '@/lib/fleet-access';
 import { driverLeaderboard, type DriverCollection, type DriverInput, type DriverTrip } from '@/lib/fleet-metrics';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
@@ -23,8 +24,9 @@ export default function DriverAnalyticsPage() {
       setLoading(true);
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
-      const membershipResp = await supabase.from('memberships').select('tenant_id').eq('user_id', user.id).eq('is_active', true).single();
-      const membership: any = membershipResp.data;
+      const membershipResp = await supabase.from('memberships').select('tenant_id, role').eq('user_id', user.id).eq('is_active', true);
+      if (membershipResp.error) throw membershipResp.error;
+      const membership = primaryMembership(membershipResp.data || []);
       if (!membership) throw new Error('No tenant found');
 
       const [driversRes, collectionsRes, tripsRes] = await Promise.all([
@@ -42,8 +44,8 @@ export default function DriverAnalyticsPage() {
         (collectionsRes.data || []) as DriverCollection[],
         (tripsRes.data || []) as DriverTrip[]
       ));
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Could not load the report');
     } finally {
       setLoading(false);
     }

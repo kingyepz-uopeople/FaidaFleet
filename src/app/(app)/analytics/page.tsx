@@ -1,13 +1,11 @@
 'use client';
 import React, { useEffect, useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2, TrendingUp, TrendingDown, DollarSign, Percent } from '@/components/icons';
 import { createClient } from '@/lib/supabase/client';
+import { primaryMembership } from '@/lib/fleet-access';
 import { lastNDateKeys } from '@/lib/dates';
 import { groupFinancials, profitBreakdown, type MoneyRow } from '@/lib/fleet-metrics';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
@@ -29,8 +27,9 @@ export default function AnalyticsPage() {
       setLoading(true);
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
-      const membershipResp = await supabase.from('memberships').select('tenant_id').eq('user_id', user.id).eq('is_active', true).single();
-      const membership: any = membershipResp.data;
+      const membershipResp = await supabase.from('memberships').select('tenant_id, role').eq('user_id', user.id).eq('is_active', true);
+      if (membershipResp.error) throw membershipResp.error;
+      const membership = primaryMembership(membershipResp.data || []);
       if (!membership) throw new Error('No tenant found');
 
       const rangeDays = Number.parseInt(dateRange, 10);
@@ -56,8 +55,8 @@ export default function AnalyticsPage() {
         totalProfit: report.totalProfit,
         profitMargin: report.profitMargin,
       });
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Could not load the report');
     } finally {
       setLoading(false);
     }

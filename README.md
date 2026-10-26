@@ -62,19 +62,20 @@ FaidaFleet is a comprehensive fleet management web application designed for mata
    NEXT_PUBLIC_SUPABASE_URL=your-project-url
    NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-publishable-key
    SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+   PIN_PEPPER=a-long-random-secret
    ```
 
-   The service role key stays on the server. It lets a fleet owner create a driver login without replacing their own session.
+   The service role key and `PIN_PEPPER` stay on the server. The service role key lets a fleet owner create a driver login without replacing their own session. `PIN_PEPPER` is appended to 4- and 5-digit PINs before Supabase Auth stores them, because Supabase requires a password of at least 6 characters. 6-digit PINs are stored unchanged so existing accounts keep working. Set the same value in every environment and do not change it once short PINs are in use; a built-in fallback is used when it is absent.
 
 4. **Set up the database**
    - Open the new project's SQL Editor
-   - Run every file in `supabase/migrations/` in order, from `001_initial_schema.sql` through `007_schema_fixes.sql`
+   - Run every file in `supabase/migrations/` in order, from `001_initial_schema.sql` through `010_driver_scoped_rls.sql`
    - See `supabase/DATABASE_SETUP.md` for the same steps
 
 5. **Turn off email confirmation for phone accounts**
    - Authentication, then Providers, then Email
    - Turn off Confirm email
-   - Set the minimum password length to 4 so a 4-digit PIN is accepted
+   - Leave the minimum password length at Supabase's default of 6. Short (4- or 5-digit) PINs are padded on the server with `PIN_PEPPER` before they reach Supabase, so no Auth setting needs changing.
    - Fleet accounts use an internal address such as `2547XXXXXXXX@phone.faidafleet.local`. That address cannot receive mail.
 
 6. **Create the first system administrator**
@@ -129,7 +130,7 @@ FaidaFleet/
 │   │   └── utils.ts           # Helper functions
 │   └── middleware.ts          # Auth middleware
 ├── supabase/
-│   ├── migrations/            # Database migrations, 001 through 007
+│   ├── migrations/            # Database migrations, 001 through 010
 │   ├── DATABASE_SETUP.md      # Setup guide
 │   ├── COMPLETE_SCHEMA.sql    # Refuses to run; use migrations
 │   └── RUN_THIS_FIRST.sql     # Idempotent column check after migrations

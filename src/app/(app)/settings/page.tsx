@@ -21,9 +21,13 @@ import {
 import { createClient } from '@/lib/supabase/client';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { formatDateOnly } from '@/lib/dates';
-import { accountPhone, friendlyAuthError, isPhoneAccount, validatePin } from '@/lib/phone';
+import { accountPhone, isPhoneAccount, validatePin } from '@/lib/phone';
+import { primaryMembership } from '@/lib/fleet-access';
+import { useFleetAccess } from '@/components/fleet-access-provider';
+import { SignOutButton } from '@/components/sign-out-button';
 import { assertMutationRow } from '@/lib/db';
 import { toastError, toastSuccess } from '@/lib/toast';
+import { cn } from '@/lib/utils';
 
 type TeamMember = {
   id: string;
@@ -44,9 +48,11 @@ export default function SettingsPage() {
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [phoneAccount, setPhoneAccount] = useState(true);
   const [phone, setPhone] = useState('');
-  const [form, setForm] = useState({ name: '', currentPin: '', newPin: '' });
+  const [form, setForm] = useState({ name: '', currentPin: '', newPin: '', confirmPin: '' });
+  const { isDriver, loading: accessLoading, refresh } = useFleetAccess();
 
   useEffect(() => {
+    if (accessLoading) return;
     const fetchProfile = async () => {
       setLoading(true);
       setError(null);
@@ -59,32 +65,35 @@ export default function SettingsPage() {
         const profileResp = await supabase.from('profiles').select('full_name').eq('id', user.id).single();
         if (profileResp.error && profileResp.error.code !== 'PGRST116') throw profileResp.error;
 
+        // Multiple active memberships are legal: read them all and pick one.
         const membershipResp = await supabase
           .from('memberships')
           .select('tenant_id, role')
           .eq('user_id', user.id)
-          .eq('is_active', true)
-          .single();
+          .eq('is_active', true);
         if (membershipResp.error) throw membershipResp.error;
 
-        const membership = membershipResp.data as { tenant_id: string; role: string };
+        const membership = primaryMembership(membershipResp.data || []);
+        if (!membership) throw new Error('No fleet is linked to this account yet.');
         setTenantId(membership.tenant_id);
         setRole(membership.role);
 
-        const [tenantResp, teamResp] = await Promise.all([
-          supabase.from('tenants').select('name').eq('id', membership.tenant_id).single(),
-          supabase
-            .from('memberships')
-            .select('id, role, joined_at, user_id')
-            .eq('tenant_id', membership.tenant_id)
-            .eq('is_active', true)
-            .order('joined_at', { ascending: true }),
-        ]);
-        if (tenantResp.error) throw tenantResp.error;
-        if (teamResp.error) throw teamResp.error;
+        if (!isDriver) {
+          const [tenantResp, teamResp] = await Promise.all([
+            supabase.from('tenants').select('name').eq('id', membership.tenant_id).limit(1),
+            supabase
+              .from('memberships')
+              .select('id, role, joined_at, user_id')
+              .eq('tenant_id', membership.tenant_id)
+              .eq('is_active', true)
+              .order('joined_at', { ascending: true }),
+          ]);
+          if (tenantResp.error) throw tenantResp.error;
+          if (teamResp.error) throw teamResp.error;
 
-        setFleetName((tenantResp.data as { name: string }).name || '');
-        setMembers((teamResp.data || []) as TeamMember[]);
+          setFleetName((tenantResp.data?.[0] as { name: string } | undefined)?.name || '');
+          setMembers((teamResp.data || []) as TeamMember[]);
+        }
         setPhoneAccount(isPhoneAccount(user));
         setPhone(accountPhone(user) || '');
         setForm((prev) => ({
@@ -98,7 +107,7 @@ export default function SettingsPage() {
       }
     };
     fetchProfile();
-  }, []);
+  }, [accessLoading, isDriver]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => setForm({ ...form, [e.target.name]: e.target.value });
 
@@ -132,28 +141,31 @@ export default function SettingsPage() {
     setMessage(null);
     try {
       const pinError = validatePin(form.newPin);
-      if (!form.currentPin || !form.newPin) {
-        throw new Error('Enter your current PIN and a new PIN');
+      if (!form.currentPin || !form.newPin || !form.confirmPin) {
+        throw new Error('Enter your current PIN, a new PIN, and confirm it');
       }
       if (pinError) throw new Error(pinError);
+      if (form.newPin !== form.confirmPin) throw new Error('PINs do not match');
       if (!phoneAccount) {
         throw new Error('PIN changes are for phone accounts');
       }
 
-      const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user?.email) throw new Error('Not authenticated');
-
-      const { error: signInError } = await supabase.auth.signInWithPassword({
-        email: user.email,
-        password: form.currentPin,
+      // Server route transforms both PINs with the shared helper and verifies
+      // the current one. No browser updateUser() call with a raw PIN.
+      const response = await fetch('/api/auth/change-pin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          currentPin: form.currentPin,
+          newPin: form.newPin,
+          confirmPin: form.confirmPin,
+        }),
       });
-      if (signInError) throw new Error(friendlyAuthError(signInError.message));
-
-      const { error: updateError } = await supabase.auth.updateUser({ password: form.newPin });
-      if (updateError) throw updateError;
-      setMessage('PIN updated successfully.');
-      setForm((prev) => ({ ...prev, currentPin: '', newPin: '' }));
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || 'Could not change PIN');
+      setMessage('PIN updated successfully. Use your new PIN next time you sign in.');
+      setForm((prev) => ({ ...prev, currentPin: '', newPin: '', confirmPin: '' }));
+      await refresh();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Could not change password');
     }
@@ -165,6 +177,7 @@ export default function SettingsPage() {
     setMessage(null);
     setSavingFleet(true);
     try {
+      if (isDriver) throw new Error('Drivers cannot change fleet settings');
       if (role !== 'owner') throw new Error('Only the fleet owner can rename the fleet');
       if (!tenantId) throw new Error('No fleet found');
       const name = fleetName.trim();
@@ -199,10 +212,10 @@ export default function SettingsPage() {
         <Alert><AlertDescription>{message}</AlertDescription></Alert>
       )}
       <Tabs defaultValue="profile" className="w-full">
-        <TabsList className="grid h-auto w-full grid-cols-3">
-          <TabsTrigger value="profile">Profile</TabsTrigger>
-          <TabsTrigger value="team">Team</TabsTrigger>
-          <TabsTrigger value="fleet">Fleet</TabsTrigger>
+        <TabsList className={cn('grid h-auto w-full', isDriver ? 'grid-cols-1' : 'grid-cols-3')}>
+          <TabsTrigger value="profile" className="min-h-11">Profile</TabsTrigger>
+          {!isDriver && <TabsTrigger value="team" className="min-h-11">Team</TabsTrigger>}
+          {!isDriver && <TabsTrigger value="fleet" className="min-h-11">Fleet</TabsTrigger>}
         </TabsList>
         <TabsContent value="profile">
           <Card>
@@ -223,7 +236,7 @@ export default function SettingsPage() {
                       <Input id="phone" value={phone} readOnly />
                       <p className="text-sm text-muted-foreground">This phone number is used to sign in. It is not an email address.</p>
                     </div>
-                    <Button type="submit">Save Changes</Button>
+                    <Button type="submit" className="min-h-11">Save Changes</Button>
                   </form>
                   {phoneAccount && (
                   <form onSubmit={handleChangePassword} className="mt-6 space-y-4 rounded-2xl border bg-muted/40 p-4">
@@ -233,21 +246,29 @@ export default function SettingsPage() {
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="currentPin">Current PIN</Label>
-                      <Input id="currentPin" name="currentPin" type="password" inputMode="numeric" autoComplete="current-password" maxLength={6} value={form.currentPin} onChange={handleChange} />
+                      <Input id="currentPin" name="currentPin" type="password" inputMode="numeric" autoComplete="current-password" maxLength={6} className="h-12 text-base" value={form.currentPin} onChange={handleChange} />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="newPin">New PIN</Label>
-                      <Input id="newPin" name="newPin" type="password" inputMode="numeric" autoComplete="new-password" maxLength={6} value={form.newPin} onChange={handleChange} />
+                      <Input id="newPin" name="newPin" type="password" inputMode="numeric" autoComplete="new-password" maxLength={6} className="h-12 text-base" value={form.newPin} onChange={handleChange} />
                     </div>
-                    <Button type="submit">Change PIN</Button>
+                    <div className="space-y-2">
+                      <Label htmlFor="confirmPin">Confirm new PIN</Label>
+                      <Input id="confirmPin" name="confirmPin" type="password" inputMode="numeric" autoComplete="new-password" maxLength={6} className="h-12 text-base" value={form.confirmPin} onChange={handleChange} />
+                    </div>
+                    <Button type="submit" className="min-h-11 w-full sm:w-auto">Change PIN</Button>
                   </form>
                   )}
+                  <SignOutButton
+                    label="Sign out"
+                    className="w-full justify-center rounded-xl border border-input px-4 text-sm font-medium hover:bg-muted sm:w-auto"
+                  />
                 </>
               )}
             </CardContent>
           </Card>
         </TabsContent>
-        <TabsContent value="team">
+        {!isDriver && <TabsContent value="team">
           <Card>
             <CardHeader>
               <CardTitle>Team</CardTitle>
@@ -275,8 +296,8 @@ export default function SettingsPage() {
               )}
             </CardContent>
           </Card>
-        </TabsContent>
-        <TabsContent value="fleet">
+        </TabsContent>}
+        {!isDriver && <TabsContent value="fleet">
           <Card>
             <CardHeader>
               <CardTitle>Fleet Settings</CardTitle>
@@ -308,7 +329,7 @@ export default function SettingsPage() {
               </CardFooter>
             </form>
           </Card>
-        </TabsContent>
+        </TabsContent>}
       </Tabs>
     </div>
   );

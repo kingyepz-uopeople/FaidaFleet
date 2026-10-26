@@ -8,9 +8,9 @@
     "genkit:watch": "genkit start -- tsx --watch src/ai/dev.ts",
     "build": "NODE_ENV=production next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/lib/phone.test.ts src/lib/pin.test.ts src/lib/fleet-metrics.test.ts src/lib/supabase/env.test.ts"
+    "test": "tsx --test src/lib/phone.test.ts src/lib/pin.test.ts src/lib/pin-auth.test.ts src/lib/fleet-access.test.ts src/lib/fleet-metrics.test.ts src/lib/supabase/env.test.ts"
   },
   "dependencies": {
     "@genkit-ai/google-genai": "^1.20.0",
@@ -57,12 +57,14 @@
     "recharts": "^2.15.1",
     "tailwind-merge": "^3.0.1",
     "tailwindcss-animate": "^1.0.7",
-    "zod": "^3.24.2"
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "^16.3.7",
     "genkit-cli": "^1.20.0",
     "postcss": "^8",
     "tailwindcss": "^3.4.1",

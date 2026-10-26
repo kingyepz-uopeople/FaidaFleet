@@ -4,10 +4,14 @@ import { useEffect, useState } from 'react'
 
 const STORAGE_KEY = 'faidafleet-pwa-install-dismissed'
 
+type BeforeInstallPromptEvent = Event & {
+  prompt: () => Promise<void>
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>
+}
+
 export function InstallPrompt() {
-  const [promptEvent, setPromptEvent] = useState<any>(null)
+  const [promptEvent, setPromptEvent] = useState<BeforeInstallPromptEvent | null>(null)
   const [showBanner, setShowBanner] = useState(false)
-  const [isIOS, setIsIOS] = useState(false)
   const [showIOSHint, setShowIOSHint] = useState(false)
 
   useEffect(() => {
@@ -18,8 +22,7 @@ export function InstallPrompt() {
     // Detect iOS
     const ua = navigator.userAgent
     const ios = /iphone|ipad|ipod/i.test(ua)
-    const standalone = (navigator as any).standalone === true
-    setIsIOS(ios)
+    const standalone = (navigator as Navigator & { standalone?: boolean }).standalone === true
 
     if (ios && !standalone) {
       setShowIOSHint(true)
@@ -28,7 +31,7 @@ export function InstallPrompt() {
 
     const handler = (e: Event) => {
       e.preventDefault()
-      setPromptEvent(e)
+      setPromptEvent(e as BeforeInstallPromptEvent)
       setShowBanner(true)
     }
 

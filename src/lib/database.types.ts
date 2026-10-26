@@ -370,7 +370,7 @@ export interface Database {
           third_party_trans_id: string | null
           phone_number: string | null
           matched_collection_id: string | null
-          raw_data: any | null
+          raw_data: Record<string, unknown> | null
           created_at: string
         }
         Insert: {
@@ -389,7 +389,7 @@ export interface Database {
           third_party_trans_id?: string | null
           phone_number?: string | null
           matched_collection_id?: string | null
-          raw_data?: any | null
+          raw_data?: Record<string, unknown> | null
           created_at?: string
         }
         Update: {
@@ -408,7 +408,7 @@ export interface Database {
           third_party_trans_id?: string | null
           phone_number?: string | null
           matched_collection_id?: string | null
-          raw_data?: any | null
+          raw_data?: Record<string, unknown> | null
           created_at?: string
         }
         Relationships: [

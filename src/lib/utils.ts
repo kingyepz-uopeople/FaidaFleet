@@ -1,8 +1,11 @@
 import { clsx, type ClassValue } from "clsx"
 import * as tm from "tailwind-merge"
 
-const mergeFn = typeof tm.twMerge === "function" ? tm.twMerge : (tm as any).default?.twMerge || (tm as any).default
+type MergeFn = (value: string) => string
+const candidate = tm as unknown as { twMerge?: MergeFn; default?: MergeFn | { twMerge?: MergeFn } }
+const fromDefault = typeof candidate.default === "function" ? candidate.default : candidate.default?.twMerge
+const mergeFn: MergeFn | undefined = candidate.twMerge || fromDefault
 
 export function cn(...inputs: ClassValue[]) {
-  return typeof mergeFn === "function" ? mergeFn(clsx(inputs)) : clsx(inputs)
+  return mergeFn ? mergeFn(clsx(inputs)) : clsx(inputs)
 }

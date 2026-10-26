@@ -3,14 +3,13 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Loader2, Car, Phone, Lock, User, CheckCircle2 } from '@/components/icons'
-import { friendlyAuthError, normalizeKenyanPhone, phoneAuthEmail, validatePin } from '@/lib/phone'
+import { normalizeKenyanPhone, validatePin } from '@/lib/phone'
 import { AuthShell } from '@/components/auth-shell'
 
 export default function SignUpPage() {
@@ -22,7 +21,6 @@ export default function SignUpPage() {
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
   const router = useRouter()
-  const supabase = createClient()
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -49,30 +47,21 @@ export default function SignUpPage() {
     }
 
     try {
-      const { data, error: signUpError } = await supabase.auth.signUp({
-        email: phoneAuthEmail(normalized),
-        password: pin,
-        options: {
-          data: {
-            full_name: fullName,
-            phone: normalized,
-            account_type: 'fleet_owner',
-          },
-        },
+      // The PIN goes to a server route: the password transform (and pepper)
+      // must never be implemented in the browser.
+      const response = await fetch('/api/auth/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: normalized, pin, fullName }),
       })
-
-      if (signUpError) {
-        setError(friendlyAuthError(signUpError.message))
-        return
-      }
-
-      if (!data.session) {
-        setError('Account was created, but this Supabase project still confirms email. Turn off Confirm email under Authentication, then sign in with this phone number and PIN.')
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        setError(payload.error || 'Could not create the account')
         return
       }
 
       setSuccess(true)
-      router.push('/onboarding')
+      router.push(payload.redirect || '/onboarding')
       router.refresh()
     } catch {
       setError('An unexpected error occurred')
