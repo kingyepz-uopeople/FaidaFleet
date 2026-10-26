@@ -84,7 +84,7 @@ export default function SupportPage() {
       const { data: memberships } = await supabase
         .from('memberships')
         .select('tenant_id')
-        .eq('user_id', user?.id)
+        .eq('user_id', user?.id || '')
         .limit(1);
 
       if (!memberships?.[0]) throw new Error('No tenant found');

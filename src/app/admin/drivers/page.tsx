@@ -23,7 +23,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { Search, MoreHorizontal, Trash2, Edit, Plus } from '@/components/icons';
+import { Search, MoreHorizontal, Trash2, Edit, Plus, KeyRound } from '@/components/icons';
+import { PinResetDialog } from '@/components/pin-reset-dialog';
 import { createClient } from '@/lib/supabase/client';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
@@ -62,6 +63,7 @@ export default function AllDriversPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [resetDriver, setResetDriver] = useState<Driver | null>(null);
   const [formData, setFormData] = useState({
     full_name: '',
     phone: '',
@@ -275,9 +277,12 @@ export default function AllDriversPage() {
                 <Label htmlFor="phone">Phone *</Label>
                 <Input
                   id="phone"
+                  type="tel"
+                  inputMode="tel"
+                  autoComplete="tel"
                   value={formData.phone}
                   onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                  placeholder="+254 700 000000"
+                  placeholder="0712345678"
                   required
                 />
               </div>
@@ -417,6 +422,13 @@ export default function AllDriversPage() {
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem
+                                onClick={() => setResetDriver(driver)}
+                                className="cursor-pointer"
+                              >
+                                <KeyRound className="h-4 w-4 mr-2" />
+                                Set / reset PIN
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
                                 onClick={() => handleOpenDialog(driver)}
                                 className="cursor-pointer"
                               >
@@ -448,6 +460,22 @@ export default function AllDriversPage() {
           )}
         </CardContent>
       </Card>
+      <PinResetDialog
+        open={Boolean(resetDriver)}
+        onOpenChange={(open) => { if (!open) setResetDriver(null) }}
+        title="Reset driver PIN"
+        description="Set a new PIN for this driver across fleets. The PIN is shown once and is never stored in plain text."
+        name={resetDriver?.full_name}
+        submit={async ({ pin, generate }) => {
+          if (!resetDriver) return { error: 'No driver selected', generated: false }
+          const response = await fetch('/api/admin/pin', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ target: 'driver', driverId: resetDriver.id, pin, generate }),
+          })
+          return response.json()
+        }}
+      />
     </div>
   );
 }

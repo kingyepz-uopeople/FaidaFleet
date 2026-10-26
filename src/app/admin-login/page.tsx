@@ -11,6 +11,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Loader2, Shield, Mail, Lock } from '@/components/icons'
 import { friendlyAuthError, isPhoneAuthEmail } from '@/lib/phone'
+import { AuthShell } from '@/components/auth-shell'
 
 export default function AdminLoginPage() {
   const [email, setEmail] = useState('')
@@ -55,7 +56,6 @@ export default function AdminLoginPage() {
         return
       }
 
-      // Non-blocking update of last_login
       void supabase
         .from('admin_users')
         .update({ last_login: new Date().toISOString() })
@@ -71,39 +71,37 @@ export default function AdminLoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 p-8">
-      <Card className="w-full max-w-md shadow-2xl border-0 bg-white">
-        <CardHeader className="space-y-2 pb-6">
-          <div className="flex items-center justify-center gap-2 mb-2">
-            <div className="p-2 bg-red-600 rounded-xl">
+    <AuthShell variant="admin" headline="System administration" subhead="Email and password only. Fleet owners and drivers use phone + PIN.">
+      <Card className="border-0 shadow-xl">
+        <CardHeader>
+          <div className="mb-2 flex items-center justify-center gap-2">
+            <div className="rounded-xl bg-rose-600 p-2">
               <Shield className="h-6 w-6 text-white" />
             </div>
-            <span className="text-2xl font-bold text-gray-900">FaidaFleet</span>
+            <span className="text-2xl font-semibold">FaidaFleet</span>
           </div>
-          <CardTitle className="text-3xl font-bold text-center text-gray-900">
-            System admin
-          </CardTitle>
-          <CardDescription className="text-center text-gray-600">
+          <CardTitle className="text-center text-2xl">System admin</CardTitle>
+          <CardDescription className="text-center">
             Sign in with the administrator email and password
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleLogin} className="space-y-5">
+          <form onSubmit={handleLogin} className="space-y-4">
             {error && (
-              <Alert variant="destructive" className="border-red-200 bg-red-50">
-                <AlertDescription className="text-red-800">{error}</AlertDescription>
+              <Alert variant="destructive">
+                <AlertDescription>{error}</AlertDescription>
               </Alert>
             )}
-            <div className="space-y-3">
-              <Label htmlFor="email" className="text-sm font-semibold text-gray-700">Email</Label>
+            <div className="space-y-2">
+              <Label htmlFor="email">Email</Label>
               <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                <Mail className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   id="email"
                   type="email"
                   autoComplete="username"
                   placeholder="admin@example.com"
-                  className="pl-10 h-12"
+                  className="pl-10"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
@@ -111,20 +109,20 @@ export default function AdminLoginPage() {
                 />
               </div>
             </div>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="password" className="text-sm font-semibold text-gray-700">Password</Label>
-                <Link href="/reset-password" className="text-sm text-red-600 hover:text-red-700 font-medium">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <Label htmlFor="password">Password</Label>
+                <Link href="/reset-password" className="text-sm font-medium text-rose-700">
                   Forgot password?
                 </Link>
               </div>
               <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                <Lock className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   id="password"
                   type="password"
                   autoComplete="current-password"
-                  className="pl-10 h-12"
+                  className="pl-10"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
@@ -132,10 +130,10 @@ export default function AdminLoginPage() {
                 />
               </div>
             </div>
-            <Button type="submit" className="w-full h-12 bg-red-600 hover:bg-red-700" disabled={loading}>
+            <Button type="submit" className="w-full bg-rose-600 hover:bg-rose-700" disabled={loading}>
               {loading ? (
                 <>
-                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                  <Loader2 className="h-5 w-5 animate-spin" />
                   Signing in...
                 </>
               ) : (
@@ -145,14 +143,12 @@ export default function AdminLoginPage() {
           </form>
         </CardContent>
         <CardFooter>
-          <p className="text-sm text-center w-full text-gray-600">
+          <p className="w-full text-center text-sm text-muted-foreground">
             Fleet owner or driver?{' '}
-            <Link href="/login" className="text-red-600 hover:text-red-700 font-semibold">
-              Sign in with phone and PIN
-            </Link>
+            <Link href="/login" className="font-semibold text-rose-700">Sign in with phone and PIN</Link>
           </p>
         </CardFooter>
       </Card>
-    </div>
+    </AuthShell>
   )
 }

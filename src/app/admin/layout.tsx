@@ -7,7 +7,6 @@ import {
   LayoutDashboard,
   Users,
   Car,
-  ChevronLeft,
   LogOut,
   Shield,
   Package,
@@ -17,19 +16,21 @@ import {
   Settings,
   BarChart3,
   AlertCircle,
+  Menu,
+  KeyRound,
 } from '@/components/icons';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { createClient } from '@/lib/supabase/client';
 import type { User } from '@supabase/supabase-js';
 import { accountInitials, accountLabel } from '@/lib/phone';
 import { cn } from '@/lib/utils';
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
 
 const adminMenuItems = [
   { href: '/admin', label: 'Overview', Icon: LayoutDashboard },
@@ -39,6 +40,7 @@ const adminMenuItems = [
   { href: '/admin/fleet-owners', label: 'Fleet Owners', Icon: Users },
   { href: '/admin/drivers', label: 'All Drivers', Icon: Car },
   { href: '/admin/users', label: 'Admin Users', Icon: UserIcon },
+  { href: '/admin/pin-resets', label: 'PIN resets', Icon: KeyRound },
   { href: '/admin/plans', label: 'Plans', Icon: Package },
   { href: '/admin/settings', label: 'Settings', Icon: Settings },
   { href: '/admin/support', label: 'Support', Icon: AlertCircle },
@@ -46,14 +48,11 @@ const adminMenuItems = [
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [isCollapsed, setIsCollapsed] = useState(false);
-  const [isHovered, setIsHovered] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const supabase = createClient();
   const pathname = usePathname();
   const router = useRouter();
-
-  const isExpanded = !isCollapsed || isHovered;
 
   useEffect(() => {
     const checkAdmin = async () => {
@@ -87,214 +86,102 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     checkAdmin();
   }, [supabase, router]);
 
-  const getUserInitials = () => accountInitials(user);
-
-  const getUserDisplayName = () => accountLabel(user) || 'Admin';
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
     router.push('/admin-login');
   };
 
+  const links = (
+    <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
+      {adminMenuItems.map((item) => {
+        const isActive = pathname === item.href;
+        return (
+          <Link
+            key={item.href}
+            href={item.href}
+            className={cn(
+              'flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm font-medium',
+              isActive ? 'bg-white/10 text-white' : 'text-white/70 hover:bg-white/5 hover:text-white',
+            )}
+          >
+            <item.Icon className="h-5 w-5 shrink-0" />
+            {item.label}
+          </Link>
+        );
+      })}
+    </nav>
+  );
+
   if (!isAdmin) {
-    return <div className="flex items-center justify-center h-screen">Loading...</div>;
+    return <div className="flex min-h-dvh items-center justify-center text-sm text-muted-foreground">Loading…</div>;
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-gray-100 dark:bg-gray-900">
-      <style>{`
-        @keyframes slideInLeft {
-          from {
-            opacity: 0;
-            transform: translateX(-10px);
-          }
-          to {
-            opacity: 1;
-            transform: translateX(0);
-          }
-        }
-        
-        @keyframes slideInUp {
-          from {
-            opacity: 0;
-            transform: translateY(10px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-        
-        @keyframes activeIndicator {
-          from {
-            width: 0;
-            opacity: 0;
-          }
-          to {
-            width: 4px;
-            opacity: 1;
-          }
-        }
-
-        .menu-item {
-          position: relative;
-          animation: slideInLeft 0.4s ease-out forwards;
-        }
-        
-        .menu-item:nth-child(1) { animation-delay: 0.05s; }
-        .menu-item:nth-child(2) { animation-delay: 0.1s; }
-        .menu-item:nth-child(3) { animation-delay: 0.15s; }
-
-        .menu-item.active::before {
-          content: '';
-          position: absolute;
-          left: 0;
-          top: 50%;
-          transform: translateY(-50%);
-          width: 4px;
-          height: 24px;
-          background: linear-gradient(to bottom, rgb(239, 68, 68), rgb(220, 38, 38));
-          border-radius: 0 2px 2px 0;
-          animation: activeIndicator 0.3s ease-out;
-        }
-
-        .user-section {
-          animation: slideInUp 0.5s ease-out;
-        }
-
-        .logout-btn {
-          transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-        }
-
-        .logout-btn:hover {
-          transform: translateX(4px);
-          background-color: rgba(239, 68, 68, 0.1) !important;
-        }
-      `}</style>
-
-      {/* Sidebar */}
-      <aside
-        className={cn(
-          'relative flex flex-col bg-gradient-to-b from-[#1a1d29] to-[#12141d] text-white transition-all duration-400 ease-out shadow-2xl',
-          isExpanded ? 'w-64' : 'w-16'
-        )}
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
-      >
-        {/* Header */}
-        <div className={cn(
-          'flex h-16 items-center justify-between px-4 border-b border-white/10 transition-all duration-400',
-          isExpanded ? 'px-4' : 'px-0'
-        )}>
-          {isExpanded && (
-            <div className="flex items-center gap-3 animate-in fade-in slide-in-from-left">
-              <div className="rounded-lg bg-gradient-to-br from-red-500 to-red-600 p-1.5 shadow-lg">
-                <Shield className="h-5 w-5" />
-              </div>
-              <span className="text-lg font-bold bg-gradient-to-r from-red-400 to-red-300 bg-clip-text text-transparent">Admin</span>
-            </div>
-          )}
-          {!isExpanded && (
-            <div className="flex w-full justify-center">
-              <div className="rounded-lg bg-gradient-to-br from-red-500 to-red-600 p-1.5 shadow-lg">
-                <Shield className="h-5 w-5" />
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Navigation */}
-        <nav className="flex-1 space-y-1.5 overflow-y-auto px-3 py-4">
-          <TooltipProvider delayDuration={0}>
-            {adminMenuItems.map((item, index) => {
-              const isActive = pathname === item.href;
-              return (
-                <Tooltip key={item.href}>
-                  <TooltipTrigger asChild>
-                    <Link
-                      href={item.href}
-                      className={cn(
-                        'menu-item flex items-center gap-3 rounded-full px-3 py-2.5 text-sm font-medium transition-all duration-300',
-                        isActive
-                          ? 'active bg-gradient-to-r from-red-500/15 to-transparent text-red-300 shadow-md'
-                          : 'text-gray-400 hover:text-gray-200 hover:bg-white/5',
-                        'relative overflow-hidden group'
-                      )}
-                    >
-                      <div className="absolute inset-0 bg-gradient-to-r from-red-500/0 to-transparent opacity-0 group-hover:opacity-10 transition-opacity duration-300" />
-                      <item.Icon className={cn(
-                        'h-5 w-5 flex-shrink-0 transition-all duration-300',
-                        isActive && 'text-red-400'
-                      )} />
-                      {isExpanded && <span className="relative z-10">{item.label}</span>}
-                    </Link>
-                  </TooltipTrigger>
-                  {!isExpanded && (
-                    <TooltipContent side="right" className="bg-gray-900 text-white border-gray-700 font-medium">
-                      {item.label}
-                    </TooltipContent>
-                  )}
-                </Tooltip>
-              );
-            })}
-          </TooltipProvider>
-        </nav>
-
-        {/* Footer */}
-        <div className="border-t border-white/10 p-4 space-y-3">
-          <div className={cn(
-            'user-section flex items-center gap-3 rounded-lg bg-gradient-to-r from-red-500/10 to-transparent p-3 backdrop-blur-sm border border-red-500/20',
-            'transition-all duration-300 hover:bg-red-500/15 hover:border-red-500/40'
-          )}>
-            <Avatar className="h-8 w-8 ring-2 ring-red-500/30">
-              <AvatarFallback className="bg-gradient-to-br from-red-500 to-red-600 text-white font-semibold">
-                {getUserInitials()}
-              </AvatarFallback>
-            </Avatar>
-            {isExpanded && (
-              <div className="min-w-0 flex-1 animate-in fade-in slide-in-from-left">
-                <p className="truncate text-sm font-semibold text-white">{getUserDisplayName()}</p>
-                <p className="truncate text-xs text-gray-400">System Admin</p>
-              </div>
-            )}
+    <div className="flex min-h-dvh overflow-hidden bg-background">
+      <aside className="relative hidden w-60 shrink-0 flex-col bg-[#1a1520] text-white lg:flex">
+        <div className="flex h-14 items-center gap-2 border-b border-white/10 px-4">
+          <div className="rounded-lg bg-rose-600 p-1.5">
+            <Shield className="h-5 w-5" />
           </div>
-          <Button
-            onClick={handleLogout}
-            variant="ghost"
-            className={cn(
-              'logout-btn w-full justify-start text-gray-400 hover:text-white transition-all duration-300',
-              'hover:bg-red-500/10 active:scale-95'
-            )}
-          >
-            <LogOut className="h-4 w-4 mr-2 flex-shrink-0" />
-            {isExpanded && <span>Logout</span>}
-          </Button>
+          <span className="font-semibold">Admin</span>
         </div>
-
-        {/* Collapse Button */}
-        <div className="absolute -right-3 top-20 z-50">
-          <button
-            onClick={() => setIsCollapsed(!isCollapsed)}
-            className={cn(
-              'rounded-full bg-gray-800 p-1.5 shadow-lg hover:bg-gray-700 transition-all duration-300',
-              'hover:scale-110 active:scale-95 border border-gray-700/50'
-            )}
-            style={{
-              transform: isCollapsed ? 'rotate(180deg)' : 'rotate(0deg)',
-              transition: 'all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)',
-            }}
-          >
-            <ChevronLeft className="h-4 w-4 text-gray-300" />
-          </button>
+        {links}
+        <div className="space-y-2 border-t border-white/10 p-3">
+          <div className="flex items-center gap-3 rounded-xl bg-white/5 p-2">
+            <Avatar className="h-8 w-8">
+              <AvatarFallback className="bg-rose-600 text-white text-xs">{accountInitials(user)}</AvatarFallback>
+            </Avatar>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium">{accountLabel(user) || 'Admin'}</p>
+              <p className="truncate text-xs text-white/60">System admin</p>
+            </div>
+          </div>
+          <Button onClick={handleLogout} variant="ghost" className="min-h-11 w-full justify-start text-white/80 hover:text-white">
+            <LogOut className="h-4 w-4" />
+            Logout
+          </Button>
         </div>
       </aside>
 
-      {/* Main Content */}
-      <main className="flex-1 overflow-auto">
-        <div className="p-8">
-          {children}
-        </div>
-      </main>
+      <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+        <SheetContent side="left" className="w-[min(20rem,calc(100vw-1.5rem))] bg-[#1a1520] p-0 text-white">
+          <SheetHeader className="border-b border-white/10 p-4 text-left">
+            <SheetTitle className="text-white">Admin</SheetTitle>
+          </SheetHeader>
+          <div className="flex h-[calc(100dvh-4rem)] flex-col">
+            {links}
+            <div className="border-t border-white/10 p-3">
+              <Button onClick={handleLogout} variant="ghost" className="min-h-11 w-full justify-start text-white">
+                <LogOut className="h-4 w-4" />
+                Logout
+              </Button>
+            </div>
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b bg-background/90 px-3 backdrop-blur lg:hidden pt-[env(safe-area-inset-top)]">
+          <button
+            type="button"
+            onClick={() => setMobileOpen(true)}
+            className="inline-flex h-11 w-11 items-center justify-center rounded-xl hover:bg-muted"
+            aria-label="Open menu"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+          <span className="font-semibold">Admin</span>
+        </header>
+        <main className="flex-1 overflow-y-auto">
+          <div className="mx-auto w-full max-w-6xl px-4 py-5 sm:px-6 sm:py-6 lg:px-8">
+            {children}
+          </div>
+        </main>
+      </div>
     </div>
   );
 }

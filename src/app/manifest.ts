@@ -5,7 +5,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: 'FaidaFleet',
     short_name: 'FaidaFleet',
     description: 'Fleet management for matatu and logistics operators in Kenya.',
-    start_url: '/',
+    start_url: '/dashboard',
     scope: '/',
     display: 'standalone',
     background_color: '#1e3a5f',

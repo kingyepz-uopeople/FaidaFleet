@@ -23,7 +23,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { Search, MoreHorizontal, Trash2, Edit, Plus } from '@/components/icons';
+import { Search, MoreHorizontal, Trash2, Edit, Plus, KeyRound } from '@/components/icons';
+import { PinResetDialog } from '@/components/pin-reset-dialog';
 import { createClient } from '@/lib/supabase/client';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
@@ -56,6 +57,8 @@ export default function FleetOwnersPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [resetTenant, setResetTenant] = useState<Tenant | null>(null);
+  const [resetPhone, setResetPhone] = useState('');
   const [formData, setFormData] = useState({
     name: '',
     business_name: '',
@@ -146,9 +149,9 @@ export default function FleetOwnersPage() {
             business_name: formData.business_name || null,
             email: formData.email || null,
             phone: formData.phone || null,
-            plan: formData.plan,
+            plan: formData.plan as 'starter' | 'pro' | 'enterprise',
             is_active: true,
-          }] as Record<string, unknown>[]);
+          }]);
 
         if (err) throw err;
         setSuccess('Fleet owner created successfully');
@@ -262,9 +265,12 @@ export default function FleetOwnersPage() {
                 <Label htmlFor="phone">Phone</Label>
                 <Input
                   id="phone"
+                  type="tel"
+                  inputMode="tel"
+                  autoComplete="tel"
                   value={formData.phone}
                   onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                  placeholder="+254 700 000000"
+                  placeholder="0712345678"
                 />
               </div>
               <div>
@@ -385,6 +391,16 @@ export default function FleetOwnersPage() {
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem
+                                onClick={() => {
+                                  setResetTenant(tenant)
+                                  setResetPhone(tenant.phone || '')
+                                }}
+                                className="cursor-pointer"
+                              >
+                                <KeyRound className="h-4 w-4 mr-2" />
+                                Set / reset PIN
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
                                 onClick={() => handleOpenDialog(tenant)}
                                 className="cursor-pointer"
                               >
@@ -416,6 +432,36 @@ export default function FleetOwnersPage() {
           )}
         </CardContent>
       </Card>
+      <PinResetDialog
+        open={Boolean(resetTenant)}
+        onOpenChange={(open) => { if (!open) setResetTenant(null) }}
+        title="Set fleet owner PIN"
+        description="Create or reset the owner login PIN. If this fleet has no login yet, enter the owner's Kenyan phone number. The PIN is shown once."
+        name={resetTenant?.name}
+        extraFields={
+          <div className="space-y-2">
+            <Label htmlFor="owner-reset-phone">Owner phone</Label>
+            <Input
+              id="owner-reset-phone"
+              type="tel"
+              inputMode="tel"
+              autoComplete="tel"
+              placeholder="0712345678"
+              value={resetPhone}
+              onChange={(e) => setResetPhone(e.target.value)}
+            />
+          </div>
+        }
+        submit={async ({ pin, generate }) => {
+          if (!resetTenant) return { error: 'No fleet selected', generated: false }
+          const response = await fetch('/api/admin/pin', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ target: 'fleet_owner', tenantId: resetTenant.id, phone: resetPhone, pin, generate }),
+          })
+          return response.json()
+        }}
+      />
     </div>
   );
 }

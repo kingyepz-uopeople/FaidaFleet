@@ -66,7 +66,7 @@ export default function AnalyticsPage() {
   const slices = profitBreakdown(stats.totalProfit, stats.totalExpenses);
 
   return (
-    <div className="flex flex-col gap-6 p-6">
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 py-5 sm:px-6 sm:py-6">
       <div><h1 className="text-3xl font-bold">Financial Analytics</h1><p className="text-gray-600 dark:text-gray-400">Revenue, expenses, and profitability reports</p></div>
 
       {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}

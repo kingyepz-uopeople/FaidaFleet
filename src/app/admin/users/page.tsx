@@ -68,7 +68,7 @@ export default function AdminUsersPage() {
   const [formData, setFormData] = useState({
     email: '',
     full_name: '',
-    role: 'admin' as const,
+    role: 'admin' as 'super_admin' | 'admin' | 'moderator',
     permissions: [] as string[],
   });
   const supabase = createClient();
@@ -234,7 +234,7 @@ export default function AdminUsersPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Admin Users</h1>
-          <p className="text-gray-600 dark:text-gray-400">Manage system admin accounts</p>
+          <p className="text-gray-600 dark:text-gray-400">System admins sign in with email and password, not a PIN. Use Fleet Owners and All Drivers to set fleet PINs.</p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           {currentUserRole === 'super_admin' && (

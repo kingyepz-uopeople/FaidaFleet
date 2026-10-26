@@ -219,3 +219,33 @@ export function User(props: IconProps) {
 }
 export { Trash as Trash2 }
 export { CheckCircle as CheckCircle2 }
+
+export function Copy(props: IconProps) {
+  return (
+    <IconBase
+      viewBox="0 0 24 24"
+      markup={'<path d="M8 7.5A1.5 1.5 0 0 1 9.5 6h9A1.5 1.5 0 0 1 20 7.5v9a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 8 16.5v-9Z"/><path d="M6 9.5A1.5 1.5 0 0 0 4.5 11v9A1.5 1.5 0 0 0 6 21.5h9a1.5 1.5 0 0 0 1.5-1.5"/>'}
+      {...props}
+    />
+  )
+}
+
+export function Menu(props: IconProps) {
+  return (
+    <IconBase
+      viewBox="0 0 24 24"
+      markup={'<path d="M4 6.25h16a1.25 1.25 0 1 0 0-2.5H4a1.25 1.25 0 1 0 0 2.5Zm0 7h16a1.25 1.25 0 1 0 0-2.5H4a1.25 1.25 0 1 0 0 2.5Zm0 7h16a1.25 1.25 0 1 0 0-2.5H4a1.25 1.25 0 1 0 0 2.5Z"/>'}
+      {...props}
+    />
+  )
+}
+
+export function KeyRound(props: IconProps) {
+  return (
+    <IconBase
+      viewBox="0 0 24 24"
+      markup={'<path d="M14.5 3.5a6 6 0 0 0-5.66 8.02L3.2 17.16A1.5 1.5 0 0 0 3 18.2v2.3A1.5 1.5 0 0 0 4.5 22h2.3a1.5 1.5 0 0 0 1.06-.44l1.4-1.4A1.5 1.5 0 0 0 9.5 19v-.38l1.48-1.48A6 6 0 1 0 14.5 3.5Zm0 3a3 3 0 1 1 0 6 3 3 0 0 1 0-6Z"/>'}
+      {...props}
+    />
+  )
+}
