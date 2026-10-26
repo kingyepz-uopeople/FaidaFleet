@@ -13,7 +13,7 @@
  *
  * Bump VERSION whenever the caching behaviour changes so old caches are purged.
  */
-const VERSION = 'v1'
+const VERSION = 'v2'
 const STATIC_CACHE = `faidafleet-static-${VERSION}`
 const PAGES_CACHE = `faidafleet-pages-${VERSION}`
 const ASSETS_CACHE = `faidafleet-assets-${VERSION}`

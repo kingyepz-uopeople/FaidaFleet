@@ -31,12 +31,13 @@ const nextConfig: NextConfig = {
         ],
       },
       {
-        // PWA / favicon assets change rarely — cache them aggressively.
+        // Icon filenames are unversioned, so keep their cache lifetime
+        // moderate — brand artwork updates should propagate within a day.
         source: '/icons/:path*',
         headers: [
           {
             key: 'Cache-Control',
-            value: 'public, max-age=31536000, immutable',
+            value: 'public, max-age=86400, stale-while-revalidate=604800',
           },
         ],
       },
