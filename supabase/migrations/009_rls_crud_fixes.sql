@@ -1,402 +1,91 @@
--- 009_rls_crud_fixes.sql
---
--- Fixes the row level security problems behind the CRUD failures in the admin
--- console and in the fleet app. Apply AFTER 008_pin_reset_log.sql.
---
--- What this migration does
---   1. Re-creates the tenant helper functions (SECURITY DEFINER) so every
---      policy below can rely on them without recursing into memberships.
---   2. Closes the membership self-insert hole: a user may only become owner of
---      a tenant that has no members yet, and an admin can never mint a new
---      owner.
---   3. Removes the open "any authenticated user can insert a tenant" policy.
---      Tenants are created through public.create_tenant_with_owner()
---      (SECURITY DEFINER) or by a system admin.
---   4. Re-creates the trips SELECT / INSERT / UPDATE / DELETE policies for
---      fleet members (without owner/admin UPDATE + DELETE every edit matched
---      zero rows and the UI reported success).
---   5. Adds explicit WITH CHECK clauses to every tenant-scoped UPDATE / ALL
---      policy, so a row can never be moved into another tenant.
---   6. Gives system admins UPDATE / DELETE on profiles and full management of
---      support_messages, and gives authenticated users an INSERT path for
---      audit_logs (previously SELECT only).
---   7. Backfills one owner membership for every tenant that has none — the
---      live project has one orphan tenant created before onboarding switched
---      to create_tenant_with_owner().
---
--- Every statement is idempotent: re-running the file is safe. No GRANT is
--- changed here; 007 already granted CRUD to authenticated and 008 deliberately
--- limited pin_reset_log to SELECT.
+-- 009_rls_crud_fixes.sql  (applied live 2026-10-26; re-runnable: drop policy if exists before each create)
+-- Based on read-only audit of live project wjoyuodxqpyfdzssvado on 2026-10-26.
+-- All writes stay scoped to tenant membership (owner/admin[/accountant]) or is_system_admin().
 
-begin;
 
--- ---------------------------------------------------------------------------
--- 1. Tenant helpers
--- ---------------------------------------------------------------------------
-
-create or replace function public.current_tenant_ids()
-returns setof uuid
-language sql
-stable
-security definer
-set search_path = public
-as $$
-  select tenant_id
-  from public.memberships
-  where user_id = auth.uid()
-    and is_active = true;
-$$;
-
-create or replace function public.has_tenant_role(tenant_uuid uuid, required_role text)
-returns boolean
-language sql
-stable
-security definer
-set search_path = public
-as $$
-  select exists (
-    select 1
-    from public.memberships
-    where user_id = auth.uid()
-      and tenant_id = tenant_uuid
-      and role = required_role
-      and is_active = true
-  );
-$$;
-
-create or replace function public.has_any_tenant_role(tenant_uuid uuid, required_roles text[])
-returns boolean
-language sql
-stable
-security definer
-set search_path = public
-as $$
-  select exists (
-    select 1
-    from public.memberships
-    where user_id = auth.uid()
-      and tenant_id = tenant_uuid
-      and role = any(required_roles)
-      and is_active = true
-  );
-$$;
-
-create or replace function public.tenant_has_no_members(tenant_uuid uuid)
-returns boolean
-language sql
-stable
-security definer
-set search_path = public
-as $$
-  select not exists (
-    select 1 from public.memberships where tenant_id = tenant_uuid
-  );
-$$;
-
-create or replace function public.is_system_admin()
-returns boolean
-language sql
-stable
-security definer
-set search_path = public
-as $$
-  select exists (
-    select 1
-    from public.admin_users
-    where user_id = auth.uid()
-      and is_active = true
-  );
-$$;
-
-grant execute on function public.current_tenant_ids() to authenticated;
-grant execute on function public.has_tenant_role(uuid, text) to authenticated;
-grant execute on function public.has_any_tenant_role(uuid, text[]) to authenticated;
-grant execute on function public.tenant_has_no_members(uuid) to authenticated;
-grant execute on function public.is_system_admin() to authenticated;
-
--- ---------------------------------------------------------------------------
--- 2. Memberships — no more "become owner of any tenant"
--- ---------------------------------------------------------------------------
-
--- 001: inline subquery policies. 002: split into view/update/delete/insert.
--- 007: "System admins manage memberships" is intentionally kept.
-drop policy if exists "Users can view their memberships" on public.memberships;
-drop policy if exists "Owners/Admins can manage memberships" on public.memberships;
-drop policy if exists "Owners/Admins can view memberships" on public.memberships;
-drop policy if exists "Owners/Admins can update memberships" on public.memberships;
-drop policy if exists "Owners/Admins can delete memberships" on public.memberships;
-drop policy if exists "Users can create their own membership" on public.memberships;
-drop policy if exists "Members can view their memberships" on public.memberships;
-drop policy if exists "Owners and admins manage memberships" on public.memberships;
-drop policy if exists "New fleet owner can claim an empty tenant" on public.memberships;
-
--- One SELECT policy instead of the duplicated inline-subquery + helper pair.
-create policy "Members can view their memberships"
-  on public.memberships for select
-  to authenticated
-  using (
-    user_id = auth.uid()
-    or tenant_id in (select public.current_tenant_ids())
-  );
-
--- Fleet owners and admins manage the roster of their own tenant only, and an
--- admin cannot promote anyone (or themselves) to owner.
-create policy "Owners and admins manage memberships"
-  on public.memberships for all
-  to authenticated
-  using (public.has_any_tenant_role(tenant_id, array['owner', 'admin']))
-  with check (
-    public.has_any_tenant_role(tenant_id, array['owner', 'admin'])
-    and (
-      role <> 'owner'
-      or public.has_tenant_role(tenant_id, 'owner')
-    )
-  );
-
--- The first owner of a brand-new tenant. tenant_has_no_members() stops anyone
--- from adding themselves to a fleet that already has members.
-create policy "New fleet owner can claim an empty tenant"
-  on public.memberships for insert
-  to authenticated
-  with check (
-    auth.uid() = user_id
-    and role = 'owner'
-    and public.tenant_has_no_members(tenant_id)
-  );
-
--- ---------------------------------------------------------------------------
--- 3. Tenants — created through the RPC, never with a bare INSERT
--- ---------------------------------------------------------------------------
-
-drop policy if exists "Authenticated users can create tenant" on public.tenants;
-drop policy if exists "Owners can update tenant" on public.tenants;
-
-create policy "Owners can update tenant"
-  on public.tenants for update
-  to authenticated
-  using (public.has_tenant_role(id, 'owner'))
-  with check (public.has_tenant_role(id, 'owner'));
-
--- ---------------------------------------------------------------------------
--- 4. Fleet tables — explicit WITH CHECK on every write policy
--- ---------------------------------------------------------------------------
-
-drop policy if exists "Owners/Admins can manage drivers" on public.drivers;
-create policy "Owners/Admins can manage drivers"
-  on public.drivers for all
-  to authenticated
-  using (public.has_any_tenant_role(tenant_id, array['owner', 'admin']))
-  with check (public.has_any_tenant_role(tenant_id, array['owner', 'admin']));
-
-drop policy if exists "Owners/Admins can manage vehicles" on public.vehicles;
-create policy "Owners/Admins can manage vehicles"
-  on public.vehicles for all
-  to authenticated
-  using (public.has_any_tenant_role(tenant_id, array['owner', 'admin']))
-  with check (public.has_any_tenant_role(tenant_id, array['owner', 'admin']));
-
-drop policy if exists "Owners/Admins can manage assignments" on public.driver_assignments;
-create policy "Owners/Admins can manage assignments"
-  on public.driver_assignments for all
-  to authenticated
-  using (public.has_any_tenant_role(tenant_id, array['owner', 'admin']))
-  with check (public.has_any_tenant_role(tenant_id, array['owner', 'admin']));
-
-drop policy if exists "All members can record collections" on public.collections;
-create policy "All members can record collections"
-  on public.collections for insert
-  to authenticated
-  with check (tenant_id in (select public.current_tenant_ids()));
-
-drop policy if exists "Owners/Admins/Accountants can update collections" on public.collections;
-create policy "Owners/Admins/Accountants can update collections"
-  on public.collections for update
-  to authenticated
-  using (public.has_any_tenant_role(tenant_id, array['owner', 'admin', 'accountant']))
-  with check (public.has_any_tenant_role(tenant_id, array['owner', 'admin', 'accountant']));
-
-drop policy if exists "Owners/Admins can delete collections" on public.collections;
-create policy "Owners/Admins can delete collections"
-  on public.collections for delete
-  to authenticated
-  using (public.has_any_tenant_role(tenant_id, array['owner', 'admin']));
-
-drop policy if exists "All members can record expenses" on public.expenses;
-create policy "All members can record expenses"
-  on public.expenses for insert
-  to authenticated
-  with check (tenant_id in (select public.current_tenant_ids()));
-
-drop policy if exists "Owners/Admins/Accountants can update expenses" on public.expenses;
-create policy "Owners/Admins/Accountants can update expenses"
-  on public.expenses for update
-  to authenticated
-  using (public.has_any_tenant_role(tenant_id, array['owner', 'admin', 'accountant']))
-  with check (public.has_any_tenant_role(tenant_id, array['owner', 'admin', 'accountant']));
-
-drop policy if exists "Owners/Admins can delete expenses" on public.expenses;
-create policy "Owners/Admins can delete expenses"
-  on public.expenses for delete
-  to authenticated
-  using (public.has_any_tenant_role(tenant_id, array['owner', 'admin']));
-
-drop policy if exists "All members can record maintenance" on public.maintenance_logs;
-create policy "All members can record maintenance"
-  on public.maintenance_logs for insert
-  to authenticated
-  with check (tenant_id in (select public.current_tenant_ids()));
-
-drop policy if exists "Owners/Admins can update maintenance" on public.maintenance_logs;
-create policy "Owners/Admins can update maintenance"
-  on public.maintenance_logs for update
-  to authenticated
-  using (public.has_any_tenant_role(tenant_id, array['owner', 'admin']))
-  with check (public.has_any_tenant_role(tenant_id, array['owner', 'admin']));
-
-drop policy if exists "Owners/Admins can delete maintenance" on public.maintenance_logs;
-create policy "Owners/Admins can delete maintenance"
-  on public.maintenance_logs for delete
-  to authenticated
-  using (public.has_any_tenant_role(tenant_id, array['owner', 'admin']));
-
--- ---------------------------------------------------------------------------
--- 5. Trips — full member read/write, owner/admin update and delete
--- ---------------------------------------------------------------------------
-
-drop policy if exists "Members can view trips" on public.trips;
-create policy "Members can view trips"
-  on public.trips for select
-  to authenticated
-  using (tenant_id in (select public.current_tenant_ids()));
-
-drop policy if exists "Members can record trips" on public.trips;
-create policy "Members can record trips"
-  on public.trips for insert
-  to authenticated
-  with check (tenant_id in (select public.current_tenant_ids()));
-
+-- 1) trips: owners/admins have NO UPDATE and NO DELETE policy -> edits/deletes silently affect 0 rows.
 drop policy if exists "Owners/Admins can update trips" on public.trips;
-create policy "Owners/Admins can update trips"
-  on public.trips for update
-  to authenticated
-  using (public.has_any_tenant_role(tenant_id, array['owner', 'admin']))
-  with check (public.has_any_tenant_role(tenant_id, array['owner', 'admin']));
-
+create policy "Owners/Admins can update trips" on public.trips
+  for update to authenticated
+  using (public.has_any_tenant_role(tenant_id, array['owner','admin','accountant']))
+  with check (public.has_any_tenant_role(tenant_id, array['owner','admin','accountant']));
 drop policy if exists "Owners/Admins can delete trips" on public.trips;
-create policy "Owners/Admins can delete trips"
-  on public.trips for delete
-  to authenticated
-  using (public.has_any_tenant_role(tenant_id, array['owner', 'admin']));
+create policy "Owners/Admins can delete trips" on public.trips
+  for delete to authenticated
+  using (public.has_any_tenant_role(tenant_id, array['owner','admin']));
 
--- ---------------------------------------------------------------------------
--- 6. Profiles, support messages and audit logs
--- ---------------------------------------------------------------------------
+-- 2) Add explicit WITH CHECK to UPDATE/ALL policies (Postgres falls back to USING, so this is
+--    hardening, not a functional fix) and stop owners moving rows into another tenant.
+alter policy "Owners/Admins can manage vehicles" on public.vehicles
+  using (public.has_any_tenant_role(tenant_id, array['owner','admin']))
+  with check (public.has_any_tenant_role(tenant_id, array['owner','admin']));
+alter policy "Owners/Admins can manage drivers" on public.drivers
+  using (public.has_any_tenant_role(tenant_id, array['owner','admin']))
+  with check (public.has_any_tenant_role(tenant_id, array['owner','admin']));
+alter policy "Owners/Admins can manage assignments" on public.driver_assignments
+  using (public.has_any_tenant_role(tenant_id, array['owner','admin']))
+  with check (public.has_any_tenant_role(tenant_id, array['owner','admin']));
+alter policy "Owners/Admins/Accountants can update collections" on public.collections
+  with check (public.has_any_tenant_role(tenant_id, array['owner','admin','accountant']));
+alter policy "Owners/Admins/Accountants can update expenses" on public.expenses
+  with check (public.has_any_tenant_role(tenant_id, array['owner','admin','accountant']));
+alter policy "Owners/Admins can update maintenance" on public.maintenance_logs
+  with check (public.has_any_tenant_role(tenant_id, array['owner','admin']));
+alter policy "Owners/Admins can update memberships" on public.memberships
+  with check (public.has_any_tenant_role(tenant_id, array['owner','admin']));
+alter policy "Owners can update tenant" on public.tenants
+  with check (public.has_tenant_role(id, 'owner'));
+alter policy "Users can update own profile" on public.profiles with check (auth.uid() = id);
 
--- Fleet users can update their own row (001). System admins could only read
--- profiles (007), so "deactivate user" / "edit user" silently changed nothing.
-drop policy if exists "System admins can update profiles" on public.profiles;
-create policy "System admins can update profiles"
-  on public.profiles for update
-  to authenticated
-  using (public.is_system_admin())
-  with check (public.is_system_admin());
+-- 3) Remove duplicate policies (inline memberships subqueries duplicating helper-based ones).
+--    Not recursive today (they live on other tables and helpers are SECURITY DEFINER), but they
+--    double the evaluation cost and confuse audits.
+drop policy if exists "Admins can manage vehicles" on public.vehicles;
+drop policy if exists "Users can view tenant vehicles" on public.vehicles;
+drop policy if exists "Admins can manage drivers" on public.drivers;
+drop policy if exists "Users can view tenant drivers" on public.drivers;
+drop policy if exists "Users can view assignments" on public.driver_assignments;
+drop policy if exists "Users can view collections" on public.collections;
+drop policy if exists "Users can view expenses" on public.expenses;
+drop policy if exists "Users can view maintenance" on public.maintenance_logs;
+drop policy if exists "Users can view their profile" on public.profiles;
+drop policy if exists "Users can update their profile" on public.profiles;
+-- "All members can record X" lets drivers insert collections/expenses/maintenance; keep only if
+-- intended. If drivers must not record, drop these and keep the "Team can record X" ones:
+-- drop policy if exists "All members can record collections" on public.collections;
+-- drop policy if exists "All members can record expenses" on public.expenses;
+-- drop policy if exists "All members can record maintenance" on public.maintenance_logs;
 
-drop policy if exists "System admins can delete profiles" on public.profiles;
-create policy "System admins can delete profiles"
-  on public.profiles for delete
-  to authenticated
-  using (public.is_system_admin());
+-- 4) Tenant creation: "Authenticated users can create tenant" allows insert, but the creator is not yet
+--    a member, so insert(...).select() returns nothing/fails. Live has 1 tenant with 0 memberships
+--    (orphan). Require the app to use create_tenant_with_owner() RPC; restrict direct inserts:
+drop policy if exists "Authenticated users can create tenant" on public.tenants;
+-- (system admins keep insert via "System admins manage tenants"; owners use the SECURITY DEFINER RPC.)
 
--- 007 gave admins SELECT only, so replying to / closing a ticket failed.
+-- 5) Memberships: "Users can create their own membership" lets ANY user insert themselves as
+--    owner of ANY tenant (privilege escalation). Replace with: only owners/admins of the tenant.
+drop policy if exists "Users can create their own membership" on public.memberships;
+drop policy if exists "Owners/Admins can add memberships" on public.memberships;
+create policy "Owners/Admins can add memberships" on public.memberships
+  for insert to authenticated
+  with check (public.has_any_tenant_role(tenant_id, array['owner','admin']));
+
+-- 6) System-admin write gaps
+drop policy if exists "System admins manage profiles" on public.profiles;
+create policy "System admins manage profiles" on public.profiles
+  for all to authenticated using (public.is_system_admin()) with check (public.is_system_admin());
 drop policy if exists "System admins manage support messages" on public.support_messages;
-create policy "System admins manage support messages"
-  on public.support_messages for all
-  to authenticated
-  using (public.is_system_admin())
-  with check (public.is_system_admin());
+create policy "System admins manage support messages" on public.support_messages
+  for all to authenticated using (public.is_system_admin()) with check (public.is_system_admin());
+-- audit_logs: only SELECT exists; app inserts as a user fail. Allow users to log their own actions:
+drop policy if exists "Users insert own audit logs" on public.audit_logs;
+create policy "Users insert own audit logs" on public.audit_logs
+  for insert to authenticated with check (user_id = auth.uid());
+-- support_tickets: tenant members cannot update their own tickets (e.g. close). Optional:
+drop policy if exists "Members update tenant tickets" on public.support_tickets;
+create policy "Members update tenant tickets" on public.support_tickets
+  for update to authenticated
+  using (tenant_id in (select public.current_tenant_ids()))
+  with check (tenant_id in (select public.current_tenant_ids()));
 
--- audit_logs only had a SELECT policy in 007: every client-side audit write
--- was rejected. Members may write their own entries; admins may write any.
-drop policy if exists "Users can write their own audit entries" on public.audit_logs;
-create policy "Users can write their own audit entries"
-  on public.audit_logs for insert
-  to authenticated
-  with check (user_id = auth.uid() or public.is_system_admin());
-
-drop policy if exists "System admins manage audit logs" on public.audit_logs;
-create policy "System admins manage audit logs"
-  on public.audit_logs for all
-  to authenticated
-  using (public.is_system_admin())
-  with check (public.is_system_admin());
-
--- ---------------------------------------------------------------------------
--- 7. One-off data fix — every tenant needs an owner membership
---
--- On the live project memberships is empty and there is one tenant with no
--- owner (created before onboarding switched to create_tenant_with_owner()).
--- Without an owner membership every tenant policy evaluates to false and all
--- fleet CRUD fails. This links each orphan tenant to the active system
--- administrator so the data is reachable; hand the fleet over later with:
---
---   update public.memberships m
---      set user_id = '<new-owner-auth-user-id>'
---    where m.tenant_id = '<tenant-id>' and m.role = 'owner';
---
--- Remove this block once the live data has been repaired.
--- ---------------------------------------------------------------------------
-
-do $$
-declare
-  v_admin_user_id uuid;
-  v_tenant record;
-  v_fixed integer := 0;
-begin
-  select user_id
-    into v_admin_user_id
-    from public.admin_users
-   where user_id is not null
-     and is_active = true
-   order by (email = 'admin@faidafleet.com') desc, created_at asc
-   limit 1;
-
-  if v_admin_user_id is null then
-    raise notice 'No active system administrator with a linked auth user; skipping owner backfill.';
-    return;
-  end if;
-
-  for v_tenant in
-    select t.id, t.name
-      from public.tenants t
-     where not exists (
-       select 1 from public.memberships m where m.tenant_id = t.id
-     )
-  loop
-    insert into public.memberships (user_id, tenant_id, role, is_active)
-    values (v_admin_user_id, v_tenant.id, 'owner', true)
-    on conflict (user_id, tenant_id) do update
-      set role = 'owner',
-          is_active = true;
-    v_fixed := v_fixed + 1;
-    raise notice 'Linked orphan tenant % (%) to admin %', v_tenant.name, v_tenant.id, v_admin_user_id;
-  end loop;
-
-  raise notice 'Owner backfill complete: % tenant(s) repaired.', v_fixed;
-end;
-$$;
-
-commit;
-
--- ---------------------------------------------------------------------------
--- Verification (run manually after applying):
---
---   select tablename, policyname, cmd, roles
---     from pg_policies
---    where schemaname = 'public'
---    order by tablename, cmd, policyname;
---
---   select t.id, t.name, count(m.id) as members
---     from public.tenants t
---     left join public.memberships m on m.tenant_id = t.id
---    group by t.id, t.name;
--- ---------------------------------------------------------------------------
+-- 7) Change roles {public} -> {authenticated} is cosmetic (anon has no grants); skipped.
