@@ -10,7 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Loader2, Car } from '@/components/icons'
 import { accountPhone } from '@/lib/phone'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { NativeSelect } from '@/components/ui/native-select'
 
 export default function OnboardingPage() {
   const [fleetName, setFleetName] = useState('')
@@ -32,11 +32,23 @@ export default function OnboardingPage() {
         setBlockedDriver(true)
         return
       }
+      // One fleet per owner login: sending them through onboarding again would
+      // create another tenant with no owner membership.
+      const { data: membership } = await supabase
+        .from('memberships')
+        .select('tenant_id')
+        .eq('user_id', user.id)
+        .eq('is_active', true)
+        .maybeSingle()
+      if (membership) {
+        router.replace('/dashboard')
+        return
+      }
       const savedPhone = accountPhone(user)
       if (savedPhone) setPhone(savedPhone)
     }
     loadAccount()
-  }, [supabase])
+  }, [router, supabase])
 
   const handleCreateFleet = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -181,31 +193,16 @@ export default function OnboardingPage() {
 
             <div className="space-y-2">
               <Label htmlFor="plan">Plan</Label>
-              <Select value={plan} onValueChange={(value: any) => setPlan(value)} disabled={loading}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="starter">
-                    <div className="flex flex-col items-start">
-                      <span className="font-medium">Starter (Free)</span>
-                      <span className="text-xs text-muted-foreground">1-3 vehicles</span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="pro">
-                    <div className="flex flex-col items-start">
-                      <span className="font-medium">Pro (KES 1,000/month)</span>
-                      <span className="text-xs text-muted-foreground">4-10 vehicles</span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="enterprise">
-                    <div className="flex flex-col items-start">
-                      <span className="font-medium">Enterprise (Custom)</span>
-                      <span className="text-xs text-muted-foreground">10+ vehicles</span>
-                    </div>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
+              <NativeSelect
+                id="plan"
+                value={plan}
+                onChange={(event) => setPlan(event.target.value as typeof plan)}
+                disabled={loading}
+              >
+                <option value="starter">Starter — Free (1-3 vehicles)</option>
+                <option value="pro">Pro — KES 1,000/month (4-10 vehicles)</option>
+                <option value="enterprise">Enterprise — custom (10+ vehicles)</option>
+              </NativeSelect>
             </div>
 
             <div className="bg-blue-50 p-4 rounded-lg space-y-2">

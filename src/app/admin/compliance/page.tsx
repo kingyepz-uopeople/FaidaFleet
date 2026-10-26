@@ -4,7 +4,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { createClient } from '@/lib/supabase/client';
 import { AlertTriangle, CheckCircle, Clock } from '@/components/icons';
-import { AdminKpi, AdminPageHeader, AdminRecordList, AdminSearch, StatusBadge, formatDate } from '@/components/admin-ui';
+import { AdminFeedback, AdminKpi, AdminPageHeader, AdminRecordList, AdminSearch, StatusBadge, formatDate } from '@/components/admin-ui';
+import { toastError } from '@/lib/toast';
 import { isAdminUiPreview, previewDrivers } from '@/lib/admin-preview';
 
 type Driver = {
@@ -30,6 +31,7 @@ export default function CompliancePage() {
   );
   const [loading, setLoading] = useState(!preview);
   const [query, setQuery] = useState('');
+  const [error, setError] = useState<string | null>(null);
   const supabase = createClient();
 
   useEffect(() => {
@@ -42,13 +44,16 @@ export default function CompliancePage() {
         setDrivers(previewDrivers.map((d) => ({ id: d.id, full_name: d.full_name, license_expiry: d.license_expiry, license_number: d.license_number, tenants: d.tenants })));
         return;
       }
-      const { data } = await supabase
+      const { data, error: loadError } = await supabase
         .from('drivers')
         .select('id, full_name, license_expiry, license_number, tenants(name)')
         .eq('is_active', true);
+      if (loadError) throw loadError;
       setDrivers((data || []) as Driver[]);
-    } catch (error) {
-      console.error('Error fetching compliance data:', error);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Could not load compliance data';
+      setError(message);
+      toastError(message, 'Could not load compliance data');
     } finally {
       setLoading(false);
     }
@@ -98,6 +103,7 @@ export default function CompliancePage() {
   return (
     <>
       <AdminPageHeader title="Compliance" description="Driver licence expiry across every fleet." />
+      <AdminFeedback error={error} />
       <AdminSearch value={query} onChange={setQuery} placeholder="Search driver or fleet…" />
 
       {expiredLicenses.length > 0 && (

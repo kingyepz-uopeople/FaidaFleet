@@ -1,6 +1,6 @@
-"use client";
+'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Table,
   TableBody,
@@ -9,99 +9,104 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { PlusCircle, Loader2, Trash, Edit } from '@/components/icons';
-import { createClient } from '@/lib/supabase/client';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { format } from 'date-fns';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { PlusCircle, Loader2, Trash2, Edit, Receipt, TrendingDown } from '@/components/icons';
+import { createClient } from '@/lib/supabase/client';
+import { assertMutation, assertMutationRow } from '@/lib/db';
+import { toastError, toastSuccess } from '@/lib/toast';
+import { formatDateOnly } from '@/lib/dates';
+import { EmptyState, PageShell, TableScroll } from '@/components/page-shell';
+import { FormDialog } from '@/components/form-dialog';
+import { NativeSelect } from '@/components/ui/native-select';
+import { StatCard } from '@/components/stat-card';
+
+type ExpenseCategory = 'fuel' | 'maintenance' | 'insurance' | 'license' | 'parking' | 'fine' | 'other';
 
 type Expense = {
   id: string;
-  vehicle_id: string;
-  category: string;
+  vehicle_id: string | null;
+  category: ExpenseCategory;
   amount: number;
   date: string;
   description: string | null;
-  vehicles: { registration_number: string };
+  vehicles: { registration_number: string } | null;
 };
 
-type Vehicle = {
-  id: string;
-  registration_number: string;
+type Option = { id: string; label: string };
+
+const CATEGORY_LABELS: Record<ExpenseCategory, string> = {
+  fuel: 'Fuel',
+  maintenance: 'Maintenance',
+  insurance: 'Insurance',
+  license: 'Licence',
+  parking: 'Parking',
+  fine: 'Fine',
+  other: 'Other',
+};
+
+const EMPTY_FORM = {
+  vehicleId: '',
+  category: 'fuel' as ExpenseCategory,
+  amount: '',
+  date: new Date().toISOString().split('T')[0],
+  description: '',
 };
 
 export default function ExpensesPage() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [vehicles, setVehicles] = useState<Option[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
-  const [open, setOpen] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Expense | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
   const [tenantId, setTenantId] = useState<string | null>(null);
-
-  const [form, setForm] = useState({
-    vehicleId: '',
-    category: 'Fuel',
-    amount: '',
-    date: new Date().toISOString().split('T')[0],
-    description: '',
-  });
-
-  const supabase = createClient();
+  const [form, setForm] = useState(EMPTY_FORM);
+  const supabase = useMemo(() => createClient(), []);
 
   useEffect(() => {
     fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchData = async () => {
     try {
       setLoading(true);
-      setError(null);
-
+      setLoadError(null);
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Not authenticated');
+      if (!user) throw new Error('You need to sign in again.');
 
-      const membershipResp = await supabase
+      const { data: membership, error: membershipError } = await supabase
         .from('memberships')
         .select('tenant_id')
         .eq('user_id', user.id)
         .eq('is_active', true)
-        .single();
+        .maybeSingle();
 
-      const membership: any = membershipResp.data;
-      if (!membership) throw new Error('No tenant found');
-      const tId = membership.tenant_id;
-      setTenantId(tId);
+      if (membershipError) throw membershipError;
+      if (!membership) {
+        setLoadError('No fleet is linked to this account yet. Finish onboarding to record expenses.');
+        return;
+      }
+
+      setTenantId(membership.tenant_id);
 
       const [expensesRes, vehiclesRes] = await Promise.all([
         supabase
           .from('expenses')
           .select('*, vehicles(registration_number)')
-          .eq('tenant_id', tId)
+          .eq('tenant_id', membership.tenant_id)
           .order('date', { ascending: false }),
         supabase
           .from('vehicles')
           .select('id, registration_number')
-          .eq('tenant_id', tId)
+          .eq('tenant_id', membership.tenant_id)
           .eq('is_active', true)
           .order('registration_number'),
       ]);
@@ -109,302 +114,320 @@ export default function ExpensesPage() {
       if (expensesRes.error) throw expensesRes.error;
       if (vehiclesRes.error) throw vehiclesRes.error;
 
-      setExpenses(expensesRes.data || []);
-      setVehicles(vehiclesRes.data || []);
-    } catch (err: any) {
-      setError(err.message);
+      setExpenses((expensesRes.data || []) as Expense[]);
+      setVehicles((vehiclesRes.data || []).map((row) => ({ id: row.id, label: row.registration_number })));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Could not load expenses';
+      setLoadError(message);
+      toastError(message, 'Could not load expenses');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleOpenDialog = (expense?: Expense) => {
-    if (expense) {
-      setEditing(expense);
-      setForm({
-        vehicleId: expense.vehicle_id,
-        category: expense.category.charAt(0).toUpperCase() + expense.category.slice(1),
-        amount: expense.amount.toString(),
-        date: expense.date,
-        description: expense.description || '',
-      });
-    } else {
-      setEditing(null);
-      setForm({
-        vehicleId: '',
-        category: 'Fuel',
-        amount: '',
-        date: new Date().toISOString().split('T')[0],
-        description: '',
-      });
-    }
-    setOpen(true);
+  const openCreate = () => {
+    setEditing(null);
+    setForm(EMPTY_FORM);
+    setFormError(null);
+    setDialogOpen(true);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const openEdit = (expense: Expense) => {
+    setEditing(expense);
+    setForm({
+      vehicleId: expense.vehicle_id || '',
+      category: expense.category,
+      amount: expense.amount.toString(),
+      date: expense.date,
+      description: expense.description || '',
+    });
+    setFormError(null);
+    setDialogOpen(true);
+  };
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
     setSubmitting(true);
-    setError(null);
+    setFormError(null);
 
     try {
-      if (!tenantId) throw new Error('No tenant found');
-      if (!form.vehicleId || !form.amount) {
-        throw new Error('Vehicle and Amount are required');
-      }
+      if (!tenantId) throw new Error('No fleet found for this account.');
+      const amount = Number.parseFloat(form.amount);
+      if (!Number.isFinite(amount) || amount < 0) throw new Error('Enter a valid amount');
+      if (!form.date) throw new Error('Choose the expense date');
 
-      const payload: any = {
+      const payload = {
         tenant_id: tenantId,
-        vehicle_id: form.vehicleId,
-        category: form.category.toLowerCase(),
-        amount: parseFloat(form.amount),
+        vehicle_id: form.vehicleId || null,
+        category: form.category,
+        amount,
         date: form.date,
-        description: form.description || null,
+        description: form.description.trim() || null,
       };
 
-      if (editing) {
-        const { error: err } = await supabase
-          .from('expenses')
-          .update(payload)
-          .eq('id', editing.id);
-        if (err) throw err;
-        setSuccess('Expense updated successfully');
-      } else {
-        const { error: err } = await supabase
-          .from('expenses')
-          .insert([payload]);
-        if (err) throw err;
-        setSuccess('Expense recorded successfully');
-      }
+      const result = editing
+        ? await supabase.from('expenses').update(payload).eq('id', editing.id).select('id')
+        : await supabase.from('expenses').insert([payload]).select('id');
 
-      setOpen(false);
+      assertMutationRow(result, editing ? 'Could not update the expense' : 'Could not record the expense');
+      toastSuccess(editing ? 'Expense updated.' : 'Expense recorded.', 'Saved');
+      setDialogOpen(false);
       await fetchData();
-      setTimeout(() => setSuccess(null), 3000);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Could not save the expense';
+      setFormError(message);
+      toastError(message, 'Could not save the expense');
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!window.confirm('Delete this expense?')) return;
-
+  const handleDelete = async (expense: Expense) => {
+    if (!window.confirm('Delete this expense? This cannot be undone.')) return;
     try {
-      const { error: err } = await supabase
-        .from('expenses')
-        .delete()
-        .eq('id', id);
-      if (err) throw err;
-      setSuccess('Expense deleted successfully');
+      const result = await supabase.from('expenses').delete().eq('id', expense.id).select('id');
+      assertMutation(result, 'Could not delete the expense');
+      toastSuccess('Expense deleted.', 'Deleted');
       await fetchData();
-      setTimeout(() => setSuccess(null), 3000);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      toastError(err, 'Could not delete the expense');
     }
   };
 
-  const getCategoryColor = (category: string) => {
-    switch (category.toLowerCase()) {
-      case 'fuel':
-        return 'bg-orange-100 text-orange-800';
-      case 'maintenance':
-        return 'bg-blue-100 text-blue-800';
-      case 'fine':
-        return 'bg-red-100 text-red-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
-  };
-
-  const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
+  const totalExpenses = expenses.reduce((sum, expense) => sum + expense.amount, 0);
+  const averageExpense = expenses.length > 0 ? Math.round(totalExpenses / expenses.length) : 0;
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 py-5 sm:px-6 sm:py-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Expenses</h1>
-          <p className="text-gray-600 dark:text-gray-400">Track operational costs</p>
-        </div>
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
-            <Button onClick={() => handleOpenDialog()} className="bg-blue-600 hover:bg-blue-700">
-              <PlusCircle className="mr-2 h-4 w-4" />
-              Add Expense
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle>{editing ? 'Edit Expense' : 'Add Expense'}</DialogTitle>
-            </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <Label>Vehicle *</Label>
-                <Select value={form.vehicleId} onValueChange={(v) => setForm({ ...form, vehicleId: v })}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select vehicle" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {vehicles.map((v) => (
-                      <SelectItem key={v.id} value={v.id}>
-                        {v.registration_number}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+    <PageShell
+      title="Expenses"
+      description="Track fuel, maintenance, and other operating costs."
+      actions={
+        <Button type="button" onClick={openCreate}>
+          <PlusCircle className="mr-2 h-4 w-4" />
+          Add expense
+        </Button>
+      }
+    >
+      {loadError && (
+        <Alert variant="destructive">
+          <AlertDescription>{loadError}</AlertDescription>
+        </Alert>
+      )}
 
-              <div>
-                <Label>Type *</Label>
-                <Select value={form.category} onValueChange={(v) => setForm({ ...form, category: v })}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Fuel">Fuel</SelectItem>
-                    <SelectItem value="Maintenance">Maintenance</SelectItem>
-                    <SelectItem value="Fine">Fine</SelectItem>
-                    <SelectItem value="Other">Other</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div>
-                <Label>Amount (KES) *</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={form.amount}
-                  onChange={(e) => setForm({ ...form, amount: e.target.value })}
-                  placeholder="0.00"
-                  required
-                />
-              </div>
-
-              <div>
-                <Label>Date *</Label>
-                <Input
-                  type="date"
-                  value={form.date}
-                  onChange={(e) => setForm({ ...form, date: e.target.value })}
-                  required
-                />
-              </div>
-
-              <div>
-                <Label>Description</Label>
-                <textarea
-                  value={form.description}
-                  onChange={(e) => setForm({ ...form, description: e.target.value })}
-                  placeholder="Optional notes..."
-                  className="w-full border rounded px-2 py-2"
-                  rows={3}
-                />
-              </div>
-
-              {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
-
-              <div className="flex gap-2">
-                <Button type="button" variant="outline" onClick={() => setOpen(false)} className="flex-1">
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={submitting} className="flex-1 bg-blue-600">
-                  {submitting ? 'Saving...' : editing ? 'Update' : 'Add'}
-                </Button>
-              </div>
-            </form>
-          </DialogContent>
-        </Dialog>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <StatCard
+          title="Total expenses"
+          value={`KES ${totalExpenses.toLocaleString()}`}
+          description={`${expenses.length} records`}
+          Icon={TrendingDown}
+        />
+        <StatCard title="Average expense" value={`KES ${averageExpense.toLocaleString()}`} description="Per transaction" Icon={Receipt} />
       </div>
 
-      {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
-      {success && <Alert className="bg-green-50 text-green-800 border-green-200"><AlertDescription>{success}</AlertDescription></Alert>}
-
-      {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Total Expenses</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-3xl font-bold text-red-600">KES {totalExpenses.toLocaleString()}</p>
-            <p className="text-sm text-gray-500">{expenses.length} records</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Average Expense</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-3xl font-bold">KES {expenses.length > 0 ? Math.round(totalExpenses / expenses.length) : 0}</p>
-            <p className="text-sm text-gray-500">Per transaction</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Expenses Table */}
       <Card>
         <CardHeader>
-          <CardTitle>Expense Log</CardTitle>
+          <CardTitle>Expense log</CardTitle>
           <CardDescription>{expenses.length} expenses recorded</CardDescription>
         </CardHeader>
         <CardContent>
           {loading ? (
             <div className="flex justify-center py-8">
-              <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
             </div>
           ) : expenses.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">
-              <p>No expenses recorded yet</p>
-              <Button onClick={() => handleOpenDialog()} className="mt-4">
-                <PlusCircle className="mr-2 h-4 w-4" />
-                Record First Expense
-              </Button>
-            </div>
+            <EmptyState
+              title="No expenses recorded yet"
+              description="Add an expense to keep your profit figures accurate."
+              action={
+                <Button type="button" onClick={openCreate}>
+                  <PlusCircle className="mr-2 h-4 w-4" />
+                  Record your first expense
+                </Button>
+              }
+            />
           ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Vehicle</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Amount</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead>Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {expenses.map((expense) => (
-                    <TableRow key={expense.id}>
-                      <TableCell>{format(new Date(expense.date), 'MMM dd, yyyy')}</TableCell>
-                      <TableCell className="font-medium">{expense.vehicles?.registration_number}</TableCell>
-                      <TableCell>
-                        <div className={`inline-block px-2 py-1 rounded text-sm font-medium ${getCategoryColor(expense.category)}`}>
-                          {expense.category}
-                        </div>
-                      </TableCell>
-                      <TableCell className="font-bold">KES {expense.amount.toLocaleString()}</TableCell>
-                      <TableCell>{expense.description || '—'}</TableCell>
-                      <TableCell>
-                        <div className="flex gap-2">
-                          <Button variant="ghost" size="sm" onClick={() => handleOpenDialog(expense)}>
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button variant="ghost" size="sm" onClick={() => handleDelete(expense.id)}>
-                            <Trash className="h-4 w-4 text-red-600" />
-                          </Button>
-                        </div>
-                      </TableCell>
+            <>
+              <div className="grid gap-3 md:hidden">
+                {expenses.map((expense) => (
+                  <article key={expense.id} className="rounded-2xl border bg-card p-4 shadow-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold">KES {expense.amount.toLocaleString()}</p>
+                        <p className="truncate text-sm text-muted-foreground">
+                          {expense.vehicles?.registration_number || 'General expense'} · {formatDateOnly(expense.date)}
+                        </p>
+                      </div>
+                      <Badge variant="secondary">{CATEGORY_LABELS[expense.category]}</Badge>
+                    </div>
+                    {expense.description && (
+                      <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">{expense.description}</p>
+                    )}
+                    <div className="mt-3 flex gap-2">
+                      <Button type="button" variant="outline" className="min-h-11 flex-1" onClick={() => openEdit(expense)}>
+                        <Edit className="mr-2 h-4 w-4" /> Edit
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="min-h-11 text-destructive"
+                        onClick={() => handleDelete(expense)}
+                        aria-label="Delete expense"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+
+              <TableScroll>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Vehicle</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Amount</TableHead>
+                      <TableHead>Description</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+                  </TableHeader>
+                  <TableBody>
+                    {expenses.map((expense) => (
+                      <TableRow key={expense.id}>
+                        <TableCell>{formatDateOnly(expense.date)}</TableCell>
+                        <TableCell className="font-medium">{expense.vehicles?.registration_number || '—'}</TableCell>
+                        <TableCell>
+                          <Badge variant="secondary">{CATEGORY_LABELS[expense.category]}</Badge>
+                        </TableCell>
+                        <TableCell className="font-semibold">KES {expense.amount.toLocaleString()}</TableCell>
+                        <TableCell className="max-w-xs truncate">{expense.description || '—'}</TableCell>
+                        <TableCell>
+                          <div className="flex justify-end gap-1">
+                            <Button type="button" variant="ghost" size="sm" className="min-h-11" onClick={() => openEdit(expense)}>
+                              <Edit className="h-4 w-4" />
+                              <span className="sr-only">Edit expense</span>
+                            </Button>
+                            <Button type="button" variant="ghost" size="sm" className="min-h-11 text-destructive" onClick={() => handleDelete(expense)}>
+                              <Trash2 className="h-4 w-4" />
+                              <span className="sr-only">Delete expense</span>
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableScroll>
+            </>
           )}
         </CardContent>
       </Card>
-    </div>
+
+      <FormDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        title={editing ? 'Edit expense' : 'Add expense'}
+        description="Vehicle is optional for costs that are not tied to one vehicle."
+      >
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="expense_vehicle">Vehicle</Label>
+            <NativeSelect
+              id="expense_vehicle"
+              value={form.vehicleId}
+              onChange={(event) => setForm({ ...form, vehicleId: event.target.value })}
+              disabled={submitting}
+            >
+              <option value="">General expense</option>
+              {vehicles.map((vehicle) => (
+                <option key={vehicle.id} value={vehicle.id}>{vehicle.label}</option>
+              ))}
+            </NativeSelect>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="expense_category">Type *</Label>
+            <NativeSelect
+              id="expense_category"
+              value={form.category}
+              onChange={(event) => setForm({ ...form, category: event.target.value as ExpenseCategory })}
+              required
+              disabled={submitting}
+            >
+              {Object.entries(CATEGORY_LABELS).map(([value, label]) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </NativeSelect>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="expense_amount">Amount (KES) *</Label>
+              <Input
+                id="expense_amount"
+                type="number"
+                inputMode="decimal"
+                step="0.01"
+                min="0"
+                value={form.amount}
+                onChange={(event) => setForm({ ...form, amount: event.target.value })}
+                placeholder="0.00"
+                required
+                disabled={submitting}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="expense_date">Date *</Label>
+              <Input
+                id="expense_date"
+                type="date"
+                value={form.date}
+                onChange={(event) => setForm({ ...form, date: event.target.value })}
+                required
+                disabled={submitting}
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="expense_description">Description</Label>
+            <textarea
+              id="expense_description"
+              value={form.description}
+              onChange={(event) => setForm({ ...form, description: event.target.value })}
+              placeholder="Optional notes…"
+              rows={3}
+              disabled={submitting}
+              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50"
+            />
+          </div>
+
+          {formError && (
+            <Alert variant="destructive">
+              <AlertDescription>{formError}</AlertDescription>
+            </Alert>
+          )}
+
+          <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
+            <Button type="button" variant="outline" className="min-h-11" onClick={() => setDialogOpen(false)} disabled={submitting}>
+              Cancel
+            </Button>
+            <Button type="submit" className="min-h-11" disabled={submitting}>
+              {submitting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Saving…
+                </>
+              ) : editing ? (
+                'Update expense'
+              ) : (
+                'Add expense'
+              )}
+            </Button>
+          </div>
+        </form>
+      </FormDialog>
+    </PageShell>
   );
 }

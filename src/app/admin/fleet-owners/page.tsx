@@ -4,18 +4,14 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { MoreHorizontal, Trash2, Edit, Plus, KeyRound } from '@/components/icons';
 import { PinResetDialog } from '@/components/pin-reset-dialog';
+import { FormDialog } from '@/components/form-dialog';
+import { NativeSelect } from '@/components/ui/native-select';
 import { createClient } from '@/lib/supabase/client';
+import { assertMutation, assertMutationRow } from '@/lib/db';
+import { toastError, toastSuccess } from '@/lib/toast';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -29,7 +25,6 @@ import {
   AdminSearch,
   RowActionsTrigger,
   StatusBadge,
-  adminSelectClass,
   formatDate,
   planTone,
   titleCase,
@@ -42,16 +37,25 @@ type Tenant = {
   business_name: string | null;
   email: string | null;
   phone: string | null;
-  plan: string;
+  plan: 'starter' | 'pro' | 'enterprise';
   is_active: boolean;
   created_at: string;
 };
 
-const PLANS = ['starter', 'pro', 'enterprise'];
+const PLANS = ['starter', 'pro', 'enterprise'] as const;
+
+const EMPTY_FORM = {
+  name: '',
+  business_name: '',
+  email: '',
+  phone: '',
+  plan: 'starter' as Tenant['plan'],
+};
 
 export default function FleetOwnersPage() {
   const preview = isAdminUiPreview();
   const [tenants, setTenants] = useState<Tenant[]>(preview ? previewTenants : []);
+  const [ownerTenantIds, setOwnerTenantIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(!preview);
   const [searchQuery, setSearchQuery] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -59,19 +63,15 @@ export default function FleetOwnersPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
   const [resetTenant, setResetTenant] = useState<Tenant | null>(null);
   const [resetPhone, setResetPhone] = useState('');
-  const [formData, setFormData] = useState({
-    name: '',
-    business_name: '',
-    email: '',
-    phone: '',
-    plan: 'starter',
-  });
-  const supabase = createClient();
+  const [formData, setFormData] = useState(EMPTY_FORM);
+  const supabase = useMemo(() => createClient(), []);
 
   useEffect(() => {
     fetchTenants();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchTenants = async () => {
@@ -79,13 +79,21 @@ export default function FleetOwnersPage() {
       setLoading(true);
       if (isAdminUiPreview()) {
         setTenants(previewTenants);
+        setOwnerTenantIds(new Set(['t1', 't2']));
         return;
       }
-      const { data, error: err } = await supabase.from('tenants').select('*').order('created_at', { ascending: false });
-      if (err) throw err;
-      setTenants(data || []);
+      const [tenantsRes, ownersRes] = await Promise.all([
+        supabase.from('tenants').select('*').order('created_at', { ascending: false }),
+        supabase.from('memberships').select('tenant_id').eq('role', 'owner').eq('is_active', true),
+      ]);
+      if (tenantsRes.error) throw tenantsRes.error;
+      if (ownersRes.error) throw ownersRes.error;
+      setTenants((tenantsRes.data || []) as Tenant[]);
+      setOwnerTenantIds(new Set((ownersRes.data || []).map((row) => row.tenant_id)));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch fleet owners');
+      const message = err instanceof Error ? err.message : 'Could not load fleet owners';
+      setError(message);
+      toastError(message, 'Could not load fleet owners');
     } finally {
       setLoading(false);
     }
@@ -93,87 +101,94 @@ export default function FleetOwnersPage() {
 
   const filteredTenants = useMemo(() => {
     const needle = searchQuery.toLowerCase();
-    return tenants.filter((tenant) =>
-      tenant.name.toLowerCase().includes(needle) ||
-      tenant.business_name?.toLowerCase().includes(needle) ||
-      tenant.email?.toLowerCase().includes(needle),
+    return tenants.filter(
+      (tenant) =>
+        tenant.name.toLowerCase().includes(needle) ||
+        tenant.business_name?.toLowerCase().includes(needle) ||
+        tenant.email?.toLowerCase().includes(needle),
     );
   }, [searchQuery, tenants]);
 
-  const handleOpenDialog = (tenant?: Tenant) => {
-    if (tenant) {
-      setEditingId(tenant.id);
-      setFormData({
-        name: tenant.name,
-        business_name: tenant.business_name || '',
-        email: tenant.email || '',
-        phone: tenant.phone || '',
-        plan: tenant.plan,
-      });
-    } else {
-      setEditingId(null);
-      setFormData({ name: '', business_name: '', email: '', phone: '', plan: 'starter' });
-    }
+  const openCreate = () => {
+    setEditingId(null);
+    setFormData(EMPTY_FORM);
+    setFormError(null);
     setDialogOpen(true);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const openEdit = (tenant: Tenant) => {
+    setEditingId(tenant.id);
+    setFormData({
+      name: tenant.name,
+      business_name: tenant.business_name || '',
+      email: tenant.email || '',
+      phone: tenant.phone || '',
+      plan: tenant.plan,
+    });
+    setFormError(null);
+    setDialogOpen(true);
+  };
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
     setSubmitting(true);
-    setError(null);
+    setFormError(null);
     try {
-      if (editingId) {
-        const { error: err } = await supabase.from('tenants').update({
-          name: formData.name,
-          business_name: formData.business_name || null,
-          email: formData.email || null,
-          phone: formData.phone || null,
-          plan: formData.plan as 'starter' | 'pro' | 'enterprise',
-        }).eq('id', editingId);
-        if (err) throw err;
-        setSuccess('Fleet owner updated successfully');
-      } else {
-        const { error: err } = await supabase.from('tenants').insert([{
-          name: formData.name,
-          business_name: formData.business_name || null,
-          email: formData.email || null,
-          phone: formData.phone || null,
-          plan: formData.plan as 'starter' | 'pro' | 'enterprise',
-          is_active: true,
-        }]);
-        if (err) throw err;
-        setSuccess('Fleet owner created successfully');
-      }
+      if (!formData.name.trim()) throw new Error('Company name is required');
+
+      const payload = {
+        name: formData.name.trim(),
+        business_name: formData.business_name.trim() || null,
+        email: formData.email.trim() || null,
+        phone: formData.phone.trim() || null,
+        plan: formData.plan,
+      };
+
+      const result = editingId
+        ? await supabase.from('tenants').update(payload).eq('id', editingId).select('id')
+        : await supabase.from('tenants').insert([{ ...payload, is_active: true }]).select('id');
+
+      assertMutationRow(result, editingId ? 'Could not update the fleet owner' : 'Could not create the fleet owner');
+      setSuccess(editingId ? 'Fleet owner updated.' : 'Fleet owner created. Set a PIN so they can sign in.');
+      toastSuccess(editingId ? 'Fleet owner updated.' : 'Fleet owner created.', 'Saved');
       setDialogOpen(false);
       await fetchTenants();
-      setTimeout(() => setSuccess(null), 3000);
+      setTimeout(() => setSuccess(null), 4000);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save fleet owner');
+      const message = err instanceof Error ? err.message : 'Could not save the fleet owner';
+      setFormError(message);
+      toastError(message, 'Could not save the fleet owner');
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleDelete = async (tenantId: string) => {
-    if (!window.confirm('Are you sure you want to delete this fleet owner? This action cannot be undone.')) return;
+  const handleDelete = async (tenant: Tenant) => {
+    if (!window.confirm(`Delete ${tenant.name}? Every vehicle, driver, and collection in this fleet is removed too.`)) return;
     try {
-      const { error: err } = await supabase.from('tenants').delete().eq('id', tenantId);
-      if (err) throw err;
-      setSuccess('Fleet owner deleted successfully');
+      const result = await supabase.from('tenants').delete().eq('id', tenant.id).select('id');
+      assertMutation(result, 'Could not delete the fleet owner');
+      setSuccess('Fleet owner deleted.');
+      toastSuccess('Fleet owner deleted.', 'Deleted');
       await fetchTenants();
-      setTimeout(() => setSuccess(null), 3000);
+      setTimeout(() => setSuccess(null), 4000);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete fleet owner');
+      toastError(err, 'Could not delete the fleet owner');
     }
   };
 
-  const toggleTenantStatus = async (tenantId: string, currentStatus: boolean) => {
+  const toggleTenantStatus = async (tenant: Tenant) => {
     try {
-      const { error: err } = await supabase.from('tenants').update({ is_active: !currentStatus }).eq('id', tenantId);
-      if (err) throw err;
+      const result = await supabase
+        .from('tenants')
+        .update({ is_active: !tenant.is_active })
+        .eq('id', tenant.id)
+        .select('id');
+      assertMutation(result, 'Could not update the fleet owner');
+      toastSuccess(tenant.is_active ? 'Fleet deactivated.' : 'Fleet activated.');
       await fetchTenants();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update fleet owner');
+      toastError(err, 'Could not update the fleet owner');
     }
   };
 
@@ -183,48 +198,10 @@ export default function FleetOwnersPage() {
         title="Fleet owners"
         description="Companies on FaidaFleet. Set a PIN for owners who signed up without one."
         actions={
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger asChild>
-              <Button onClick={() => handleOpenDialog()}>
-                <Plus className="h-4 w-4" />
-                Add fleet owner
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-md">
-              <DialogHeader>
-                <DialogTitle>{editingId ? 'Edit fleet owner' : 'Create fleet owner'}</DialogTitle>
-                <DialogDescription>{editingId ? 'Update fleet owner information' : 'Add a new fleet company. They will not have a PIN until you set one.'}</DialogDescription>
-              </DialogHeader>
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="name">Company name *</Label>
-                  <Input id="name" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="business_name">Business name</Label>
-                  <Input id="business_name" value={formData.business_name} onChange={(e) => setFormData({ ...formData, business_name: e.target.value })} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
-                  <Input id="email" type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="phone">Phone</Label>
-                  <Input id="phone" type="tel" inputMode="tel" autoComplete="tel" value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="plan">Plan *</Label>
-                  <select id="plan" value={formData.plan} onChange={(e) => setFormData({ ...formData, plan: e.target.value })} className={adminSelectClass} required>
-                    {PLANS.map((p) => <option key={p} value={p}>{titleCase(p)}</option>)}
-                  </select>
-                </div>
-                <DialogFooter>
-                  <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-                  <Button type="submit" disabled={submitting}>{submitting ? 'Saving…' : editingId ? 'Update' : 'Create'}</Button>
-                </DialogFooter>
-              </form>
-            </DialogContent>
-          </Dialog>
+          <Button type="button" onClick={openCreate}>
+            <Plus className="h-4 w-4" />
+            Add fleet owner
+          </Button>
         }
       />
 
@@ -236,11 +213,22 @@ export default function FleetOwnersPage() {
         rowKey={(row) => row.id}
         loading={loading}
         emptyTitle="No fleet owners found"
+        emptyDescription="Add a fleet owner to get started."
         columns={[
           { id: 'name', header: 'Company', cell: (row) => <span className="font-medium">{row.name}</span> },
           { id: 'business', header: 'Business', cell: (row) => row.business_name || '—', hideOnMobile: true },
           { id: 'email', header: 'Email', cell: (row) => row.email || '—', hideOnMobile: true },
           { id: 'phone', header: 'Phone', cell: (row) => row.phone || '—' },
+          {
+            id: 'login',
+            header: 'Owner login',
+            cell: (row) =>
+              ownerTenantIds.has(row.id) ? (
+                <StatusBadge tone="success">Linked</StatusBadge>
+              ) : (
+                <StatusBadge tone="warning">No owner</StatusBadge>
+              ),
+          },
           { id: 'plan', header: 'Plan', cell: (row) => <StatusBadge tone={planTone(row.plan)}>{titleCase(row.plan)}</StatusBadge> },
           { id: 'status', header: 'Status', cell: (row) => <StatusBadge tone={row.is_active ? 'success' : 'neutral'}>{row.is_active ? 'Active' : 'Inactive'}</StatusBadge> },
           { id: 'joined', header: 'Joined', cell: (row) => formatDate(row.created_at), hideOnMobile: true },
@@ -248,29 +236,99 @@ export default function FleetOwnersPage() {
         actions={(tenant) => (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <RowActionsTrigger><MoreHorizontal className="h-4 w-4" /></RowActionsTrigger>
+              <RowActionsTrigger>
+                <MoreHorizontal className="h-4 w-4" />
+              </RowActionsTrigger>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => { setResetTenant(tenant); setResetPhone(tenant.phone || ''); }} className="cursor-pointer min-h-11">
-                <KeyRound className="h-4 w-4 mr-2" /> Set / reset PIN
+              <DropdownMenuItem
+                onClick={() => {
+                  setResetTenant(tenant);
+                  setResetPhone(tenant.phone || '');
+                }}
+                className="min-h-11 cursor-pointer"
+              >
+                <KeyRound className="mr-2 h-4 w-4" /> Set / reset PIN
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleOpenDialog(tenant)} className="cursor-pointer min-h-11">
-                <Edit className="h-4 w-4 mr-2" /> Edit
+              <DropdownMenuItem onClick={() => openEdit(tenant)} className="min-h-11 cursor-pointer">
+                <Edit className="mr-2 h-4 w-4" /> Edit
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => toggleTenantStatus(tenant.id, tenant.is_active)} className="cursor-pointer min-h-11">
+              <DropdownMenuItem onClick={() => toggleTenantStatus(tenant)} className="min-h-11 cursor-pointer">
                 {tenant.is_active ? 'Deactivate' : 'Activate'}
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleDelete(tenant.id)} className="cursor-pointer min-h-11 text-destructive">
-                <Trash2 className="h-4 w-4 mr-2" /> Delete
+              <DropdownMenuItem onClick={() => handleDelete(tenant)} className="min-h-11 cursor-pointer text-destructive">
+                <Trash2 className="mr-2 h-4 w-4" /> Delete
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         )}
       />
 
+      {/* Rendered by the page, never inside the header actions. */}
+      <FormDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        title={editingId ? 'Edit fleet owner' : 'Create fleet owner'}
+        description={
+          editingId
+            ? 'Update the company details for this fleet.'
+            : 'Add a fleet company. Set a PIN afterwards so the owner can sign in.'
+        }
+      >
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="name">Company name *</Label>
+            <Input id="name" value={formData.name} onChange={(event) => setFormData({ ...formData, name: event.target.value })} required disabled={submitting} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="business_name">Business name</Label>
+            <Input id="business_name" value={formData.business_name} onChange={(event) => setFormData({ ...formData, business_name: event.target.value })} disabled={submitting} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="email">Email</Label>
+            <Input id="email" type="email" autoComplete="off" value={formData.email} onChange={(event) => setFormData({ ...formData, email: event.target.value })} disabled={submitting} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="phone">Phone</Label>
+            <Input id="phone" type="tel" inputMode="tel" autoComplete="tel" value={formData.phone} onChange={(event) => setFormData({ ...formData, phone: event.target.value })} placeholder="0712345678" disabled={submitting} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="plan">Plan *</Label>
+            <NativeSelect
+              id="plan"
+              value={formData.plan}
+              onChange={(event) => setFormData({ ...formData, plan: event.target.value as Tenant['plan'] })}
+              required
+              disabled={submitting}
+            >
+              {PLANS.map((plan) => (
+                <option key={plan} value={plan}>{titleCase(plan)}</option>
+              ))}
+            </NativeSelect>
+          </div>
+
+          {formError && (
+            <Alert variant="destructive">
+              <AlertDescription>{formError}</AlertDescription>
+            </Alert>
+          )}
+
+          <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
+            <Button type="button" variant="outline" className="min-h-11" onClick={() => setDialogOpen(false)} disabled={submitting}>
+              Cancel
+            </Button>
+            <Button type="submit" className="min-h-11" disabled={submitting}>
+              {submitting ? 'Saving…' : editingId ? 'Update' : 'Create'}
+            </Button>
+          </div>
+        </form>
+      </FormDialog>
+
       <PinResetDialog
         open={Boolean(resetTenant)}
-        onOpenChange={(open) => { if (!open) setResetTenant(null) }}
+        onOpenChange={(open) => {
+          if (!open) setResetTenant(null);
+        }}
         title="Set fleet owner PIN"
         description="Create or reset the owner login PIN. If this fleet has no login yet, enter the owner's Kenyan phone number. The PIN is shown once."
         name={resetTenant?.name}
@@ -284,18 +342,20 @@ export default function FleetOwnersPage() {
               autoComplete="tel"
               placeholder="0712345678"
               value={resetPhone}
-              onChange={(e) => setResetPhone(e.target.value)}
+              onChange={(event) => setResetPhone(event.target.value)}
             />
           </div>
         }
         submit={async ({ pin, generate }) => {
-          if (!resetTenant) return { error: 'No fleet selected', generated: false }
+          if (!resetTenant) return { error: 'No fleet selected', generated: false };
           const response = await fetch('/api/admin/pin', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ target: 'fleet_owner', tenantId: resetTenant.id, phone: resetPhone, pin, generate }),
-          })
-          return response.json()
+          });
+          const payload = await response.json().catch(() => ({ error: 'Could not set the PIN', generated: false }));
+          if (response.ok) await fetchTenants();
+          return payload;
         }}
       />
     </>

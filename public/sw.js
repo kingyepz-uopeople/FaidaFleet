@@ -1,25 +1,24 @@
 /**
- * FaidaFleet service worker — offline support.
+ * FaidaFleet service worker — offline shell only.
  *
  * Single PWA stack: Next.js manifest.webmanifest + /offline page + RegisterSW.
  *
- * Strategies:
- * - App shell assets (offline page, icons) are precached on install.
- * - Page navigations: network-first, falling back to the last cached page
- *   and finally to /offline.
- * - Next.js build assets (/_next/static/) and other static files: cache-first
- *   (they are content-hashed / immutable).
- * - Everything else same-origin: stale-while-revalidate.
- * - API routes, non-GET requests and cross-origin requests (Supabase, fonts…)
- *   are never intercepted, so auth and live data always hit the network.
+ * Rules (deliberately conservative):
+ * - Only content-hashed app-shell assets are cached (offline page, icons,
+ *   /_next/static bundles). They are immutable.
+ * - HTML navigations are NEVER cached. Every page in this app renders
+ *   session-dependent data, so a cached page would show one user's data to the
+ *   next person on the device. Navigations go to the network, and fall back to
+ *   /offline only when the network is unavailable.
+ * - API routes, /auth/*, Supabase requests, non-GET and cross-origin requests
+ *   are never intercepted. Auth and live data always hit the network.
  *
  * Bump VERSION whenever the caching behaviour changes so old caches are purged.
  */
-const VERSION = 'v3'
+const VERSION = 'v4'
 const STATIC_CACHE = `faidafleet-static-${VERSION}`
-const PAGES_CACHE = `faidafleet-pages-${VERSION}`
 const ASSETS_CACHE = `faidafleet-assets-${VERSION}`
-const KNOWN_CACHES = [STATIC_CACHE, PAGES_CACHE, ASSETS_CACHE]
+const KNOWN_CACHES = [STATIC_CACHE, ASSETS_CACHE]
 
 const OFFLINE_URL = '/offline'
 
@@ -42,10 +41,10 @@ self.addEventListener('install', (event) => {
         PRECACHE_URLS.map(async (url) => {
           const response = await fetch(url, { cache: 'reload' })
           if (response.ok) await cache.put(url, response)
-        })
+        }),
       )
       await self.skipWaiting()
-    })()
+    })(),
   )
 })
 
@@ -55,11 +54,13 @@ self.addEventListener('activate', (event) => {
       const keys = await caches.keys()
       await Promise.all(
         keys
+          // v3 cached HTML pages under faidafleet-pages-v3 and older builds
+          // cached under other prefixes; drop everything we no longer know.
           .filter((key) => key.startsWith('faidafleet-') && !KNOWN_CACHES.includes(key))
-          .map((key) => caches.delete(key))
+          .map((key) => caches.delete(key)),
       )
       await self.clients.claim()
-    })()
+    })(),
   )
 })
 
@@ -77,19 +78,10 @@ function isStaticAsset(pathname) {
   )
 }
 
-async function networkFirstPage(request) {
-  const cache = await caches.open(PAGES_CACHE)
+async function networkOnlyNavigation(request) {
   try {
-    const response = await fetch(request)
-    // Only cache full, direct responses — never cache auth redirects
-    // (e.g. /dashboard -> /login) under the requested URL.
-    if (response.ok && !response.redirected) {
-      cache.put(request, response.clone())
-    }
-    return response
+    return await fetch(request, { cache: 'no-store' })
   } catch {
-    const cachedPage = await cache.match(request)
-    if (cachedPage) return cachedPage
     const offlinePage = await caches.match(OFFLINE_URL)
     if (offlinePage) return offlinePage
     return new Response('You are offline.', {
@@ -110,22 +102,6 @@ async function cacheFirst(request) {
   return response
 }
 
-async function staleWhileRevalidate(request, event) {
-  const cache = await caches.open(ASSETS_CACHE)
-  const cached = await cache.match(request)
-  const network = fetch(request)
-    .then((response) => {
-      if (response.ok) cache.put(request, response.clone())
-      return response
-    })
-    .catch(() => cached)
-  if (cached) {
-    event.waitUntil(network)
-    return cached
-  }
-  return network
-}
-
 self.addEventListener('fetch', (event) => {
   const { request } = event
 
@@ -139,10 +115,12 @@ self.addEventListener('fetch', (event) => {
   if (url.pathname === '/sw.js') return
 
   if (request.mode === 'navigate') {
-    event.respondWith(networkFirstPage(request))
-  } else if (isStaticAsset(url.pathname)) {
-    event.respondWith(cacheFirst(request))
-  } else {
-    event.respondWith(staleWhileRevalidate(request, event))
+    event.respondWith(networkOnlyNavigation(request))
+    return
   }
+
+  if (isStaticAsset(url.pathname)) {
+    event.respondWith(cacheFirst(request))
+  }
+  // Anything else is left to the browser — no stale session data.
 })

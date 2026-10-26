@@ -93,7 +93,12 @@ export async function POST(request: Request) {
   })
 
   if (linkError) {
-    await supabase.from('drivers').delete().eq('id', driver.id)
+    const { error: cleanupError } = await supabase.from('drivers').delete().eq('id', driver.id)
+    if (cleanupError) {
+      return NextResponse.json({
+        error: `Could not link driver login (${linkError.message}) and failed to remove the partially created driver: ${cleanupError.message}`,
+      }, { status: 500 })
+    }
     const missingFunction = linkError.code === '42883' || linkError.message.includes('provision_driver_login')
     return NextResponse.json({
       error: missingFunction
