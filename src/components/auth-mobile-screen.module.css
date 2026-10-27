@@ -1,0 +1,38 @@
+/* Keep the sticky CTA relative to the viewport on these auth routes only.
+   The app-wide `overflow-x: hidden` would otherwise create a scroll container. */
+:global(html:has([data-auth-mobile-screen])),
+:global(body:has([data-auth-mobile-screen])) {
+  overflow-x: visible;
+  overflow-x: clip;
+}
+
+.screen {
+  --auth-gutter: max(1.25rem, env(safe-area-inset-left), env(safe-area-inset-right));
+}
+
+.gutter {
+  padding-inline: var(--auth-gutter);
+}
+
+.fullBleed {
+  margin-inline: calc(var(--auth-gutter) * -1);
+  padding-inline: var(--auth-gutter);
+}
+
+.safeTop {
+  padding-top: max(1.25rem, env(safe-area-inset-top));
+}
+
+.safeBottom {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+
+@media (min-width: 640px) {
+  .screen {
+    --auth-gutter: max(1.5rem, env(safe-area-inset-left), env(safe-area-inset-right));
+  }
+
+  .safeTop {
+    padding-top: max(1.5rem, env(safe-area-inset-top));
+  }
+}
