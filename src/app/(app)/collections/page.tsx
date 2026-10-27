@@ -1,6 +1,5 @@
 'use client';
 
-import dynamic from 'next/dynamic';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Table,
@@ -17,6 +16,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Textarea } from '@/components/ui/textarea';
 import { PlusCircle, Loader2, Trash2, Edit, Wallet, TrendingUp, BadgeCheck } from '@/components/icons';
 import { createClient } from '@/lib/supabase/client';
 import { assertMutation, assertMutationRow, requireUuid } from '@/lib/db';
@@ -25,20 +25,46 @@ import { toastError, toastSuccess } from '@/lib/toast';
 import { formatDateOnly } from '@/lib/dates';
 import { collectionStatus } from '@/lib/fleet-metrics';
 import { EmptyState, LoadFailure, PageShell, TableScroll } from '@/components/page-shell';
+import { FormDialog } from '@/components/form-dialog';
 import { NativeSelect } from '@/components/ui/native-select';
 import { StatCard } from '@/components/stat-card';
 import { useFleetAccess } from '@/components/fleet-access-provider';
-import { DriverScopeNotice } from '@/components/driver-scope';
+import { DriverScopeNotice, LockedValue } from '@/components/driver-scope';
 import { RecordOriginBadge } from '@/components/record-origin-badge';
 
-import { EMPTY_FORM, type Collection, type Option, type PaymentMethod } from './collection-types';
-
-const CollectionFormDialog = dynamic(() => import('./collection-form-dialog'), {
-  ssr: false,
-  loading: () => <span role="status" className="sr-only">Opening collection form…</span>,
-});
-
 const NO_MATCH_UUID = '00000000-0000-0000-0000-000000000000';
+
+type PaymentMethod = 'cash' | 'mpesa' | 'pochi';
+type Shift = 'morning' | 'afternoon' | 'evening' | 'night';
+
+type Collection = {
+  id: string;
+  vehicle_id: string;
+  driver_id: string;
+  amount: number;
+  payment_method: PaymentMethod;
+  mpesa_receipt: string | null;
+  date: string;
+  shift: Shift | null;
+  reconciled: boolean;
+  notes: string | null;
+  recorded_by: string | null;
+  vehicles: { registration_number: string } | null;
+  drivers: { full_name: string; user_id: string | null } | null;
+};
+
+type Option = { id: string; label: string };
+
+const EMPTY_FORM = {
+  vehicleId: '',
+  driverId: '',
+  amount: '',
+  paymentMethod: 'cash' as PaymentMethod,
+  mpesaReceipt: '',
+  date: new Date().toISOString().split('T')[0],
+  shift: 'morning' as Shift,
+  notes: '',
+};
 
 function methodLabel(method: string) {
   if (method === 'mpesa') return 'M-Pesa';
@@ -440,13 +466,164 @@ export default function CollectionsPage() {
         </CardContent>
       </Card>
 
-      {dialogOpen && (
-        <CollectionFormDialog
-          editing={editing} form={form} setForm={setForm} setDialogOpen={setDialogOpen}
-          isDriver={isDriver} vehicleLabel={vehicleLabel} driverName={driverName} vehicles={vehicles} drivers={drivers}
-          submitting={submitting} formError={formError} handleSubmit={handleSubmit}
-        />
-      )}
+      <FormDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        title={editing ? 'Edit collection' : 'Record collection'}
+        description={isDriver ? 'Your name and current vehicle are filled in for you.' : 'Collections are the revenue side of your fleet P&L.'}
+      >
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {isDriver ? (
+            <>
+              <LockedValue id="collection_vehicle_locked" label="Vehicle" value={vehicleLabel || 'No vehicle assigned'} hint="Set by your fleet owner." />
+              <LockedValue id="collection_driver_locked" label="Driver" value={driverName || 'Your driver record'} hint="You can only record your own collections." />
+            </>
+          ) : (
+            <>
+              <div className="space-y-2">
+                <Label htmlFor="collection_vehicle">Vehicle *</Label>
+                <NativeSelect
+                  id="collection_vehicle"
+                  value={form.vehicleId}
+                  onChange={(event) => setForm({ ...form, vehicleId: event.target.value })}
+                  required
+                  disabled={submitting}
+                >
+                  <option value="">Select vehicle</option>
+                  {vehicles.map((vehicle) => (
+                    <option key={vehicle.id} value={vehicle.id}>{vehicle.label}</option>
+                  ))}
+                </NativeSelect>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="collection_driver">Driver *</Label>
+                <NativeSelect
+                  id="collection_driver"
+                  value={form.driverId}
+                  onChange={(event) => setForm({ ...form, driverId: event.target.value })}
+                  required
+                  disabled={submitting}
+                >
+                  <option value="">Select driver</option>
+                  {drivers.map((driver) => (
+                    <option key={driver.id} value={driver.id}>{driver.label}</option>
+                  ))}
+                </NativeSelect>
+              </div>
+            </>
+          )}
+
+          <div className="space-y-2">
+            <Label htmlFor="collection_amount">Amount (KES) *</Label>
+            <Input
+              id="collection_amount"
+              type="number"
+              inputMode="decimal"
+              step="0.01"
+              min="0"
+              value={form.amount}
+              onChange={(event) => setForm({ ...form, amount: event.target.value })}
+              placeholder="0.00"
+              required
+              disabled={submitting}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="collection_method">Payment method *</Label>
+            <NativeSelect
+              id="collection_method"
+              value={form.paymentMethod}
+              onChange={(event) => setForm({ ...form, paymentMethod: event.target.value as PaymentMethod })}
+              required
+              disabled={submitting}
+            >
+              <option value="cash">Cash</option>
+              <option value="mpesa">M-Pesa</option>
+              <option value="pochi">Pochi</option>
+            </NativeSelect>
+          </div>
+
+          {form.paymentMethod === 'mpesa' && (
+            <div className="space-y-2">
+              <Label htmlFor="mpesa_receipt">M-Pesa receipt / transaction code</Label>
+              <Input
+                id="mpesa_receipt"
+                value={form.mpesaReceipt}
+                onChange={(event) => setForm({ ...form, mpesaReceipt: event.target.value })}
+                placeholder="e.g., ABCDEF123456"
+                disabled={submitting}
+              />
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="collection_date">Date *</Label>
+              <Input
+                id="collection_date"
+                type="date"
+                value={form.date}
+                onChange={(event) => setForm({ ...form, date: event.target.value })}
+                required
+                disabled={submitting}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="collection_shift">Shift *</Label>
+              <NativeSelect
+                id="collection_shift"
+                value={form.shift}
+                onChange={(event) => setForm({ ...form, shift: event.target.value as Shift })}
+                required
+                disabled={submitting}
+              >
+                <option value="morning">Morning</option>
+                <option value="afternoon">Afternoon</option>
+                <option value="evening">Evening</option>
+                <option value="night">Night</option>
+              </NativeSelect>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="collection_notes">Notes (optional)</Label>
+            <Textarea
+              id="collection_notes"
+              value={form.notes}
+              onChange={(event) => setForm({ ...form, notes: event.target.value })}
+              placeholder="Anything worth noting about this collection…"
+              rows={3}
+              disabled={submitting}
+            />
+          </div>
+
+          {formError && (
+            <Alert variant="destructive">
+              <AlertDescription>{formError}</AlertDescription>
+            </Alert>
+          )}
+
+          <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
+            <Button type="button" variant="outline" className="min-h-11" onClick={() => setDialogOpen(false)} disabled={submitting}>
+              Cancel
+            </Button>
+            <Button type="submit" className="min-h-11" disabled={submitting}>
+              {submitting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Saving…
+                </>
+              ) : editing ? (
+                'Update collection'
+              ) : (
+                'Record collection'
+              )}
+            </Button>
+          </div>
+        </form>
+      </FormDialog>
     </PageShell>
   );
 }

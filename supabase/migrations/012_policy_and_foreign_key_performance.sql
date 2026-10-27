@@ -1,7 +1,7 @@
 -- 012_policy_and_foreign_key_performance.sql
 -- Prepared for review only. Do not apply from the application or this PR.
 --
--- Recreate each existing policy in public/storage that directly calls a
+-- Recreate each existing policy in public that directly calls a
 -- zero-argument Supabase auth helper, replacing ONLY those calls with scalar
 -- SELECTs. This preserves each policy's existing USING, WITH CHECK, command,
 -- roles, permissive/restrictive mode and comment. It never creates a policy
@@ -9,7 +9,7 @@
 -- 010 driver/tenant predicates are read from the catalog, not overwritten with
 -- older, broader definitions.
 --
--- In migrations 001-011 the direct calls occur in these 14 active policies:
+-- In migrations 001-011 the direct calls occur in these 13 active public policies:
 --   profiles: Users can view/update/insert own profile (3)
 --   memberships: Users can view their memberships (1)
 --   trips: Drivers can record own trips; Members can view trips (2)
@@ -19,12 +19,13 @@
 --   support_tickets: Members create tenant tickets (1)
 --   support_messages: Members send ticket messages (1)
 --   audit_logs: Users insert own audit logs (1)
---   storage.objects: Fuel pump photos scoped read (1)
 -- The advisor's reported 19 may include additional policies present in the
 -- target database but not this migration history. The catalog-driven rewrite
--- also covers those if they directly use auth.uid/role/jwt/email, without
--- guessing their names or changing their access rules. The older tenant-creation
--- and self-membership policies removed in 009 must NOT be brought back.
+-- also covers additional public policies if they directly use
+-- auth.uid/role/jwt/email, without guessing their names or changing their
+-- access rules. It does not alter any storage policies, including the fuel-photo
+-- read policy from 011. The older tenant-creation and self-membership policies
+-- removed in 009 must NOT be brought back.
 
 -- The catalog deparser emits SQL string/identifier quotes. Split the
 -- expression into quoted and unquoted segments so literal text is untouched.
@@ -131,7 +132,7 @@ begin
       join pg_catalog.pg_namespace n on n.nspname = p.schemaname
       join pg_catalog.pg_class c on c.relnamespace = n.oid and c.relname = p.tablename
       join pg_catalog.pg_policy pol on pol.polrelid = c.oid and pol.polname = p.policyname
-     where p.schemaname in ('public', 'storage')
+     where p.schemaname = 'public'
        and (coalesce(p.qual, '') ~* $regex$auth\.(uid|role|jwt|email)\s*\($regex$
          or coalesce(p.with_check, '') ~* $regex$auth\.(uid|role|jwt|email)\s*\($regex$)
   loop
@@ -195,6 +196,21 @@ begin
       ('idx_fk_pin_reset_log_target_driver_id', 'pin_reset_log', 'target_driver_id')
     ) as indexes(index_name, table_name, column_name)
   loop
+    if to_regclass(format('public.%I', spec.table_name)) is null then
+      raise notice 'Skipping index %: table public.% does not exist.', spec.index_name, spec.table_name;
+      continue;
+    end if;
+
+    if not exists (
+      select 1 from information_schema.columns
+      where table_schema = 'public'
+        and table_name = spec.table_name
+        and column_name = spec.column_name
+    ) then
+      raise notice 'Skipping index %: column public.%.% does not exist.', spec.index_name, spec.table_name, spec.column_name;
+      continue;
+    end if;
+
     select exists (
       select 1 from pg_catalog.pg_index i
       join pg_catalog.pg_class t on t.oid = i.indrelid

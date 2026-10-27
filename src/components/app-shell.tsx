@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
@@ -30,17 +29,13 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import { InstallPrompt } from '@/components/pwa/install-prompt';
+import { MustChangePinDialog } from '@/components/must-change-pin-dialog';
 import { MobileBottomNav } from '@/components/mobile-nav';
 import { SignOutButton } from '@/components/sign-out-button';
 import { FleetAccessProvider, useFleetAccess } from '@/components/fleet-access-provider';
 import { fleetHelpItem, fleetMenuForRole } from '@/lib/nav';
 import { homePathForRole, isNavActive, isPathAllowedForDriver } from '@/lib/fleet-access';
 import type { FleetAccessSnapshot } from '@/lib/fleet-access';
-
-const MustChangePinDialog = dynamic(
-  () => import('@/components/must-change-pin-dialog').then((module) => module.MustChangePinDialog),
-  { ssr: false },
-);
 
 export function AppShell({
   children,
@@ -304,7 +299,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
         <InstallPrompt />
       </div>
       <MobileBottomNav role={displayRole || ''} loading={roleLoading} />
-      {mustChangePin && <MustChangePinDialog />}
+      <MustChangePinDialog />
     </div>
   );
 }

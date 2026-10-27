@@ -42,15 +42,29 @@ test('the policy inventory reflects the final 010/011 rules, not removed legacy 
   ])
 })
 
-test('policy rewrite is catalog-driven, preserves roles and clauses, and never recreates dropped legacy names', () => {
-  assert.match(performanceMigration, /from pg_catalog\.pg_policies p/i)
-  assert.match(performanceMigration, /where p\.schemaname in \('public', 'storage'\)/i)
+test('policy rewrite is public-only, preserves roles and clauses, and leaves storage policies alone', () => {
+  const policyBlock = performanceMigration.split('do $policies$')[1]?.split('$policies$;')[0] || ''
+  assert.match(policyBlock, /from pg_catalog\.pg_policies p/i)
+  assert.match(policyBlock, /where p\.schemaname\s*=\s*'public'/i)
+  assert.doesNotMatch(policyBlock, /\bstorage\b/i)
+  assert.doesNotMatch(performanceMigration, /(?:drop|create)\s+policy[^;]*\bon\s+storage\./i)
   assert.match(performanceMigration, /DROP POLICY IF EXISTS %I ON %I\.%I/i)
   assert.match(performanceMigration, /CREATE POLICY %I ON %I\.%I AS %s FOR %s TO %s%s%s/i)
   for (const part of ['policy_row.permissive', 'policy_row.cmd', 'policy_row.roles', 'policy_row.qual', 'policy_row.with_check', 'policy_row.original_comment']) {
     assert.ok(performanceMigration.includes(part), part)
   }
   assert.doesNotMatch(performanceMigration, /create\s+policy\s+"/i)
+})
+
+test('missing index tables and columns are noticed and skipped before index creation', () => {
+  const indexBlock = performanceMigration.split('do $indexes$')[1]?.split('$indexes$;')[0] || ''
+  assert.match(indexBlock, /if\s+to_regclass\(format\('public\.%I',\s*spec\.table_name\)\)\s+is\s+null\s+then\s+raise\s+notice[^;]*;\s+continue\s*;/i)
+  assert.match(indexBlock, /if\s+not\s+exists\s*\(\s*select\s+1\s+from\s+information_schema\.columns\s+where\s+table_schema\s*=\s*'public'\s+and\s+table_name\s*=\s*spec\.table_name\s+and\s+column_name\s*=\s*spec\.column_name\s*\)\s+then\s+raise\s+notice[^;]*;\s+continue\s*;/i)
+  const tableGuard = indexBlock.indexOf("if to_regclass(format('public.%I', spec.table_name))")
+  const columnGuard = indexBlock.indexOf('information_schema.columns')
+  const coverageCheck = indexBlock.indexOf('select exists (')
+  const createIndex = indexBlock.indexOf('CREATE INDEX IF NOT EXISTS')
+  assert.ok(tableGuard >= 0 && tableGuard < columnGuard && columnGuard < coverageCheck && coverageCheck < createIndex)
 })
 
 test('foreign-key indexes are individually rerunnable and the duplicate drop is guarded', () => {
