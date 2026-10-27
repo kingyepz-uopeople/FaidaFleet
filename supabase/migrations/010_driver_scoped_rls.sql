@@ -62,6 +62,7 @@ create policy "Drivers can record own trips" on public.trips
     and driver_id in (select id from public.drivers where user_id = auth.uid())
   );
 
+drop policy if exists "Users can view trips" on public.trips;
 drop policy if exists "Members can view trips" on public.trips;
 create policy "Members can view trips" on public.trips
   for select to authenticated
