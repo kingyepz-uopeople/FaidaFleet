@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { createClient } from '@/lib/supabase/client';
 import { Download } from '@/components/icons';
-import { AdminFeedback, AdminKpi, AdminPageHeader, AdminRecordList, AdminSearch, StatusBadge, formatDate, formatKes, titleCase } from '@/components/admin-ui';
+import { AdminFeedback, AdminKpi, AdminPageHeader, AdminRecordList, AdminSearch, StatusBadge, formatKes, titleCase } from '@/components/admin-ui';
 import { formatDateOnly } from '@/lib/dates';
 import { toastError } from '@/lib/toast';
 import { isAdminUiPreview, previewCollections } from '@/lib/admin-preview';

@@ -7,9 +7,9 @@ export default function OfflinePage() {
         <div className="mb-6 inline-flex h-20 w-20 items-center justify-center rounded-full bg-[#1e3a5f] text-white text-3xl font-bold shadow-lg">
           FF
         </div>
-        <h1 className="text-2xl font-bold text-gray-900 mb-3">You're offline</h1>
+        <h1 className="text-2xl font-bold text-gray-900 mb-3">You&apos;re offline</h1>
         <p className="text-gray-500 mb-8">
-          FaidaFleet can't reach the internet right now. Check your connection and try again.
+          FaidaFleet can&apos;t reach the internet right now. Check your connection and try again.
         </p>
         <button
           onClick={() => window.location.reload()}

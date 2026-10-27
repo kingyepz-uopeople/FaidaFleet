@@ -67,11 +67,12 @@ const reconcileMpesaTransactionFlow = ai.defineFlow(
     try {
       const {output} = await reconcileMpesaTransactionPrompt(input);
       return output!;
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error during M-Pesa reconciliation:', error);
+      const detail = error instanceof Error ? error.message : 'Unknown error';
       return {
         reconciliationStatus: 'error',
-        notes: `An error occurred during reconciliation: ${error.message || 'Unknown error'}`,
+        notes: `An error occurred during reconciliation: ${detail}`,
       };
     }
   }

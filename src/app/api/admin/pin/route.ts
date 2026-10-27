@@ -160,16 +160,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Fleet not found' }, { status: 404 })
   }
 
-  const { data: ownerMembership } = await admin
+  // A fleet can have more than one owner row; never use .maybeSingle() here.
+  const { data: ownerMemberships } = await admin
     .from('memberships')
     .select('user_id, tenant_id')
     .eq('tenant_id', tenantId)
     .eq('role', 'owner')
     .eq('is_active', true)
-    .maybeSingle()
+    .limit(1)
+  const ownerMembership = ownerMemberships?.[0] || null
 
   const requestedPhone = normalizeKenyanPhone(String(body.phone || tenant.phone || ''))
-  let userId = ownerMembership?.user_id || null
+  const userId = ownerMembership?.user_id || null
   let phone = requestedPhone
   let fullName = tenant.name
 

@@ -17,6 +17,10 @@ import { EmptyState, PageShell, TableScroll } from '@/components/page-shell';
 import { FormDialog } from '@/components/form-dialog';
 import { NativeSelect } from '@/components/ui/native-select';
 import { StatCard } from '@/components/stat-card';
+import { useFleetAccess } from '@/components/fleet-access-provider';
+import { DriverScopeNotice, LockedValue } from '@/components/driver-scope';
+
+const NO_MATCH_UUID = '00000000-0000-0000-0000-000000000000';
 
 type MaintenanceType = 'service' | 'repair' | 'inspection' | 'other';
 
@@ -58,49 +62,47 @@ export default function MaintenancePage() {
   const [editing, setEditing] = useState<Maintenance | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
-  const [tenantId, setTenantId] = useState<string | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const supabase = useMemo(() => createClient(), []);
+  const {
+    loading: accessLoading,
+    tenantId,
+    isDriver,
+    vehicleId,
+    vehicleLabel,
+    loadError: accessError,
+  } = useFleetAccess();
+  const canRecord = !isDriver || Boolean(vehicleId);
 
   useEffect(() => {
-    fetchData();
+    if (!accessLoading) fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [accessLoading, tenantId, isDriver, vehicleId]);
 
   const fetchData = async () => {
     try {
       setLoading(true);
       setLoadError(null);
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('You need to sign in again.');
-
-      const { data: membership, error: membershipError } = await supabase
-        .from('memberships')
-        .select('tenant_id')
-        .eq('user_id', user.id)
-        .eq('is_active', true)
-        .maybeSingle();
-
-      if (membershipError) throw membershipError;
-      if (!membership) {
-        setLoadError('No fleet is linked to this account yet. Finish onboarding to schedule maintenance.');
+      if (!tenantId) {
+        setLoadError(accessError || 'No fleet is linked to this account yet. Finish onboarding to schedule maintenance.');
         return;
       }
 
-      setTenantId(membership.tenant_id);
-
       const [maintenanceRes, vehiclesRes] = await Promise.all([
-        supabase
-          .from('maintenance_logs')
-          .select('*, vehicles(registration_number)')
-          .eq('tenant_id', membership.tenant_id)
-          .order('date', { ascending: false }),
-        supabase
-          .from('vehicles')
-          .select('id, registration_number')
-          .eq('tenant_id', membership.tenant_id)
-          .eq('is_active', true)
-          .order('registration_number'),
+        (isDriver
+          ? supabase
+              .from('maintenance_logs')
+              .select('*, vehicles(registration_number)')
+              .eq('tenant_id', tenantId)
+              .eq('vehicle_id', vehicleId || NO_MATCH_UUID)
+          : supabase
+              .from('maintenance_logs')
+              .select('*, vehicles(registration_number)')
+              .eq('tenant_id', tenantId)
+        ).order('date', { ascending: false }),
+        isDriver
+          ? supabase.from('vehicles').select('id, registration_number').eq('id', vehicleId || NO_MATCH_UUID).limit(1)
+          : supabase.from('vehicles').select('id, registration_number').eq('tenant_id', tenantId).eq('is_active', true).order('registration_number'),
       ]);
 
       if (maintenanceRes.error) throw maintenanceRes.error;
@@ -118,13 +120,18 @@ export default function MaintenancePage() {
   };
 
   const openCreate = () => {
+    if (!canRecord) return;
     setEditing(null);
-    setForm(EMPTY_FORM);
+    setForm({
+      ...EMPTY_FORM,
+      vehicleId: isDriver ? vehicleId || '' : '',
+    });
     setFormError(null);
     setDialogOpen(true);
   };
 
   const openEdit = (record: Maintenance) => {
+    if (isDriver) return;
     setEditing(record);
     setForm({
       vehicleId: record.vehicle_id,
@@ -144,13 +151,15 @@ export default function MaintenancePage() {
     setFormError(null);
     try {
       if (!tenantId) throw new Error('No fleet found for this account.');
-      const vehicleId = requireUuid(form.vehicleId, 'vehicle');
+      if (isDriver && editing) throw new Error('Drivers cannot edit maintenance records.');
+      if (!canRecord) throw new Error('Ask your fleet owner to assign you a current vehicle first.');
+      const selectedVehicleId = requireUuid(isDriver ? vehicleId : form.vehicleId, 'vehicle');
       if (!form.description.trim()) throw new Error('Describe the work that was done');
       if (!form.date) throw new Error('Choose the maintenance date');
 
       const payload = {
         tenant_id: tenantId,
-        vehicle_id: vehicleId,
+        vehicle_id: selectedVehicleId,
         type: form.type,
         description: form.description.trim(),
         cost: form.cost ? Number.parseFloat(form.cost) : null,
@@ -176,6 +185,7 @@ export default function MaintenancePage() {
   };
 
   const handleDelete = async (record: Maintenance) => {
+    if (isDriver) return;
     if (!window.confirm('Delete this maintenance record? This cannot be undone.')) return;
     try {
       const result = await supabase.from('maintenance_logs').delete().eq('id', record.id).select('id');
@@ -194,10 +204,10 @@ export default function MaintenancePage() {
 
   return (
     <PageShell
-      title="Maintenance"
-      description="Track services, repairs, and upcoming service dates."
+      title={isDriver ? 'My maintenance' : 'Maintenance'}
+      description={isDriver ? 'Log work on your assigned vehicle.' : 'Track services, repairs, and upcoming service dates.'}
       actions={
-        <Button type="button" onClick={openCreate}>
+        <Button type="button" className="min-h-11" onClick={openCreate} disabled={!canRecord}>
           <PlusCircle className="mr-2 h-4 w-4" />
           Record maintenance
         </Button>
@@ -208,6 +218,7 @@ export default function MaintenancePage() {
           <AlertDescription>{loadError}</AlertDescription>
         </Alert>
       )}
+      {isDriver && accessError && <DriverScopeNotice message={accessError} />}
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <StatCard title="Total maintenance cost" value={`KES ${totalCost.toLocaleString()}`} description="All time" Icon={Wrench} />
@@ -221,7 +232,7 @@ export default function MaintenancePage() {
           <CardDescription>{maintenance.length} records found</CardDescription>
         </CardHeader>
         <CardContent>
-          {loading ? (
+          {loading || accessLoading ? (
             <div className="flex justify-center py-8">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
             </div>
@@ -229,12 +240,12 @@ export default function MaintenancePage() {
             <EmptyState
               title="No maintenance records yet"
               description="Log a service or repair to keep vehicle history and costs up to date."
-              action={
+              action={canRecord ? (
                 <Button type="button" onClick={openCreate}>
                   <PlusCircle className="mr-2 h-4 w-4" />
                   Record maintenance
                 </Button>
-              }
+              ) : undefined}
             />
           ) : (
             <>
@@ -255,20 +266,22 @@ export default function MaintenancePage() {
                         Next: {record.next_service_date ? formatDateOnly(record.next_service_date) : '—'}
                       </span>
                     </div>
-                    <div className="mt-3 flex gap-2">
-                      <Button type="button" variant="outline" className="min-h-11 flex-1" onClick={() => openEdit(record)}>
-                        <Edit className="mr-2 h-4 w-4" /> Edit
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="min-h-11 text-destructive"
-                        onClick={() => handleDelete(record)}
-                        aria-label="Delete maintenance record"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
+                    {!isDriver && (
+                      <div className="mt-3 flex gap-2">
+                        <Button type="button" variant="outline" className="min-h-11 flex-1" onClick={() => openEdit(record)}>
+                          <Edit className="mr-2 h-4 w-4" /> Edit
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="min-h-11 text-destructive"
+                          onClick={() => handleDelete(record)}
+                          aria-label="Delete maintenance record"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    )}
                   </article>
                 ))}
               </div>
@@ -283,7 +296,7 @@ export default function MaintenancePage() {
                       <TableHead>Description</TableHead>
                       <TableHead>Cost</TableHead>
                       <TableHead>Next service</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
+                      {!isDriver && <TableHead className="text-right">Actions</TableHead>}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -297,24 +310,26 @@ export default function MaintenancePage() {
                         <TableCell className="max-w-xs truncate">{record.description}</TableCell>
                         <TableCell className="font-semibold">KES {(record.cost || 0).toLocaleString()}</TableCell>
                         <TableCell>{record.next_service_date ? formatDateOnly(record.next_service_date) : '—'}</TableCell>
-                        <TableCell>
-                          <div className="flex justify-end gap-1">
-                            <Button type="button" variant="ghost" size="sm" className="min-h-11" onClick={() => openEdit(record)}>
-                              <Edit className="h-4 w-4" />
-                              <span className="sr-only">Edit maintenance record</span>
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              className="min-h-11 text-destructive"
-                              onClick={() => handleDelete(record)}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                              <span className="sr-only">Delete maintenance record</span>
-                            </Button>
-                          </div>
-                        </TableCell>
+                        {!isDriver && (
+                          <TableCell>
+                            <div className="flex justify-end gap-1">
+                              <Button type="button" variant="ghost" size="sm" className="min-h-11" onClick={() => openEdit(record)}>
+                                <Edit className="h-4 w-4" />
+                                <span className="sr-only">Edit maintenance record</span>
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="min-h-11 text-destructive"
+                                onClick={() => handleDelete(record)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                                <span className="sr-only">Delete maintenance record</span>
+                              </Button>
+                            </div>
+                          </TableCell>
+                        )}
                       </TableRow>
                     ))}
                   </TableBody>
@@ -329,24 +344,28 @@ export default function MaintenancePage() {
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         title={editing ? 'Edit maintenance' : 'Record maintenance'}
-        description="Maintenance costs are included in your fleet profit calculations."
+        description={isDriver ? 'Your current vehicle is filled in for you.' : 'Maintenance costs are included in your fleet profit calculations.'}
       >
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="maintenance_vehicle">Vehicle *</Label>
-            <NativeSelect
-              id="maintenance_vehicle"
-              value={form.vehicleId}
-              onChange={(event) => setForm({ ...form, vehicleId: event.target.value })}
-              required
-              disabled={submitting}
-            >
-              <option value="">Select vehicle</option>
-              {vehicles.map((vehicle) => (
-                <option key={vehicle.id} value={vehicle.id}>{vehicle.label}</option>
-              ))}
-            </NativeSelect>
-          </div>
+          {isDriver ? (
+            <LockedValue id="maintenance_vehicle_locked" label="Vehicle" value={vehicleLabel || 'No vehicle assigned'} hint="Set by your fleet owner." />
+          ) : (
+            <div className="space-y-2">
+              <Label htmlFor="maintenance_vehicle">Vehicle *</Label>
+              <NativeSelect
+                id="maintenance_vehicle"
+                value={form.vehicleId}
+                onChange={(event) => setForm({ ...form, vehicleId: event.target.value })}
+                required
+                disabled={submitting}
+              >
+                <option value="">Select vehicle</option>
+                {vehicles.map((vehicle) => (
+                  <option key={vehicle.id} value={vehicle.id}>{vehicle.label}</option>
+                ))}
+              </NativeSelect>
+            </div>
+          )}
 
           <div className="space-y-2">
             <Label htmlFor="maintenance_type">Type *</Label>

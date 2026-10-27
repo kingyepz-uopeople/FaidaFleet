@@ -95,8 +95,15 @@ export function friendlyAuthError(message: string, kind: 'phone' | 'email' = 'ph
   if (lower.includes('email not confirmed')) {
     return 'Turn off Confirm email in the Supabase project under Authentication, then sign in again. Phone accounts cannot receive email.'
   }
+  if (
+    lower.includes('different from the old password') ||
+    lower.includes('same as the old password') ||
+    lower.includes('same password')
+  ) {
+    return 'Choose a PIN that is different from the one you use now.'
+  }
   if (lower.includes('password') && (lower.includes('at least') || lower.includes('characters'))) {
-    return 'Supabase rejected this PIN. Set the minimum password length to 4 under Authentication settings.'
+    return 'Supabase rejected this password. Ask your administrator to check the server PIN settings.'
   }
   return message
 }

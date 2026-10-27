@@ -11,6 +11,7 @@ import {
   type MoneyRow,
 } from '@/lib/fleet-metrics'
 import { accountLabel } from '@/lib/phone'
+import { isDriverOnly, primaryMembership } from '@/lib/fleet-access'
 import { FleetHome, type RecentCollection } from './dashboard-view'
 
 export const dynamic = 'force-dynamic'
@@ -42,13 +43,15 @@ export default async function DashboardPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const { data: membership } = await supabase
+  // Read all memberships: .single() fails for someone in two fleets.
+  const { data: membershipRows } = await supabase
     .from('memberships')
-    .select('tenant_id')
+    .select('tenant_id, role')
     .eq('user_id', user.id)
     .eq('is_active', true)
-    .single()
 
+  if (isDriverOnly(membershipRows)) redirect('/trips')
+  const membership = primaryMembership(membershipRows)
   if (!membership) redirect('/onboarding')
 
   const tenantId = membership.tenant_id

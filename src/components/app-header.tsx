@@ -15,6 +15,7 @@ import { LogOut, Menu, Settings, User as UserIcon } from '@/components/icons';
 import { PlaceHolderImages } from '@/lib/placeholder-images';
 import { accountContact, accountInitials, accountLabel } from '@/lib/phone';
 import { createClient } from '@/lib/supabase/client';
+import { useSignOut } from '@/hooks/use-sign-out';
 import type { User } from '@supabase/supabase-js';
 
 function getTitleFromPathname(pathname: string): string {
@@ -29,6 +30,7 @@ export function AppHeader({ onMenuClick }: { onMenuClick?: () => void }) {
   const router = useRouter();
   const title = getTitleFromPathname(pathname);
   const supabase = createClient();
+  const { signOut } = useSignOut();
   const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
@@ -47,9 +49,7 @@ export function AppHeader({ onMenuClick }: { onMenuClick?: () => void }) {
   }, [supabase.auth]);
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    router.push('/login');
-    router.refresh();
+    await signOut();
   };
 
   return (

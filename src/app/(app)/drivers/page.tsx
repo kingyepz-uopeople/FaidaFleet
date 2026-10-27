@@ -19,6 +19,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { PlusCircle, Loader2, KeyRound, Users } from '@/components/icons';
 import { normalizeKenyanPhone, validatePin } from '@/lib/phone';
 import { createClient } from '@/lib/supabase/client';
+import { primaryMembership } from '@/lib/fleet-access';
 import { assertMutation, assertMutationRow, requireUuid } from '@/lib/db';
 import { toastError, toastSuccess } from '@/lib/toast';
 import { PinResetDialog } from '@/components/pin-reset-dialog';
@@ -84,14 +85,14 @@ export default function DriversPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('You need to sign in again.');
 
-      const { data: membership, error: membershipError } = await supabase
+      const { data: membershipRows, error: membershipError } = await supabase
         .from('memberships')
-        .select('tenant_id')
+        .select('tenant_id, role')
         .eq('user_id', user.id)
-        .eq('is_active', true)
-        .maybeSingle();
+        .eq('is_active', true);
 
       if (membershipError) throw membershipError;
+      const membership = primaryMembership(membershipRows || []);
       if (!membership) {
         setLoadError('No fleet is linked to this account yet. Finish onboarding to add drivers.');
         return;

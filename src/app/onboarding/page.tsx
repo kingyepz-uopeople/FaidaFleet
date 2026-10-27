@@ -34,13 +34,13 @@ export default function OnboardingPage() {
       }
       // One fleet per owner login: sending them through onboarding again would
       // create another tenant with no owner membership.
-      const { data: membership } = await supabase
+      const { data: memberships } = await supabase
         .from('memberships')
         .select('tenant_id')
         .eq('user_id', user.id)
         .eq('is_active', true)
-        .maybeSingle()
-      if (membership) {
+        .limit(1)
+      if (memberships && memberships.length > 0) {
         router.replace('/dashboard')
         return
       }
@@ -99,9 +99,9 @@ export default function OnboardingPage() {
       // Success! Redirect to dashboard
       router.push('/dashboard')
       router.refresh()
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Unexpected error:', err)
-      setError(err.message || 'An unexpected error occurred')
+      setError((err instanceof Error ? err.message : '') || 'An unexpected error occurred')
       setLoading(false)
     }
   }
@@ -116,7 +116,7 @@ export default function OnboardingPage() {
           </div>
           <CardTitle className="text-2xl font-bold text-center">Create Your Fleet</CardTitle>
           <CardDescription className="text-center">
-            Welcome! Let's set up your matatu fleet management account
+            Welcome! Let&apos;s set up your matatu fleet management account
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -209,7 +209,7 @@ export default function OnboardingPage() {
               <h3 className="font-semibold text-sm text-blue-900">What happens next?</h3>
               <ul className="text-sm text-blue-800 space-y-1">
                 <li>✓ Your fleet account will be created</li>
-                <li>✓ You'll be set as the owner</li>
+                <li>✓ You&apos;ll be set as the owner</li>
                 <li>✓ You can start adding vehicles and drivers</li>
                 <li>✓ Track daily collections and expenses</li>
               </ul>

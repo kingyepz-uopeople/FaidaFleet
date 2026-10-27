@@ -4,6 +4,7 @@ import {
   BarChart3,
   Car,
   CircleHelp,
+  DollarSign,
   KeyRound,
   LayoutDashboard,
   Package,
@@ -30,6 +31,20 @@ export const fleetMenuItems = [
   { href: '/driver-analytics', label: 'Driver Stats', Icon: TrendingUp },
   { href: '/settings', label: 'Settings', Icon: Settings },
 ]
+
+/** Drivers only get their own records and data entry. No finances or roster. */
+export const driverMenuItems = [
+  { href: '/trips', label: 'Trips', Icon: Zap },
+  { href: '/collections', label: 'Collections', Icon: Wallet },
+  { href: '/expenses', label: 'Expenses', Icon: Receipt },
+  { href: '/expenses?new=fuel', label: 'Log fuel', Icon: DollarSign },
+  { href: '/maintenance', label: 'Maintenance', Icon: Wrench },
+  { href: '/settings', label: 'Settings', Icon: Settings },
+]
+
+export function fleetMenuForRole(role: string | null | undefined) {
+  return (role || '').toLowerCase() === 'driver' ? driverMenuItems : fleetMenuItems
+}
 
 export const fleetHelpItem = { href: '/help', label: 'Help', Icon: CircleHelp }
 
@@ -91,11 +106,11 @@ export function isAdminNavActive(pathname: string, href: string) {
 export function bottomNavForRole(role: string) {
   if (role.toLowerCase() === 'driver') {
     return [
-      fleetMenuItems[0],
-      fleetMenuItems[3],
-      fleetMenuItems[5],
-      fleetMenuItems[4],
-      fleetMenuItems[9],
+      driverMenuItems[0], // Trips
+      driverMenuItems[1], // Collections
+      driverMenuItems[2], // Expenses
+      driverMenuItems[3], // Log fuel (opens the fuel expense form)
+      driverMenuItems[4], // Maintenance
     ]
   }
   return [

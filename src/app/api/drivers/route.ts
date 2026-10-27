@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createDriverAuthUser } from '@/lib/create-driver-login'
+import { needsPinChange } from '@/lib/pin'
 import { normalizeKenyanPhone, phoneAuthEmail, validatePin } from '@/lib/phone'
 import { getSupabaseKey, getSupabaseUrl } from '@/lib/supabase/env'
 import { createClient } from '@/lib/supabase/server'
@@ -9,6 +10,9 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) {
     return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+  }
+  if (needsPinChange(user)) {
+    return NextResponse.json({ error: 'Set your own PIN in Settings before adding drivers.' }, { status: 403 })
   }
 
   let body: Record<string, unknown>

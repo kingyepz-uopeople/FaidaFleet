@@ -16,6 +16,10 @@ import { EmptyState, PageShell, TableScroll } from '@/components/page-shell';
 import { FormDialog } from '@/components/form-dialog';
 import { NativeSelect } from '@/components/ui/native-select';
 import { StatCard } from '@/components/stat-card';
+import { useFleetAccess } from '@/components/fleet-access-provider';
+import { DriverScopeNotice, LockedValue } from '@/components/driver-scope';
+
+const NO_MATCH_UUID = '00000000-0000-0000-0000-000000000000';
 
 type Trip = {
   id: string;
@@ -54,55 +58,52 @@ export default function TripsPage() {
   const [editing, setEditing] = useState<Trip | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
-  const [tenantId, setTenantId] = useState<string | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const supabase = useMemo(() => createClient(), []);
+  const {
+    loading: accessLoading,
+    tenantId,
+    isDriver,
+    driverId,
+    driverName,
+    vehicleId,
+    vehicleLabel,
+    loadError: accessError,
+  } = useFleetAccess();
+  const canRecord = !isDriver || Boolean(driverId && vehicleId);
 
   useEffect(() => {
-    fetchData();
+    if (!accessLoading) fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [accessLoading, tenantId, isDriver, driverId, vehicleId]);
 
   const fetchData = async () => {
     try {
       setLoading(true);
       setLoadError(null);
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('You need to sign in again.');
-
-      const { data: membership, error: membershipError } = await supabase
-        .from('memberships')
-        .select('tenant_id')
-        .eq('user_id', user.id)
-        .eq('is_active', true)
-        .maybeSingle();
-
-      if (membershipError) throw membershipError;
-      if (!membership) {
-        setLoadError('No fleet is linked to this account yet. Finish onboarding to record trips.');
+      if (!tenantId) {
+        setLoadError(accessError || 'No fleet is linked to this account yet. Finish onboarding to record trips.');
         return;
       }
 
-      setTenantId(membership.tenant_id);
-
       const [tripsRes, vehiclesRes, driversRes] = await Promise.all([
-        supabase
-          .from('trips')
-          .select('*, vehicles(registration_number), drivers(full_name)')
-          .eq('tenant_id', membership.tenant_id)
-          .order('trip_date', { ascending: false }),
-        supabase
-          .from('vehicles')
-          .select('id, registration_number')
-          .eq('tenant_id', membership.tenant_id)
-          .eq('is_active', true)
-          .order('registration_number'),
-        supabase
-          .from('drivers')
-          .select('id, full_name')
-          .eq('tenant_id', membership.tenant_id)
-          .eq('is_active', true)
-          .order('full_name'),
+        (isDriver
+          ? supabase
+              .from('trips')
+              .select('*, vehicles(registration_number), drivers(full_name)')
+              .eq('tenant_id', tenantId)
+              .eq('driver_id', driverId || NO_MATCH_UUID)
+          : supabase
+              .from('trips')
+              .select('*, vehicles(registration_number), drivers(full_name)')
+              .eq('tenant_id', tenantId)
+        ).order('trip_date', { ascending: false }),
+        isDriver
+          ? supabase.from('vehicles').select('id, registration_number').eq('id', vehicleId || NO_MATCH_UUID).limit(1)
+          : supabase.from('vehicles').select('id, registration_number').eq('tenant_id', tenantId).eq('is_active', true).order('registration_number'),
+        isDriver
+          ? supabase.from('drivers').select('id, full_name').eq('id', driverId || NO_MATCH_UUID).limit(1)
+          : supabase.from('drivers').select('id, full_name').eq('tenant_id', tenantId).eq('is_active', true).order('full_name'),
       ]);
 
       if (tripsRes.error) throw tripsRes.error;
@@ -122,13 +123,19 @@ export default function TripsPage() {
   };
 
   const openCreate = () => {
+    if (!canRecord) return;
     setEditing(null);
-    setForm(EMPTY_FORM);
+    setForm({
+      ...EMPTY_FORM,
+      vehicleId: isDriver ? vehicleId || '' : '',
+      driverId: isDriver ? driverId || '' : '',
+    });
     setFormError(null);
     setDialogOpen(true);
   };
 
   const openEdit = (trip: Trip) => {
+    if (isDriver) return;
     setEditing(trip);
     setForm({
       vehicleId: trip.vehicle_id,
@@ -150,14 +157,16 @@ export default function TripsPage() {
     setFormError(null);
     try {
       if (!tenantId) throw new Error('No fleet found for this account.');
-      const vehicleId = requireUuid(form.vehicleId, 'vehicle');
-      const driverId = requireUuid(form.driverId, 'driver');
+      if (isDriver && editing) throw new Error('Drivers cannot edit recorded trips.');
+      if (!canRecord) throw new Error('Ask your fleet owner to link your driver record and current vehicle first.');
+      const selectedVehicleId = requireUuid(isDriver ? vehicleId : form.vehicleId, 'vehicle');
+      const selectedDriverId = requireUuid(isDriver ? driverId : form.driverId, 'driver');
       if (!form.tripDate) throw new Error('Choose the trip date');
 
       const payload = {
         tenant_id: tenantId,
-        vehicle_id: vehicleId,
-        driver_id: driverId,
+        vehicle_id: selectedVehicleId,
+        driver_id: selectedDriverId,
         trip_date: form.tripDate,
         distance_km: form.distanceKm ? Number.parseFloat(form.distanceKm) : null,
         earnings: form.earnings ? Number.parseFloat(form.earnings) : 0,
@@ -184,6 +193,7 @@ export default function TripsPage() {
   };
 
   const handleDelete = async (trip: Trip) => {
+    if (isDriver) return;
     if (!window.confirm('Delete this trip? This cannot be undone.')) return;
     try {
       const result = await supabase.from('trips').delete().eq('id', trip.id).select('id');
@@ -201,10 +211,10 @@ export default function TripsPage() {
 
   return (
     <PageShell
-      title="Trips & routes"
-      description="Track individual trips, distance, and earnings."
+      title={isDriver ? 'My trips' : 'Trips & routes'}
+      description={isDriver ? 'Record your trips for your assigned vehicle.' : 'Track individual trips, distance, and earnings.'}
       actions={
-        <Button type="button" onClick={openCreate}>
+        <Button type="button" className="min-h-11" onClick={openCreate} disabled={!canRecord}>
           <PlusCircle className="mr-2 h-4 w-4" />
           Record trip
         </Button>
@@ -215,6 +225,7 @@ export default function TripsPage() {
           <AlertDescription>{loadError}</AlertDescription>
         </Alert>
       )}
+      {isDriver && accessError && <DriverScopeNotice message={accessError} />}
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <StatCard title="Total earnings" value={`KES ${totalEarnings.toLocaleString()}`} description={`${trips.length} trips`} Icon={Wallet} />
@@ -228,7 +239,7 @@ export default function TripsPage() {
           <CardDescription>{trips.length} trips recorded</CardDescription>
         </CardHeader>
         <CardContent>
-          {loading ? (
+          {loading || accessLoading ? (
             <div className="flex justify-center py-8">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
             </div>
@@ -236,12 +247,12 @@ export default function TripsPage() {
             <EmptyState
               title="No trips recorded yet"
               description="Record a trip to track distance, earnings, and running costs per vehicle."
-              action={
+              action={canRecord ? (
                 <Button type="button" onClick={openCreate}>
                   <PlusCircle className="mr-2 h-4 w-4" />
                   Record your first trip
                 </Button>
-              }
+              ) : undefined}
             />
           ) : (
             <>
@@ -273,20 +284,22 @@ export default function TripsPage() {
                         <dd className="text-rose-700">KES {(trip.expenses || 0).toLocaleString()}</dd>
                       </div>
                     </dl>
-                    <div className="mt-3 flex gap-2">
-                      <Button type="button" variant="outline" className="min-h-11 flex-1" onClick={() => openEdit(trip)}>
-                        <Edit className="mr-2 h-4 w-4" /> Edit
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="min-h-11 text-destructive"
-                        onClick={() => handleDelete(trip)}
-                        aria-label="Delete trip"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
+                    {!isDriver && (
+                      <div className="mt-3 flex gap-2">
+                        <Button type="button" variant="outline" className="min-h-11 flex-1" onClick={() => openEdit(trip)}>
+                          <Edit className="mr-2 h-4 w-4" /> Edit
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="min-h-11 text-destructive"
+                          onClick={() => handleDelete(trip)}
+                          aria-label="Delete trip"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    )}
                   </article>
                 ))}
               </div>
@@ -302,7 +315,7 @@ export default function TripsPage() {
                       <TableHead>Earnings</TableHead>
                       <TableHead>Expenses</TableHead>
                       <TableHead>Profit</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
+                      {!isDriver && <TableHead className="text-right">Actions</TableHead>}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -315,18 +328,20 @@ export default function TripsPage() {
                         <TableCell className="font-medium text-emerald-700">KES {(trip.earnings || 0).toLocaleString()}</TableCell>
                         <TableCell className="font-medium text-rose-700">KES {(trip.expenses || 0).toLocaleString()}</TableCell>
                         <TableCell className="font-medium">KES {((trip.earnings || 0) - (trip.expenses || 0)).toLocaleString()}</TableCell>
-                        <TableCell>
-                          <div className="flex justify-end gap-1">
-                            <Button type="button" variant="ghost" size="sm" className="min-h-11" onClick={() => openEdit(trip)}>
-                              <Edit className="h-4 w-4" />
-                              <span className="sr-only">Edit trip</span>
-                            </Button>
-                            <Button type="button" variant="ghost" size="sm" className="min-h-11 text-destructive" onClick={() => handleDelete(trip)}>
-                              <Trash2 className="h-4 w-4" />
-                              <span className="sr-only">Delete trip</span>
-                            </Button>
-                          </div>
-                        </TableCell>
+                        {!isDriver && (
+                          <TableCell>
+                            <div className="flex justify-end gap-1">
+                              <Button type="button" variant="ghost" size="sm" className="min-h-11" onClick={() => openEdit(trip)}>
+                                <Edit className="h-4 w-4" />
+                                <span className="sr-only">Edit trip</span>
+                              </Button>
+                              <Button type="button" variant="ghost" size="sm" className="min-h-11 text-destructive" onClick={() => handleDelete(trip)}>
+                                <Trash2 className="h-4 w-4" />
+                                <span className="sr-only">Delete trip</span>
+                              </Button>
+                            </div>
+                          </TableCell>
+                        )}
                       </TableRow>
                     ))}
                   </TableBody>
@@ -341,46 +356,56 @@ export default function TripsPage() {
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         title={editing ? 'Edit trip' : 'Record trip'}
-        description="Trips feed the dashboard profit figures and driver analytics."
+        description={isDriver ? 'Your name and current vehicle are filled in for you.' : 'Trips feed the dashboard profit figures and driver analytics.'}
       >
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="trip_vehicle">Vehicle *</Label>
-            <NativeSelect
-              id="trip_vehicle"
-              value={form.vehicleId}
-              onChange={(event) => setForm({ ...form, vehicleId: event.target.value })}
-              required
-              disabled={submitting}
-            >
-              <option value="">Select vehicle</option>
-              {vehicles.map((vehicle) => (
-                <option key={vehicle.id} value={vehicle.id}>{vehicle.label}</option>
-              ))}
-            </NativeSelect>
-          </div>
+          {isDriver ? (
+            <>
+              <LockedValue id="trip_vehicle_locked" label="Vehicle" value={vehicleLabel || 'No vehicle assigned'} hint="Set by your fleet owner." />
+              <LockedValue id="trip_driver_locked" label="Driver" value={driverName || 'Your driver record'} hint="You can only record your own trips." />
+            </>
+          ) : (
+            <>
+              <div className="space-y-2">
+                <Label htmlFor="trip_vehicle">Vehicle *</Label>
+                <NativeSelect
+                  id="trip_vehicle"
+                  value={form.vehicleId}
+                  onChange={(event) => setForm({ ...form, vehicleId: event.target.value })}
+                  required
+                  disabled={submitting}
+                >
+                  <option value="">Select vehicle</option>
+                  {vehicles.map((vehicle) => (
+                    <option key={vehicle.id} value={vehicle.id}>{vehicle.label}</option>
+                  ))}
+                </NativeSelect>
+              </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="trip_driver">Driver *</Label>
-            <NativeSelect
-              id="trip_driver"
-              value={form.driverId}
-              onChange={(event) => setForm({ ...form, driverId: event.target.value })}
-              required
-              disabled={submitting}
-            >
-              <option value="">Select driver</option>
-              {drivers.map((driver) => (
-                <option key={driver.id} value={driver.id}>{driver.label}</option>
-              ))}
-            </NativeSelect>
-          </div>
+              <div className="space-y-2">
+                <Label htmlFor="trip_driver">Driver *</Label>
+                <NativeSelect
+                  id="trip_driver"
+                  value={form.driverId}
+                  onChange={(event) => setForm({ ...form, driverId: event.target.value })}
+                  required
+                  disabled={submitting}
+                >
+                  <option value="">Select driver</option>
+                  {drivers.map((driver) => (
+                    <option key={driver.id} value={driver.id}>{driver.label}</option>
+                  ))}
+                </NativeSelect>
+              </div>
+            </>
+          )}
 
           <div className="space-y-2">
             <Label htmlFor="trip_date">Trip date *</Label>
             <Input
               id="trip_date"
               type="date"
+              className="h-12 text-base"
               value={form.tripDate}
               onChange={(event) => setForm({ ...form, tripDate: event.target.value })}
               required
@@ -397,6 +422,7 @@ export default function TripsPage() {
                 inputMode="decimal"
                 step="0.01"
                 min="0"
+                className="h-12 text-base"
                 value={form.distanceKm}
                 onChange={(event) => setForm({ ...form, distanceKm: event.target.value })}
                 placeholder="0.00"
@@ -411,6 +437,7 @@ export default function TripsPage() {
                 inputMode="decimal"
                 step="0.01"
                 min="0"
+                className="h-12 text-base"
                 value={form.earnings}
                 onChange={(event) => setForm({ ...form, earnings: event.target.value })}
                 placeholder="0.00"
@@ -426,6 +453,7 @@ export default function TripsPage() {
                 inputMode="decimal"
                 step="0.01"
                 min="0"
+                className="h-12 text-base"
                 value={form.expenses}
                 onChange={(event) => setForm({ ...form, expenses: event.target.value })}
                 placeholder="0.00"

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { canFleetResetDriverPin, pinResetDeniedMessage, resolvePinInput } from '@/lib/pin'
+import { canFleetResetDriverPin, needsPinChange, pinResetDeniedMessage, resolvePinInput } from '@/lib/pin'
 import { recordPinReset, requireAdminClient, setAuthUserPin } from '@/lib/pin-reset'
 import { normalizeKenyanPhone, phoneAuthEmail } from '@/lib/phone'
 import {
@@ -18,6 +18,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) {
     return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+  }
+  if (needsPinChange(user)) {
+    return NextResponse.json({ error: 'Set your own PIN in Settings before managing drivers.' }, { status: 403 })
   }
 
   const limitKey = pinResetRateLimitKey(user.id)
@@ -118,6 +121,29 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       if (fallbackError) {
         return NextResponse.json(
           { error: `PIN set, but the driver record could not be linked: ${fallbackError.message}` },
+          { status: 500 },
+        )
+      }
+
+      // The RPC also creates the driver membership. When it is missing, the
+      // fallback has to do both the link AND the membership, otherwise the
+      // driver signs in to an empty app.
+      const { error: membershipError } = await admin
+        .from('memberships')
+        .upsert(
+          {
+            user_id: applied.userId,
+            tenant_id: driver.tenant_id,
+            role: 'driver',
+            is_active: true,
+          },
+          { onConflict: 'user_id,tenant_id' },
+        )
+        .select('id')
+
+      if (membershipError) {
+        return NextResponse.json(
+          { error: `PIN set, but the fleet membership could not be created: ${membershipError.message}` },
           { status: 500 },
         )
       }
