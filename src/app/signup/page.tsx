@@ -100,7 +100,7 @@ export default function SignUpPage() {
         label="Phone number"
         icon={Phone}
         type="tel"
-        inputMode="numeric"
+        inputMode="tel"
         autoComplete="tel"
         placeholder="0712345678"
         value={phone}

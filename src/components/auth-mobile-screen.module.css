@@ -1,9 +1,11 @@
-/* Keep the sticky CTA relative to the viewport on these auth routes only.
-   The app-wide `overflow-x: hidden` would otherwise create a scroll container. */
-:global(html:has([data-auth-mobile-screen])),
-:global(body:has([data-auth-mobile-screen])) {
-  overflow-x: visible;
-  overflow-x: clip;
+/* A viewport-height wrapper is the sticky CTA's scroll container.
+   This avoids parent-selector support requirements and leaves the app-wide
+   html/body overflow rules alone. */
+.viewport {
+  height: 100vh;
+  height: 100dvh;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .screen {

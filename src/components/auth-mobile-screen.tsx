@@ -113,8 +113,10 @@ export function AuthMobileScreen({
 }: AuthMobileScreenProps) {
   return (
     <div
-      data-auth-mobile-screen=""
-      className="flex min-h-dvh w-full items-start justify-center bg-background sm:bg-sidebar/5 sm:px-6 sm:py-8"
+      className={cn(
+        styles.viewport,
+        'flex w-full items-start justify-center bg-background sm:bg-sidebar/5 sm:px-6 sm:py-8'
+      )}
     >
       <main
         className={cn(
@@ -172,7 +174,7 @@ export function AuthMobileScreen({
               className={cn(
                 styles.fullBleed,
                 styles.safeBottom,
-                'sticky bottom-0 z-10 mt-3 border-t border-border bg-card pt-3 sm:bottom-8 sm:mt-4 sm:rounded-b-[2rem]'
+                'sticky bottom-0 z-10 mt-3 border-t border-border bg-card pt-3 sm:mt-4 sm:rounded-b-[2rem]'
               )}
             >
               <Button
