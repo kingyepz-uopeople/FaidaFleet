@@ -42,11 +42,37 @@ export const driverMenuItems = [
   { href: '/settings', label: 'Settings', Icon: Settings },
 ]
 
+/**
+ * No role (session still loading, preview without Supabase, or an unrecognised
+ * role) gets an empty menu: the shell renders a neutral skeleton instead of
+ * flashing owner-only links to a driver.
+ */
 export function fleetMenuForRole(role: string | null | undefined) {
-  return (role || '').toLowerCase() === 'driver' ? driverMenuItems : fleetMenuItems
+  const normalized = (role || '').toLowerCase()
+  if (normalized === 'driver') return driverMenuItems
+  if (normalized === 'owner' || normalized === 'admin' || normalized === 'accountant') {
+    return fleetMenuItems
+  }
+  return []
 }
 
 export const fleetHelpItem = { href: '/help', label: 'Help', Icon: CircleHelp }
+
+const DRIVER_TITLES: Record<string, string> = {
+  trips: 'My trips',
+  collections: 'My collections',
+  expenses: 'My expenses & fuel',
+  maintenance: 'My maintenance',
+}
+
+/** Header titles follow the same driver wording as the page headings. */
+export function appHeaderTitle(pathname: string, isDriver: boolean): string {
+  const segment = pathname.split('/').pop() || 'dashboard'
+  if (isDriver && DRIVER_TITLES[segment]) return DRIVER_TITLES[segment]
+  if (segment === 'dashboard') return 'Dashboard'
+  if (segment === 'driver-analytics') return 'Driver stats'
+  return segment.charAt(0).toUpperCase() + segment.slice(1)
+}
 
 export const adminNavGroups = [
   {
@@ -103,8 +129,9 @@ export function isAdminNavActive(pathname: string, href: string) {
   return href === '/admin' ? pathname === '/admin' : pathname === href || pathname.startsWith(`${href}/`)
 }
 
-export function bottomNavForRole(role: string) {
-  if (role.toLowerCase() === 'driver') {
+export function bottomNavForRole(role: string | null | undefined) {
+  const normalized = (role || '').toLowerCase()
+  if (normalized === 'driver') {
     return [
       driverMenuItems[0], // Trips
       driverMenuItems[1], // Collections
@@ -113,11 +140,14 @@ export function bottomNavForRole(role: string) {
       driverMenuItems[4], // Maintenance
     ]
   }
-  return [
-    fleetMenuItems[0],
-    fleetMenuItems[1],
-    fleetMenuItems[2],
-    fleetMenuItems[3],
-    fleetMenuItems[9],
-  ]
+  if (normalized === 'owner' || normalized === 'admin' || normalized === 'accountant') {
+    return [
+      fleetMenuItems[0],
+      fleetMenuItems[1],
+      fleetMenuItems[2],
+      fleetMenuItems[3],
+      fleetMenuItems[9],
+    ]
+  }
+  return []
 }

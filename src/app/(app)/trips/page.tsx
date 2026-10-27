@@ -7,12 +7,15 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Textarea } from '@/components/ui/textarea';
 import { PlusCircle, Loader2, Trash2, Edit, Zap, Wallet, TrendingUp } from '@/components/icons';
 import { createClient } from '@/lib/supabase/client';
 import { assertMutation, assertMutationRow, requireUuid } from '@/lib/db';
+import { optionalNotes, withRecordedBy } from '@/lib/record-payload';
 import { toastError, toastSuccess } from '@/lib/toast';
 import { formatDateOnly } from '@/lib/dates';
-import { EmptyState, PageShell, TableScroll } from '@/components/page-shell';
+import { EmptyState, LoadFailure, PageShell, TableScroll } from '@/components/page-shell';
 import { FormDialog } from '@/components/form-dialog';
 import { NativeSelect } from '@/components/ui/native-select';
 import { StatCard } from '@/components/stat-card';
@@ -31,6 +34,7 @@ type Trip = {
   expenses: number | null;
   start_location: string | null;
   end_location: string | null;
+  notes: string | null;
   vehicles: { registration_number: string } | null;
   drivers: { full_name: string } | null;
 };
@@ -46,6 +50,7 @@ const EMPTY_FORM = {
   expenses: '',
   startLocation: '',
   endLocation: '',
+  notes: '',
 };
 
 export default function TripsPage() {
@@ -62,6 +67,7 @@ export default function TripsPage() {
   const supabase = useMemo(() => createClient(), []);
   const {
     loading: accessLoading,
+    userId,
     tenantId,
     isDriver,
     driverId,
@@ -146,6 +152,7 @@ export default function TripsPage() {
       expenses: trip.expenses?.toString() || '',
       startLocation: trip.start_location || '',
       endLocation: trip.end_location || '',
+      notes: trip.notes || '',
     });
     setFormError(null);
     setDialogOpen(true);
@@ -173,11 +180,12 @@ export default function TripsPage() {
         expenses: form.expenses ? Number.parseFloat(form.expenses) : 0,
         start_location: form.startLocation.trim() || null,
         end_location: form.endLocation.trim() || null,
+        notes: optionalNotes(form.notes),
       };
 
       const result = editing
         ? await supabase.from('trips').update(payload).eq('id', editing.id).select('id')
-        : await supabase.from('trips').insert([payload]).select('id');
+        : await supabase.from('trips').insert([withRecordedBy(payload, userId)]).select('id');
 
       assertMutationRow(result, editing ? 'Could not update the trip' : 'Could not record the trip');
       toastSuccess(editing ? 'Trip updated.' : 'Trip recorded.', 'Saved');
@@ -208,9 +216,11 @@ export default function TripsPage() {
   const totalEarnings = trips.reduce((sum, trip) => sum + (trip.earnings || 0), 0);
   const totalExpenses = trips.reduce((sum, trip) => sum + (trip.expenses || 0), 0);
   const totalProfit = totalEarnings - totalExpenses;
+  const isLoading = loading || accessLoading;
 
   return (
     <PageShell
+      loading={isLoading}
       title={isDriver ? 'My trips' : 'Trips & routes'}
       description={isDriver ? 'Record your trips for your assigned vehicle.' : 'Track individual trips, distance, and earnings.'}
       actions={
@@ -228,21 +238,26 @@ export default function TripsPage() {
       {isDriver && accessError && <DriverScopeNotice message={accessError} />}
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <StatCard title="Total earnings" value={`KES ${totalEarnings.toLocaleString()}`} description={`${trips.length} trips`} Icon={Wallet} />
-        <StatCard title="Total expenses" value={`KES ${totalExpenses.toLocaleString()}`} description="Fuel and running costs" Icon={Zap} />
-        <StatCard title="Net profit" value={`KES ${totalProfit.toLocaleString()}`} description="Earnings minus expenses" Icon={TrendingUp} />
+        <StatCard loading={isLoading} title="Total earnings" value={`KES ${totalEarnings.toLocaleString()}`} description={`${trips.length} trips`} Icon={Wallet} />
+        <StatCard loading={isLoading} title="Total expenses" value={`KES ${totalExpenses.toLocaleString()}`} description="Fuel and running costs" Icon={Zap} />
+        <StatCard loading={isLoading} title="Net profit" value={`KES ${totalProfit.toLocaleString()}`} description="Earnings minus expenses" Icon={TrendingUp} />
       </div>
 
       <Card>
         <CardHeader>
           <CardTitle>Trip records</CardTitle>
-          <CardDescription>{trips.length} trips recorded</CardDescription>
+          <CardDescription>
+            {isLoading ? <Skeleton className="h-4 w-28" /> : `${trips.length} trips recorded`}
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          {loading || accessLoading ? (
-            <div className="flex justify-center py-8">
+          {isLoading ? (
+            <div className="flex justify-center py-8" role="status" aria-label="Loading trips">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              <span className="sr-only">Loading trips…</span>
             </div>
+          ) : loadError ? (
+            <LoadFailure label="trips" message={loadError} onRetry={fetchData} />
           ) : trips.length === 0 ? (
             <EmptyState
               title="No trips recorded yet"
@@ -483,6 +498,18 @@ export default function TripsPage() {
                 disabled={submitting}
               />
             </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="trip_notes">Notes (optional)</Label>
+            <Textarea
+              id="trip_notes"
+              value={form.notes}
+              onChange={(event) => setForm({ ...form, notes: event.target.value })}
+              placeholder="Anything worth noting about this trip…"
+              rows={3}
+              disabled={submitting}
+            />
           </div>
 
           {formError && (

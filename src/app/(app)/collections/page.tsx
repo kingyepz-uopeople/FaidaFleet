@@ -15,13 +15,16 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Textarea } from '@/components/ui/textarea';
 import { PlusCircle, Loader2, Trash2, Edit, Wallet, TrendingUp, BadgeCheck } from '@/components/icons';
 import { createClient } from '@/lib/supabase/client';
 import { assertMutation, assertMutationRow, requireUuid } from '@/lib/db';
+import { optionalNotes, withRecordedBy } from '@/lib/record-payload';
 import { toastError, toastSuccess } from '@/lib/toast';
 import { formatDateOnly } from '@/lib/dates';
 import { collectionStatus } from '@/lib/fleet-metrics';
-import { EmptyState, PageShell, TableScroll } from '@/components/page-shell';
+import { EmptyState, LoadFailure, PageShell, TableScroll } from '@/components/page-shell';
 import { FormDialog } from '@/components/form-dialog';
 import { NativeSelect } from '@/components/ui/native-select';
 import { StatCard } from '@/components/stat-card';
@@ -43,6 +46,7 @@ type Collection = {
   date: string;
   shift: Shift | null;
   reconciled: boolean;
+  notes: string | null;
   vehicles: { registration_number: string } | null;
   drivers: { full_name: string } | null;
 };
@@ -57,6 +61,7 @@ const EMPTY_FORM = {
   mpesaReceipt: '',
   date: new Date().toISOString().split('T')[0],
   shift: 'morning' as Shift,
+  notes: '',
 };
 
 function methodLabel(method: string) {
@@ -81,6 +86,7 @@ export default function CollectionsPage() {
   const supabase = useMemo(() => createClient(), []);
   const {
     loading: accessLoading,
+    userId,
     tenantId,
     isDriver,
     driverId,
@@ -164,6 +170,7 @@ export default function CollectionsPage() {
       mpesaReceipt: collection.mpesa_receipt || '',
       date: collection.date,
       shift: collection.shift || 'morning',
+      notes: collection.notes || '',
     });
     setFormError(null);
     setDialogOpen(true);
@@ -193,11 +200,12 @@ export default function CollectionsPage() {
         mpesa_receipt: form.paymentMethod === 'mpesa' ? form.mpesaReceipt.trim() || null : null,
         date: form.date,
         shift: form.shift,
+        notes: optionalNotes(form.notes),
       };
 
       const result = editing
         ? await supabase.from('collections').update(payload).eq('id', editing.id).select('id')
-        : await supabase.from('collections').insert([payload]).select('id');
+        : await supabase.from('collections').insert([withRecordedBy(payload, userId)]).select('id');
 
       assertMutationRow(result, editing ? 'Could not update the collection' : 'Could not record the collection');
       toastSuccess(editing ? 'Collection updated.' : 'Collection recorded.', 'Saved');
@@ -235,9 +243,11 @@ export default function CollectionsPage() {
   const reconciliationRate = filteredCollections.length > 0
     ? Math.round((filteredCollections.filter((collection) => collection.reconciled).length / filteredCollections.length) * 100)
     : 0;
+  const isLoading = loading || accessLoading;
 
   return (
     <PageShell
+      loading={isLoading}
       title={isDriver ? 'My collections' : 'Collections'}
       description={isDriver ? 'Record your daily collections for your assigned vehicle.' : 'Track daily revenue from cash, M-Pesa, and Pochi.'}
       actions={
@@ -256,74 +266,83 @@ export default function CollectionsPage() {
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <StatCard
+          loading={isLoading}
           title="Total collections"
           value={`KES ${totalCollections.toLocaleString()}`}
           description={`${filteredCollections.length} records`}
           Icon={Wallet}
         />
         <StatCard
+          loading={isLoading}
           title="Average collection"
           value={`KES ${filteredCollections.length > 0 ? Math.round(totalCollections / filteredCollections.length).toLocaleString() : 0}`}
           description="Per transaction"
           Icon={TrendingUp}
         />
-        <StatCard title="Reconciliation rate" value={`${reconciliationRate}%`} description="Verified transactions" Icon={BadgeCheck} />
+        <StatCard loading={isLoading} title="Reconciliation rate" value={`${reconciliationRate}%`} description="Verified transactions" Icon={BadgeCheck} />
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Filters</CardTitle>
-          <CardDescription>Narrow the list by date or payment method.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
-            <div className="space-y-2">
-              <Label htmlFor="collection-date-filter">Date</Label>
-              <Input
-                id="collection-date-filter"
-                type="date"
-                value={searchDate}
-                onChange={(event) => setSearchDate(event.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="collection-method-filter">Payment method</Label>
-              <NativeSelect
-                id="collection-method-filter"
-                value={filterMethod}
-                onChange={(event) => setFilterMethod(event.target.value as 'all' | PaymentMethod)}
+      {!isLoading && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Filters</CardTitle>
+            <CardDescription>Narrow the list by date or payment method.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+              <div className="space-y-2">
+                <Label htmlFor="collection-date-filter">Date</Label>
+                <Input
+                  id="collection-date-filter"
+                  type="date"
+                  value={searchDate}
+                  onChange={(event) => setSearchDate(event.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="collection-method-filter">Payment method</Label>
+                <NativeSelect
+                  id="collection-method-filter"
+                  value={filterMethod}
+                  onChange={(event) => setFilterMethod(event.target.value as 'all' | PaymentMethod)}
+                >
+                  <option value="all">All methods</option>
+                  <option value="cash">Cash</option>
+                  <option value="mpesa">M-Pesa</option>
+                  <option value="pochi">Pochi</option>
+                </NativeSelect>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                className="min-h-11"
+                onClick={() => {
+                  setSearchDate('');
+                  setFilterMethod('all');
+                }}
               >
-                <option value="all">All methods</option>
-                <option value="cash">Cash</option>
-                <option value="mpesa">M-Pesa</option>
-                <option value="pochi">Pochi</option>
-              </NativeSelect>
+                Clear filters
+              </Button>
             </div>
-            <Button
-              type="button"
-              variant="outline"
-              className="min-h-11"
-              onClick={() => {
-                setSearchDate('');
-                setFilterMethod('all');
-              }}
-            >
-              Clear filters
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>
           <CardTitle>Collection records</CardTitle>
-          <CardDescription>{filteredCollections.length} records found</CardDescription>
+          <CardDescription>
+            {isLoading ? <Skeleton className="h-4 w-28" /> : `${filteredCollections.length} records found`}
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          {loading || accessLoading ? (
-            <div className="flex justify-center py-8">
+          {isLoading ? (
+            <div className="flex justify-center py-8" role="status" aria-label="Loading collections">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              <span className="sr-only">Loading collections…</span>
             </div>
+          ) : loadError ? (
+            <LoadFailure label="collections" message={loadError} onRetry={fetchData} />
           ) : filteredCollections.length === 0 ? (
             <EmptyState
               title={collections.length === 0 ? 'No collections yet' : 'No records match these filters'}
@@ -561,6 +580,18 @@ export default function CollectionsPage() {
                 <option value="night">Night</option>
               </NativeSelect>
             </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="collection_notes">Notes (optional)</Label>
+            <Textarea
+              id="collection_notes"
+              value={form.notes}
+              onChange={(event) => setForm({ ...form, notes: event.target.value })}
+              placeholder="Anything worth noting about this collection…"
+              rows={3}
+              disabled={submitting}
+            />
           </div>
 
           {formError && (

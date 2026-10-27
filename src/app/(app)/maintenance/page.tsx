@@ -8,12 +8,14 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Skeleton } from '@/components/ui/skeleton';
 import { PlusCircle, Loader2, Trash2, Edit, Wrench, Receipt, Clock } from '@/components/icons';
 import { createClient } from '@/lib/supabase/client';
 import { assertMutation, assertMutationRow, requireUuid } from '@/lib/db';
+import { withRecordedBy } from '@/lib/record-payload';
 import { toastError, toastSuccess } from '@/lib/toast';
 import { formatDateOnly } from '@/lib/dates';
-import { EmptyState, PageShell, TableScroll } from '@/components/page-shell';
+import { EmptyState, LoadFailure, PageShell, TableScroll } from '@/components/page-shell';
 import { FormDialog } from '@/components/form-dialog';
 import { NativeSelect } from '@/components/ui/native-select';
 import { StatCard } from '@/components/stat-card';
@@ -66,6 +68,7 @@ export default function MaintenancePage() {
   const supabase = useMemo(() => createClient(), []);
   const {
     loading: accessLoading,
+    userId,
     tenantId,
     isDriver,
     vehicleId,
@@ -169,7 +172,7 @@ export default function MaintenancePage() {
 
       const result = editing
         ? await supabase.from('maintenance_logs').update(payload).eq('id', editing.id).select('id')
-        : await supabase.from('maintenance_logs').insert([payload]).select('id');
+        : await supabase.from('maintenance_logs').insert([withRecordedBy(payload, userId)]).select('id');
 
       assertMutationRow(result, editing ? 'Could not update the record' : 'Could not record the maintenance');
       toastSuccess(editing ? 'Maintenance record updated.' : 'Maintenance recorded.', 'Saved');
@@ -201,9 +204,11 @@ export default function MaintenancePage() {
   const upcomingServices = maintenance.filter(
     (record) => record.next_service_date && new Date(record.next_service_date) > new Date(),
   ).length;
+  const isLoading = loading || accessLoading;
 
   return (
     <PageShell
+      loading={isLoading}
       title={isDriver ? 'My maintenance' : 'Maintenance'}
       description={isDriver ? 'Log work on your assigned vehicle.' : 'Track services, repairs, and upcoming service dates.'}
       actions={
@@ -221,21 +226,26 @@ export default function MaintenancePage() {
       {isDriver && accessError && <DriverScopeNotice message={accessError} />}
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <StatCard title="Total maintenance cost" value={`KES ${totalCost.toLocaleString()}`} description="All time" Icon={Wrench} />
-        <StatCard title="Records" value={String(maintenance.length)} description="Services and repairs" Icon={Receipt} />
-        <StatCard title="Upcoming services" value={String(upcomingServices)} description="Scheduled ahead" Icon={Clock} />
+        <StatCard loading={isLoading} title="Total maintenance cost" value={`KES ${totalCost.toLocaleString()}`} description="All time" Icon={Wrench} />
+        <StatCard loading={isLoading} title="Records" value={String(maintenance.length)} description="Services and repairs" Icon={Receipt} />
+        <StatCard loading={isLoading} title="Upcoming services" value={String(upcomingServices)} description="Scheduled ahead" Icon={Clock} />
       </div>
 
       <Card>
         <CardHeader>
           <CardTitle>Maintenance records</CardTitle>
-          <CardDescription>{maintenance.length} records found</CardDescription>
+          <CardDescription>
+            {isLoading ? <Skeleton className="h-4 w-28" /> : `${maintenance.length} records found`}
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          {loading || accessLoading ? (
-            <div className="flex justify-center py-8">
+          {isLoading ? (
+            <div className="flex justify-center py-8" role="status" aria-label="Loading maintenance records">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              <span className="sr-only">Loading maintenance records…</span>
             </div>
+          ) : loadError ? (
+            <LoadFailure label="maintenance records" message={loadError} onRetry={fetchData} />
           ) : maintenance.length === 0 ? (
             <EmptyState
               title="No maintenance records yet"

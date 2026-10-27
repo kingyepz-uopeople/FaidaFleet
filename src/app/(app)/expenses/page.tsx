@@ -16,12 +16,14 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Skeleton } from '@/components/ui/skeleton';
 import { PlusCircle, Loader2, Trash2, Edit, Receipt, TrendingDown } from '@/components/icons';
 import { createClient } from '@/lib/supabase/client';
 import { assertMutation, assertMutationRow, requireUuid } from '@/lib/db';
+import { withRecordedBy } from '@/lib/record-payload';
 import { toastError, toastSuccess } from '@/lib/toast';
 import { formatDateOnly } from '@/lib/dates';
-import { EmptyState, PageShell, TableScroll } from '@/components/page-shell';
+import { EmptyState, LoadFailure, PageShell, TableScroll } from '@/components/page-shell';
 import { FormDialog } from '@/components/form-dialog';
 import { NativeSelect } from '@/components/ui/native-select';
 import { StatCard } from '@/components/stat-card';
@@ -75,6 +77,7 @@ function ExpensesView() {
   const supabase = useMemo(() => createClient(), []);
   const {
     loading: accessLoading,
+    userId,
     tenantId,
     isDriver,
     vehicleId,
@@ -193,7 +196,7 @@ function ExpensesView() {
 
       const result = editing
         ? await supabase.from('expenses').update(payload).eq('id', editing.id).select('id')
-        : await supabase.from('expenses').insert([payload]).select('id');
+        : await supabase.from('expenses').insert([withRecordedBy(payload, userId)]).select('id');
 
       assertMutationRow(result, editing ? 'Could not update the expense' : 'Could not record the expense');
       toastSuccess(editing ? 'Expense updated.' : 'Expense recorded.', 'Saved');
@@ -223,9 +226,11 @@ function ExpensesView() {
 
   const totalExpenses = expenses.reduce((sum, expense) => sum + expense.amount, 0);
   const averageExpense = expenses.length > 0 ? Math.round(totalExpenses / expenses.length) : 0;
+  const isLoading = loading || accessLoading;
 
   return (
     <PageShell
+      loading={isLoading}
       title={isDriver ? 'My expenses & fuel' : 'Expenses'}
       description={isDriver ? 'Log fuel and other costs for your assigned vehicle.' : 'Track fuel, maintenance, and other operating costs.'}
       actions={
@@ -244,24 +249,30 @@ function ExpensesView() {
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <StatCard
+          loading={isLoading}
           title="Total expenses"
           value={`KES ${totalExpenses.toLocaleString()}`}
           description={`${expenses.length} records`}
           Icon={TrendingDown}
         />
-        <StatCard title="Average expense" value={`KES ${averageExpense.toLocaleString()}`} description="Per transaction" Icon={Receipt} />
+        <StatCard loading={isLoading} title="Average expense" value={`KES ${averageExpense.toLocaleString()}`} description="Per transaction" Icon={Receipt} />
       </div>
 
       <Card>
         <CardHeader>
           <CardTitle>Expense log</CardTitle>
-          <CardDescription>{expenses.length} expenses recorded</CardDescription>
+          <CardDescription>
+            {isLoading ? <Skeleton className="h-4 w-32" /> : `${expenses.length} expenses recorded`}
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          {loading || accessLoading ? (
-            <div className="flex justify-center py-8">
+          {isLoading ? (
+            <div className="flex justify-center py-8" role="status" aria-label="Loading expenses">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              <span className="sr-only">Loading expenses…</span>
             </div>
+          ) : loadError ? (
+            <LoadFailure label="expenses" message={loadError} onRetry={fetchData} />
           ) : expenses.length === 0 ? (
             <EmptyState
               title="No expenses recorded yet"
