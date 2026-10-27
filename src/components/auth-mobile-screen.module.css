@@ -1,0 +1,40 @@
+/* A viewport-height wrapper is the sticky CTA's scroll container.
+   This avoids parent-selector support requirements and leaves the app-wide
+   html/body overflow rules alone. */
+.viewport {
+  height: 100vh;
+  height: 100dvh;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.screen {
+  --auth-gutter: max(1.25rem, env(safe-area-inset-left), env(safe-area-inset-right));
+}
+
+.gutter {
+  padding-inline: var(--auth-gutter);
+}
+
+.fullBleed {
+  margin-inline: calc(var(--auth-gutter) * -1);
+  padding-inline: var(--auth-gutter);
+}
+
+.safeTop {
+  padding-top: max(1.25rem, env(safe-area-inset-top));
+}
+
+.safeBottom {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+
+@media (min-width: 640px) {
+  .screen {
+    --auth-gutter: max(1.5rem, env(safe-area-inset-left), env(safe-area-inset-right));
+  }
+
+  .safeTop {
+    padding-top: max(1.5rem, env(safe-area-inset-top));
+  }
+}
