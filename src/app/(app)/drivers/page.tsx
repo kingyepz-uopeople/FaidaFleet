@@ -16,10 +16,11 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { PlusCircle, Loader2, KeyRound, Users } from '@/components/icons';
+import { Skeleton } from '@/components/ui/skeleton';
+import { PlusCircle, Loader2, KeyRound, Users, Edit } from '@/components/icons';
 import { normalizeKenyanPhone, validatePin } from '@/lib/phone';
 import { createClient } from '@/lib/supabase/client';
-import { primaryMembership } from '@/lib/fleet-access';
+import { useFleetAccess } from '@/components/fleet-access-provider';
 import { assertMutation, assertMutationRow, requireUuid } from '@/lib/db';
 import { toastError, toastSuccess } from '@/lib/toast';
 import { PinResetDialog } from '@/components/pin-reset-dialog';
@@ -43,6 +44,12 @@ type Vehicle = {
   registration_number: string;
 };
 
+type Assignment = {
+  driver_id: string;
+  vehicle_id: string;
+  vehicles: { registration_number: string } | null;
+};
+
 const EMPTY_DRIVER = {
   full_name: '',
   phone: '',
@@ -56,6 +63,7 @@ const EMPTY_DRIVER = {
 export default function DriversPage() {
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -63,8 +71,14 @@ export default function DriversPage() {
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [assignError, setAssignError] = useState<string | null>(null);
-  const [tenantId, setTenantId] = useState<string | null>(null);
   const [resetDriver, setResetDriver] = useState<Driver | null>(null);
+  const [editingDriver, setEditingDriver] = useState<Driver | null>(null);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [editFormData, setEditFormData] = useState({
+    full_name: '',
+    license_number: '',
+    license_expiry: '',
+  });
   const [formData, setFormData] = useState(EMPTY_DRIVER);
   const [assignFormData, setAssignFormData] = useState({
     driver_id: '',
@@ -72,53 +86,56 @@ export default function DriversPage() {
     start_date: new Date().toISOString().split('T')[0],
   });
   const supabase = useMemo(() => createClient(), []);
+  const {
+    loading: accessLoading,
+    tenantId,
+    role,
+    loadError: accessError,
+  } = useFleetAccess();
+  const canManageDrivers = role === 'owner' || role === 'admin';
 
   useEffect(() => {
-    fetchData();
+    if (!accessLoading) fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [accessLoading, tenantId]);
 
   const fetchData = async () => {
     try {
       setLoading(true);
       setLoadError(null);
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('You need to sign in again.');
-
-      const { data: membershipRows, error: membershipError } = await supabase
-        .from('memberships')
-        .select('tenant_id, role')
-        .eq('user_id', user.id)
-        .eq('is_active', true);
-
-      if (membershipError) throw membershipError;
-      const membership = primaryMembership(membershipRows || []);
-      if (!membership) {
-        setLoadError('No fleet is linked to this account yet. Finish onboarding to add drivers.');
+      if (!tenantId) {
+        setLoadError(accessError || 'No fleet is linked to this account yet. Finish onboarding to add drivers.');
         return;
       }
 
-      setTenantId(membership.tenant_id);
-
-      const [driversRes, vehiclesRes] = await Promise.all([
+      const [driversRes, vehiclesRes, assignmentsRes] = await Promise.all([
         supabase
           .from('drivers')
-          .select('*')
-          .eq('tenant_id', membership.tenant_id)
+          .select('id, full_name, phone, license_number, license_expiry, id_number, is_active')
+          .eq('tenant_id', tenantId)
           .order('created_at', { ascending: false }),
         supabase
           .from('vehicles')
           .select('id, registration_number')
-          .eq('tenant_id', membership.tenant_id)
+          .eq('tenant_id', tenantId)
           .eq('is_active', true)
           .order('registration_number'),
+        supabase
+          .from('driver_assignments')
+          .select('driver_id, vehicle_id, vehicles(registration_number)')
+          .eq('tenant_id', tenantId)
+          .eq('is_current', true)
+          .order('start_date', { ascending: false })
+          .order('created_at', { ascending: false }),
       ]);
 
       if (driversRes.error) throw driversRes.error;
       if (vehiclesRes.error) throw vehiclesRes.error;
+      if (assignmentsRes.error) throw assignmentsRes.error;
 
       setDrivers((driversRes.data || []) as Driver[]);
       setVehicles(vehiclesRes.data || []);
+      setAssignments((assignmentsRes.data || []) as Assignment[]);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Could not load drivers';
       setLoadError(message);
@@ -174,6 +191,58 @@ export default function DriversPage() {
       const message = err instanceof Error ? err.message : 'Could not add the driver';
       setFormError(message);
       toastError(message, 'Could not add the driver');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const openEditDriver = (driver: Driver) => {
+    if (!canManageDrivers) return;
+    setEditingDriver(driver);
+    setEditFormData({
+      full_name: driver.full_name,
+      license_number: driver.license_number || '',
+      license_expiry: driver.license_expiry || '',
+    });
+    setEditError(null);
+  };
+
+  const handleEditDriver = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!editingDriver) return;
+    setSubmitting(true);
+    setEditError(null);
+
+    try {
+      if (!canManageDrivers || !tenantId) {
+        throw new Error('Only a fleet owner or admin can edit driver details.');
+      }
+      const fullName = editFormData.full_name.trim();
+      if (!fullName) throw new Error('Driver name is required');
+
+      // Phone is intentionally absent: it is linked to the driver's Supabase
+      // phone-auth email and must not be changed by this roster-only update.
+      const result = await supabase
+        .from('drivers')
+        .update({
+          full_name: fullName,
+          license_number: editFormData.license_number.trim() || null,
+          license_expiry: editFormData.license_expiry || null,
+        })
+        .eq('id', editingDriver.id)
+        .eq('tenant_id', tenantId)
+        .select('id, full_name, license_number, license_expiry');
+      const saved = assertMutationRow(result, 'Could not update the driver');
+
+      setDrivers((current) => current.map((driver) => (
+        driver.id === editingDriver.id ? { ...driver, ...saved } : driver
+      )));
+      setEditingDriver(null);
+      toastSuccess('Driver details and licence warning updated.', 'Driver updated');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Could not update the driver';
+      setEditError(message);
+      toastError(message, 'Could not update the driver');
     } finally {
       setSubmitting(false);
     }
@@ -244,9 +313,20 @@ export default function DriversPage() {
 
   const activeDrivers = drivers.filter((driver) => driver.is_active).length;
   const withPinIssues = drivers.filter((driver) => !driver.license_number).length;
+  const isLoading = loading || accessLoading;
+  const vehicleNames = new Map(vehicles.map((vehicle) => [vehicle.id, vehicle.registration_number]));
+  const currentVehicleByDriver = new Map<string, string>();
+  for (const assignment of assignments) {
+    if (currentVehicleByDriver.has(assignment.driver_id)) continue;
+    currentVehicleByDriver.set(
+      assignment.driver_id,
+      assignment.vehicles?.registration_number || vehicleNames.get(assignment.vehicle_id) || 'Vehicle unavailable',
+    );
+  }
 
   return (
     <PageShell
+      loading={isLoading}
       title="Drivers"
       description="Add drivers with a phone number and PIN. Reset a forgotten PIN from the driver record."
       actions={
@@ -274,16 +354,19 @@ export default function DriversPage() {
         </Alert>
       )}
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <StatCard title="Drivers" value={String(drivers.length)} description={`${activeDrivers} active`} Icon={Users} />
-        <StatCard title="Vehicles ready" value={String(vehicles.length)} description="Available to assign" Icon={PlusCircle} />
-        <StatCard
-          title="Missing licence"
-          value={String(withPinIssues)}
-          description="Add licence details for compliance"
-          Icon={KeyRound}
-        />
-      </div>
+      {!loadError && (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <StatCard loading={isLoading} title="Drivers" value={String(drivers.length)} description={`${activeDrivers} active`} Icon={Users} />
+          <StatCard loading={isLoading} title="Vehicles ready" value={String(vehicles.length)} description="Available to assign" Icon={PlusCircle} />
+          <StatCard
+            loading={isLoading}
+            title="Missing licence"
+            value={String(withPinIssues)}
+            description="Add licence details for compliance"
+            Icon={KeyRound}
+          />
+        </div>
+      )}
 
       <Card>
         <CardHeader>
@@ -291,10 +374,22 @@ export default function DriversPage() {
           <CardDescription>A list of all drivers in your fleet.</CardDescription>
         </CardHeader>
         <CardContent>
-          {loading ? (
-            <div className="flex justify-center py-8">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          {isLoading ? (
+            <div className="space-y-3" role="status" aria-label="Loading driver roster">
+              <span className="sr-only">Loading driver roster…</span>
+              {[0, 1, 2].map((row) => (
+                <div key={row} className="flex items-center gap-3 py-2">
+                  <Skeleton className="h-10 w-10 rounded-full" />
+                  <div className="flex-1 space-y-2">
+                    <Skeleton className="h-4 w-40 max-w-full" />
+                    <Skeleton className="h-3 w-56 max-w-full" />
+                  </div>
+                  <Skeleton className="h-6 w-20" />
+                </div>
+              ))}
             </div>
+          ) : loadError ? (
+            <p className="py-8 text-center text-sm text-muted-foreground">Driver records could not be loaded.</p>
           ) : drivers.length === 0 ? (
             <EmptyState
               title="No drivers yet"
@@ -325,21 +420,37 @@ export default function DriversPage() {
                         {driver.is_active ? 'Active' : 'Inactive'}
                       </Badge>
                     </div>
-                    <p className="mt-3 text-sm text-muted-foreground">
-                      Licence {driver.license_number || '—'}
-                      {driver.license_expiry
-                        ? ` · expires ${new Date(driver.license_expiry).toLocaleDateString('en-KE')}`
-                        : ''}
-                    </p>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="mt-3 min-h-11 w-full"
-                      onClick={() => setResetDriver(driver)}
-                    >
-                      <KeyRound className="h-4 w-4" />
-                      Reset PIN
-                    </Button>
+                    <div className="mt-3 space-y-1 text-sm text-muted-foreground">
+                      <p>Vehicle {currentVehicleByDriver.get(driver.id) || 'Unassigned'}</p>
+                      <p>
+                        Licence {driver.license_number || '—'}
+                        {driver.license_expiry
+                          ? ` · expires ${new Date(driver.license_expiry).toLocaleDateString('en-KE')}`
+                          : ''}
+                      </p>
+                    </div>
+                    <div className="mt-3 flex gap-2">
+                      {canManageDrivers && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="min-h-11 flex-1"
+                          onClick={() => openEditDriver(driver)}
+                        >
+                          <Edit className="mr-2 h-4 w-4" />
+                          Edit
+                        </Button>
+                      )}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="min-h-11 flex-1"
+                        onClick={() => setResetDriver(driver)}
+                      >
+                        <KeyRound className="mr-2 h-4 w-4" />
+                        Reset PIN
+                      </Button>
+                    </div>
                   </article>
                 ))}
               </div>
@@ -350,10 +461,11 @@ export default function DriversPage() {
                     <TableRow>
                       <TableHead>Driver</TableHead>
                       <TableHead>Phone</TableHead>
+                      <TableHead>Current vehicle</TableHead>
                       <TableHead>Licence number</TableHead>
                       <TableHead>Licence expiry</TableHead>
                       <TableHead>Status</TableHead>
-                      <TableHead className="text-right">PIN</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -368,6 +480,7 @@ export default function DriversPage() {
                           </div>
                         </TableCell>
                         <TableCell>{driver.phone}</TableCell>
+                        <TableCell>{currentVehicleByDriver.get(driver.id) || 'Unassigned'}</TableCell>
                         <TableCell>{driver.license_number || '—'}</TableCell>
                         <TableCell>
                           {driver.license_expiry
@@ -379,11 +492,25 @@ export default function DriversPage() {
                             {driver.is_active ? 'Active' : 'Inactive'}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-right">
-                          <Button type="button" variant="outline" size="sm" className="min-h-11" onClick={() => setResetDriver(driver)}>
-                            <KeyRound className="h-4 w-4" />
-                            Reset PIN
-                          </Button>
+                        <TableCell>
+                          <div className="flex items-center justify-end gap-1">
+                            {canManageDrivers && (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="min-h-11"
+                                onClick={() => openEditDriver(driver)}
+                              >
+                                <Edit className="h-4 w-4" />
+                                <span className="sr-only">Edit {driver.full_name}</span>
+                              </Button>
+                            )}
+                            <Button type="button" variant="outline" size="sm" className="min-h-11" onClick={() => setResetDriver(driver)}>
+                              <KeyRound className="h-4 w-4" />
+                              Reset PIN
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -517,6 +644,76 @@ export default function DriversPage() {
               ) : (
                 'Add driver'
               )}
+            </Button>
+          </div>
+        </form>
+      </FormDialog>
+
+      <FormDialog
+        open={Boolean(editingDriver)}
+        onOpenChange={(open) => {
+          if (!open && !submitting) setEditingDriver(null);
+        }}
+        title="Edit driver"
+        description="Update the driver's name and licence details. Phone sign-in details stay unchanged."
+      >
+        <form onSubmit={handleEditDriver} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="edit_driver_name">Full name *</Label>
+            <Input
+              id="edit_driver_name"
+              autoComplete="name"
+              value={editFormData.full_name}
+              onChange={(event) => setEditFormData({ ...editFormData, full_name: event.target.value })}
+              required
+              disabled={submitting}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="edit_driver_phone">Phone number</Label>
+            <Input
+              id="edit_driver_phone"
+              type="tel"
+              value={editingDriver?.phone || ''}
+              readOnly
+              disabled
+              aria-describedby="edit_driver_phone_hint"
+            />
+            <p id="edit_driver_phone_hint" className="text-sm text-muted-foreground">
+              Read-only because this normalized phone number is linked to the driver&apos;s phone-auth email. Ask a system administrator about identity changes.
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="edit_license_number">Licence number</Label>
+            <Input
+              id="edit_license_number"
+              placeholder="DL123456"
+              value={editFormData.license_number}
+              onChange={(event) => setEditFormData({ ...editFormData, license_number: event.target.value })}
+              disabled={submitting}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="edit_license_expiry">Licence expiry</Label>
+            <Input
+              id="edit_license_expiry"
+              type="date"
+              value={editFormData.license_expiry}
+              onChange={(event) => setEditFormData({ ...editFormData, license_expiry: event.target.value })}
+              disabled={submitting}
+            />
+          </div>
+          {editError && (
+            <Alert variant="destructive">
+              <AlertDescription>{editError}</AlertDescription>
+            </Alert>
+          )}
+          <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
+            <Button type="button" variant="outline" className="min-h-11" onClick={() => setEditingDriver(null)} disabled={submitting}>
+              Cancel
+            </Button>
+            <Button type="submit" className="min-h-11" disabled={submitting}>
+              {submitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Saving…</> : 'Save driver'}
             </Button>
           </div>
         </form>

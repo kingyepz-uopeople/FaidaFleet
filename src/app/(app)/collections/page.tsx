@@ -30,6 +30,7 @@ import { NativeSelect } from '@/components/ui/native-select';
 import { StatCard } from '@/components/stat-card';
 import { useFleetAccess } from '@/components/fleet-access-provider';
 import { DriverScopeNotice, LockedValue } from '@/components/driver-scope';
+import { RecordOriginBadge } from '@/components/record-origin-badge';
 
 const NO_MATCH_UUID = '00000000-0000-0000-0000-000000000000';
 
@@ -47,8 +48,9 @@ type Collection = {
   shift: Shift | null;
   reconciled: boolean;
   notes: string | null;
+  recorded_by: string | null;
   vehicles: { registration_number: string } | null;
-  drivers: { full_name: string } | null;
+  drivers: { full_name: string; user_id: string | null } | null;
 };
 
 type Option = { id: string; label: string };
@@ -115,14 +117,14 @@ export default function CollectionsPage() {
         (isDriver
           ? supabase
               .from('collections')
-              .select('*, vehicles(registration_number), drivers(full_name)')
+              .select('*, vehicles(registration_number), drivers(full_name, user_id)')
               .eq('tenant_id', tenantId)
               .eq('driver_id', driverId || NO_MATCH_UUID)
           : supabase
               .from('collections')
-              .select('*, vehicles(registration_number), drivers(full_name)')
+              .select('*, vehicles(registration_number), drivers(full_name, user_id)')
               .eq('tenant_id', tenantId)
-        ).order('date', { ascending: false }),
+        ).order('created_at', { ascending: false }).order('date', { ascending: false }),
         isDriver
           ? supabase.from('vehicles').select('id, registration_number').eq('id', vehicleId || NO_MATCH_UUID).limit(1)
           : supabase.from('vehicles').select('id, registration_number').eq('tenant_id', tenantId).eq('is_active', true).order('registration_number'),
@@ -379,6 +381,7 @@ export default function CollectionsPage() {
                         <p className="shrink-0 font-semibold">KES {collection.amount.toLocaleString()}</p>
                       </div>
                       <div className="mt-2 flex flex-wrap gap-2">
+                        <RecordOriginBadge recordedBy={collection.recorded_by} driverUserId={collection.drivers?.user_id} />
                         <Badge variant="secondary">{methodLabel(collection.payment_method)}</Badge>
                         <Badge variant="secondary" className="capitalize">{collection.shift || '—'}</Badge>
                         <Badge className={status === 'Pending' ? 'bg-amber-100 text-amber-800 hover:bg-amber-100' : 'bg-emerald-100 text-emerald-800 hover:bg-emerald-100'}>
@@ -417,6 +420,7 @@ export default function CollectionsPage() {
                       <TableHead>Method</TableHead>
                       <TableHead>Shift</TableHead>
                       <TableHead>Status</TableHead>
+                      <TableHead>Entry</TableHead>
                       {!isDriver && <TableHead className="text-right">Actions</TableHead>}
                     </TableRow>
                   </TableHeader>
@@ -436,6 +440,7 @@ export default function CollectionsPage() {
                               {status}
                             </Badge>
                           </TableCell>
+                          <TableCell><RecordOriginBadge recordedBy={collection.recorded_by} driverUserId={collection.drivers?.user_id} /></TableCell>
                           {!isDriver && (
                             <TableCell>
                               <div className="flex justify-end gap-1">

@@ -1,4 +1,11 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "framework": "nextjs"
+  "framework": "nextjs",
+  "regions": ["lhr1"],
+  "crons": [
+    {
+      "path": "/api/cron/purge-fuel-photos.jpg",
+      "schedule": "0 2 * * *"
+    }
+  ]
 }
