@@ -19,7 +19,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { WeeklyChart } from './weekly-chart'
+import { DeferredWeeklyChart } from './deferred-weekly-chart'
 import type { ComplianceIssue } from '@/lib/fleet-metrics'
 
 export type RecentCollection = {
@@ -250,7 +250,7 @@ export function FleetHome({
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
         <div className="lg:col-span-4">
-          <WeeklyChart data={chartData} />
+          <DeferredWeeklyChart data={chartData} />
         </div>
         <Card className="lg:col-span-3">
           <CardHeader>

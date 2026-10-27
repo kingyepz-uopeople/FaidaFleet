@@ -10,7 +10,7 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/lib/phone.test.ts src/lib/pin.test.ts src/lib/pin-auth.test.ts src/lib/auth-paths.test.ts src/lib/fleet-access.test.ts src/lib/nav.test.ts src/lib/record-payload.test.ts src/lib/pwa/install-dismissal.test.ts src/lib/fleet-metrics.test.ts src/lib/supabase/env.test.ts src/lib/fuel.test.ts src/lib/fuel-photo.test.ts src/lib/record-origin.test.ts src/lib/cron-auth.test.ts"
+    "test": "tsx --test src/lib/phone.test.ts src/lib/pin.test.ts src/lib/pin-auth.test.ts src/lib/auth-paths.test.ts src/lib/fleet-access.test.ts src/lib/nav.test.ts src/lib/record-payload.test.ts src/lib/pwa/install-dismissal.test.ts src/lib/fleet-metrics.test.ts src/lib/supabase/env.test.ts src/lib/fuel.test.ts src/lib/fuel-photo.test.ts src/lib/record-origin.test.ts src/lib/cron-auth.test.ts src/lib/report-range.test.ts src/lib/expense-pagination.test.ts src/lib/supabase/middleware.test.ts src/lib/migration-safety.test.ts"
   },
   "dependencies": {
     "@genkit-ai/google-genai": "^1.20.0",
