@@ -231,7 +231,8 @@ export function FleetAccessProvider({
 
       const resolved = accessFromMemberships(memberships, user)
       // Publish the role/tenant as soon as they are known: owner pages can
-      // start their own data query while the driver scope finishes.
+      // start their own data query while the driver scope finishes. With no
+      // membership at all, keep the neutral skeleton instead of "Member".
       apply(id, {
         user,
         userId: user.id,
@@ -242,7 +243,7 @@ export function FleetAccessProvider({
         ...NO_DRIVER_SCOPE,
         loadError: null,
         loading: resolved.isDriver,
-        roleLoading: false,
+        roleLoading: !resolved.ready,
         scopeLoading: resolved.isDriver,
       })
 
