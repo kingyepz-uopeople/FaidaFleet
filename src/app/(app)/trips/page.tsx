@@ -21,6 +21,7 @@ import { NativeSelect } from '@/components/ui/native-select';
 import { StatCard } from '@/components/stat-card';
 import { useFleetAccess } from '@/components/fleet-access-provider';
 import { DriverScopeNotice, LockedValue } from '@/components/driver-scope';
+import { RecordOriginBadge } from '@/components/record-origin-badge';
 
 const NO_MATCH_UUID = '00000000-0000-0000-0000-000000000000';
 
@@ -35,8 +36,9 @@ type Trip = {
   start_location: string | null;
   end_location: string | null;
   notes: string | null;
+  recorded_by: string | null;
   vehicles: { registration_number: string } | null;
-  drivers: { full_name: string } | null;
+  drivers: { full_name: string; user_id: string | null } | null;
 };
 
 type Option = { id: string; label: string };
@@ -96,14 +98,14 @@ export default function TripsPage() {
         (isDriver
           ? supabase
               .from('trips')
-              .select('*, vehicles(registration_number), drivers(full_name)')
+              .select('*, vehicles(registration_number), drivers(full_name, user_id)')
               .eq('tenant_id', tenantId)
               .eq('driver_id', driverId || NO_MATCH_UUID)
           : supabase
               .from('trips')
-              .select('*, vehicles(registration_number), drivers(full_name)')
+              .select('*, vehicles(registration_number), drivers(full_name, user_id)')
               .eq('tenant_id', tenantId)
-        ).order('trip_date', { ascending: false }),
+        ).order('created_at', { ascending: false }).order('trip_date', { ascending: false }),
         isDriver
           ? supabase.from('vehicles').select('id, registration_number').eq('id', vehicleId || NO_MATCH_UUID).limit(1)
           : supabase.from('vehicles').select('id, registration_number').eq('tenant_id', tenantId).eq('is_active', true).order('registration_number'),
@@ -285,6 +287,9 @@ export default function TripsPage() {
                       </div>
                       <span className="shrink-0 text-sm text-muted-foreground">{formatDateOnly(trip.trip_date)}</span>
                     </div>
+                    <div className="mt-2">
+                      <RecordOriginBadge recordedBy={trip.recorded_by} driverUserId={trip.drivers?.user_id} />
+                    </div>
                     <dl className="mt-3 grid grid-cols-3 gap-2 text-sm">
                       <div>
                         <dt className="text-xs text-muted-foreground">Distance</dt>
@@ -330,6 +335,7 @@ export default function TripsPage() {
                       <TableHead>Earnings</TableHead>
                       <TableHead>Expenses</TableHead>
                       <TableHead>Profit</TableHead>
+                      <TableHead>Entry</TableHead>
                       {!isDriver && <TableHead className="text-right">Actions</TableHead>}
                     </TableRow>
                   </TableHeader>
@@ -343,6 +349,7 @@ export default function TripsPage() {
                         <TableCell className="font-medium text-emerald-700">KES {(trip.earnings || 0).toLocaleString()}</TableCell>
                         <TableCell className="font-medium text-rose-700">KES {(trip.expenses || 0).toLocaleString()}</TableCell>
                         <TableCell className="font-medium">KES {((trip.earnings || 0) - (trip.expenses || 0)).toLocaleString()}</TableCell>
+                        <TableCell><RecordOriginBadge recordedBy={trip.recorded_by} driverUserId={trip.drivers?.user_id} /></TableCell>
                         {!isDriver && (
                           <TableCell>
                             <div className="flex justify-end gap-1">

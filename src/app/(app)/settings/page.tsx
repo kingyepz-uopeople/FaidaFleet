@@ -28,6 +28,7 @@ import { SignOutButton } from '@/components/sign-out-button';
 import { assertMutationRow } from '@/lib/db';
 import { toastError, toastSuccess } from '@/lib/toast';
 import { cn } from '@/lib/utils';
+import { validFuelPhotoRetentionDays } from '@/lib/fuel';
 
 type TeamMember = {
   id: string;
@@ -45,6 +46,7 @@ export default function SettingsPage() {
   const [tenantId, setTenantId] = useState<string | null>(null);
   const [role, setRole] = useState<string | null>(null);
   const [fleetName, setFleetName] = useState('');
+  const [fuelPhotoRetentionDays, setFuelPhotoRetentionDays] = useState('90');
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [phoneAccount, setPhoneAccount] = useState(true);
   const [phone, setPhone] = useState('');
@@ -80,7 +82,7 @@ export default function SettingsPage() {
 
         if (!isDriver) {
           const [tenantResp, teamResp] = await Promise.all([
-            supabase.from('tenants').select('name').eq('id', membership.tenant_id).limit(1),
+            supabase.from('tenants').select('name, fuel_photo_retention_days').eq('id', membership.tenant_id).limit(1),
             supabase
               .from('memberships')
               .select('id, role, joined_at, user_id')
@@ -91,7 +93,9 @@ export default function SettingsPage() {
           if (tenantResp.error) throw tenantResp.error;
           if (teamResp.error) throw teamResp.error;
 
-          setFleetName((tenantResp.data?.[0] as { name: string } | undefined)?.name || '');
+          const tenant = tenantResp.data?.[0] as { name: string; fuel_photo_retention_days: number | null } | undefined;
+          setFleetName(tenant?.name || '');
+          setFuelPhotoRetentionDays(String(tenant?.fuel_photo_retention_days ?? 90));
           setMembers((teamResp.data || []) as TeamMember[]);
         }
         setPhoneAccount(isPhoneAccount(user));
@@ -182,17 +186,22 @@ export default function SettingsPage() {
       if (!tenantId) throw new Error('No fleet found');
       const name = fleetName.trim();
       if (!name) throw new Error('Fleet name is required');
+      const retentionDays = Number(fuelPhotoRetentionDays);
+      if (!validFuelPhotoRetentionDays(retentionDays)) {
+        throw new Error('Keep fuel photos for a whole number of days from 30 to 365');
+      }
 
       const supabase = createClient();
       const updateResult = await supabase
         .from('tenants')
-        .update({ name })
+        .update({ name, fuel_photo_retention_days: retentionDays })
         .eq('id', tenantId)
         .select('id');
       assertMutationRow(updateResult, 'Could not rename the fleet');
       setFleetName(name);
-      setMessage('Fleet name updated.');
-      toastSuccess('Fleet name updated.');
+      setFuelPhotoRetentionDays(String(retentionDays));
+      setMessage('Fleet settings updated. The new photo retention applies to new fuel entries.');
+      toastSuccess('Fleet settings updated.');
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Could not save fleet settings';
       setError(message);
@@ -316,6 +325,23 @@ export default function SettingsPage() {
                   {role && role !== 'owner' && (
                     <p className="text-sm text-muted-foreground">Only the fleet owner can rename the fleet.</p>
                   )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="fuel-photo-retention">Keep fuel photos for N days</Label>
+                  <Input
+                    id="fuel-photo-retention"
+                    type="number"
+                    inputMode="numeric"
+                    min={30}
+                    max={365}
+                    step={1}
+                    className="min-h-11"
+                    value={fuelPhotoRetentionDays}
+                    onChange={(event) => setFuelPhotoRetentionDays(event.target.value)}
+                    disabled={loading || role !== 'owner'}
+                    required
+                  />
+                  <p className="text-sm text-muted-foreground">Choose 30–365 days. The default is 90 days; changes apply to new fuel photos.</p>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="currency">Currency</Label>

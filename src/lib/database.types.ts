@@ -12,6 +12,7 @@ export interface Database {
           phone: string | null
           email: string | null
           plan: 'starter' | 'pro' | 'enterprise'
+          fuel_photo_retention_days: number
           is_active: boolean
           created_at: string
           updated_at: string
@@ -23,6 +24,7 @@ export interface Database {
           phone?: string | null
           email?: string | null
           plan?: 'starter' | 'pro' | 'enterprise'
+          fuel_photo_retention_days?: number
           is_active?: boolean
           created_at?: string
           updated_at?: string
@@ -34,6 +36,7 @@ export interface Database {
           phone?: string | null
           email?: string | null
           plan?: 'starter' | 'pro' | 'enterprise'
+          fuel_photo_retention_days?: number
           is_active?: boolean
           created_at?: string
           updated_at?: string
@@ -439,6 +442,12 @@ export interface Database {
           description: string | null
           receipt_url: string | null
           recorded_by: string | null
+          odometer_km: number | null
+          litres: number | null
+          price_per_litre: number | null
+          pump_photo_path: string | null
+          pump_photo_expires_at: string | null
+          pump_photo_deleted_at: string | null
           created_at: string
           updated_at: string
         }
@@ -452,6 +461,12 @@ export interface Database {
           description?: string | null
           receipt_url?: string | null
           recorded_by?: string | null
+          odometer_km?: number | null
+          litres?: number | null
+          price_per_litre?: number | null
+          pump_photo_path?: string | null
+          pump_photo_expires_at?: string | null
+          pump_photo_deleted_at?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -465,6 +480,12 @@ export interface Database {
           description?: string | null
           receipt_url?: string | null
           recorded_by?: string | null
+          odometer_km?: number | null
+          litres?: number | null
+          price_per_litre?: number | null
+          pump_photo_path?: string | null
+          pump_photo_expires_at?: string | null
+          pump_photo_deleted_at?: string | null
           created_at?: string
           updated_at?: string
         }

@@ -102,7 +102,7 @@ export default function MaintenancePage() {
               .from('maintenance_logs')
               .select('*, vehicles(registration_number)')
               .eq('tenant_id', tenantId)
-        ).order('date', { ascending: false }),
+        ).order('created_at', { ascending: false }).order('date', { ascending: false }),
         isDriver
           ? supabase.from('vehicles').select('id, registration_number').eq('id', vehicleId || NO_MATCH_UUID).limit(1)
           : supabase.from('vehicles').select('id, registration_number').eq('tenant_id', tenantId).eq('is_active', true).order('registration_number'),

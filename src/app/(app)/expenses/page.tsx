@@ -1,6 +1,6 @@
 'use client';
 
-import React, { Suspense, useEffect, useMemo, useState } from 'react';
+import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import {
   Table,
@@ -29,8 +29,12 @@ import { NativeSelect } from '@/components/ui/native-select';
 import { StatCard } from '@/components/stat-card';
 import { useFleetAccess } from '@/components/fleet-access-provider';
 import { DriverScopeNotice, LockedValue } from '@/components/driver-scope';
+import { compressPumpPhoto, fuelPumpPhotoPath } from '@/lib/fuel-photo';
+import { fuelPriceFromTotal, fuelTotalFromPrice } from '@/lib/fuel';
 
 const NO_MATCH_UUID = '00000000-0000-0000-0000-000000000000';
+const PHOTO_BUCKET = 'fuel-pump-photos';
+const SIGNED_PHOTO_SECONDS = 120;
 
 type ExpenseCategory = 'fuel' | 'maintenance' | 'insurance' | 'license' | 'parking' | 'fine' | 'other';
 
@@ -41,6 +45,13 @@ type Expense = {
   amount: number;
   date: string;
   description: string | null;
+  recorded_by: string | null;
+  odometer_km: number | null;
+  litres: number | null;
+  price_per_litre: number | null;
+  pump_photo_path: string | null;
+  pump_photo_expires_at: string | null;
+  pump_photo_deleted_at: string | null;
   vehicles: { registration_number: string } | null;
 };
 
@@ -60,9 +71,18 @@ const EMPTY_FORM = {
   vehicleId: '',
   category: 'fuel' as ExpenseCategory,
   amount: '',
+  litres: '',
+  pricePerLitre: '',
+  odometerKm: '',
   date: new Date().toISOString().split('T')[0],
   description: '',
 };
+
+function optionalNumber(value: string): number | null {
+  if (!value.trim()) return null;
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
 
 function ExpensesView() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -74,17 +94,27 @@ function ExpensesView() {
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
+  const [pumpPhoto, setPumpPhoto] = useState<Blob | null>(null);
+  const [pumpPhotoPreview, setPumpPhotoPreview] = useState<string | null>(null);
+  const [photoPreparing, setPhotoPreparing] = useState(false);
+  const [detailExpense, setDetailExpense] = useState<Expense | null>(null);
+  const [detailPhotoUrl, setDetailPhotoUrl] = useState<string | null>(null);
+  const [detailPhotoLoading, setDetailPhotoLoading] = useState(false);
+  const [detailPhotoError, setDetailPhotoError] = useState<string | null>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
   const supabase = useMemo(() => createClient(), []);
   const {
     loading: accessLoading,
     userId,
     tenantId,
+    role,
     isDriver,
     vehicleId,
     vehicleLabel,
     loadError: accessError,
   } = useFleetAccess();
   const canRecord = !isDriver || Boolean(vehicleId);
+  const canViewPumpPhotos = role === 'owner' || role === 'admin';
   const searchParams = useSearchParams();
   const quickFuel = searchParams.get('new') === 'fuel';
 
@@ -102,9 +132,50 @@ function ExpensesView() {
       vehicleId: isDriver ? vehicleId || '' : '',
       category: 'fuel',
     });
+    setPumpPhoto(null);
+    setPumpPhotoPreview(null);
     setFormError(null);
     setDialogOpen(true);
   }, [accessLoading, canRecord, isDriver, vehicleId, quickFuel]);
+
+  useEffect(() => {
+    return () => {
+      if (pumpPhotoPreview) URL.revokeObjectURL(pumpPhotoPreview);
+    };
+  }, [pumpPhotoPreview]);
+
+  useEffect(() => {
+    let active = true;
+    setDetailPhotoUrl(null);
+    setDetailPhotoError(null);
+    if (!detailExpense || !canViewPumpPhotos) return;
+
+    const expired = Boolean(detailExpense.pump_photo_deleted_at) || Boolean(
+      detailExpense.pump_photo_expires_at &&
+      new Date(detailExpense.pump_photo_expires_at).getTime() <= Date.now()
+    );
+    if (!detailExpense.pump_photo_path || expired) return;
+
+    setDetailPhotoLoading(true);
+    supabase.storage
+      .from(PHOTO_BUCKET)
+      .createSignedUrl(detailExpense.pump_photo_path, SIGNED_PHOTO_SECONDS)
+      .then(({ data, error }) => {
+        if (!active) return;
+        if (error) setDetailPhotoError(error.message);
+        else setDetailPhotoUrl(data.signedUrl);
+      })
+      .catch((error: unknown) => {
+        if (active) setDetailPhotoError(error instanceof Error ? error.message : 'Could not load the photo');
+      })
+      .finally(() => {
+        if (active) setDetailPhotoLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [canViewPumpPhotos, detailExpense, supabase]);
 
   const fetchData = async () => {
     try {
@@ -126,7 +197,7 @@ function ExpensesView() {
               .from('expenses')
               .select('*, vehicles(registration_number)')
               .eq('tenant_id', tenantId)
-        ).order('date', { ascending: false }),
+        ).order('created_at', { ascending: false }).order('date', { ascending: false }),
         isDriver
           ? supabase.from('vehicles').select('id, registration_number').eq('id', vehicleId || NO_MATCH_UUID).limit(1)
           : supabase.from('vehicles').select('id, registration_number').eq('tenant_id', tenantId).eq('is_active', true).order('registration_number'),
@@ -146,6 +217,12 @@ function ExpensesView() {
     }
   };
 
+  const clearPhoto = () => {
+    setPumpPhoto(null);
+    setPumpPhotoPreview(null);
+    if (photoInputRef.current) photoInputRef.current.value = '';
+  };
+
   const openCreate = () => {
     if (!canRecord) return;
     setEditing(null);
@@ -153,6 +230,7 @@ function ExpensesView() {
       ...EMPTY_FORM,
       vehicleId: isDriver ? vehicleId || '' : '',
     });
+    clearPhoto();
     setFormError(null);
     setDialogOpen(true);
   };
@@ -164,11 +242,53 @@ function ExpensesView() {
       vehicleId: expense.vehicle_id || '',
       category: expense.category,
       amount: expense.amount.toString(),
+      litres: expense.litres?.toString() || '',
+      pricePerLitre: expense.price_per_litre?.toString() || '',
+      odometerKm: expense.odometer_km?.toString() || '',
       date: expense.date,
       description: expense.description || '',
     });
+    clearPhoto();
     setFormError(null);
     setDialogOpen(true);
+  };
+
+  const handlePhotoSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setPhotoPreparing(true);
+    setFormError(null);
+    try {
+      const compressed = await compressPumpPhoto(file);
+      setPumpPhoto(compressed);
+      setPumpPhotoPreview(URL.createObjectURL(compressed));
+    } catch (error) {
+      clearPhoto();
+      setFormError(error instanceof Error ? error.message : 'Could not prepare the photo');
+    } finally {
+      setPhotoPreparing(false);
+      event.target.value = '';
+    }
+  };
+
+  const updateFuelNumber = (field: 'litres' | 'pricePerLitre' | 'amount', value: string) => {
+    setForm((current) => {
+      const next = { ...current, [field]: value };
+      if (current.category !== 'fuel') return next;
+
+      const litres = Number.parseFloat(next.litres);
+      if (field === 'amount') {
+        const price = fuelPriceFromTotal(litres, Number.parseFloat(value));
+        if (price !== null) next.pricePerLitre = String(price);
+      } else if (field === 'litres' && !next.pricePerLitre && next.amount) {
+        const price = fuelPriceFromTotal(litres, Number.parseFloat(next.amount));
+        if (price !== null) next.pricePerLitre = String(price);
+      } else {
+        const total = fuelTotalFromPrice(litres, Number.parseFloat(next.pricePerLitre));
+        if (total !== null) next.amount = String(total);
+      }
+      return next;
+    });
   };
 
   const handleSubmit = async (event: React.FormEvent) => {
@@ -180,10 +300,42 @@ function ExpensesView() {
       if (!tenantId) throw new Error('No fleet found for this account.');
       if (isDriver && editing) throw new Error('Drivers cannot edit recorded expenses.');
       if (!canRecord) throw new Error('Ask your fleet owner to assign you a current vehicle first.');
-      const selectedVehicleId = isDriver ? requireUuid(vehicleId, 'vehicle') : form.vehicleId || null;
+      if (photoPreparing) throw new Error('Wait for the pump photo to finish preparing.');
+
+      const isFuel = form.category === 'fuel';
+      const selectedVehicleId = isDriver
+        ? requireUuid(vehicleId, 'vehicle')
+        : isFuel
+          ? requireUuid(form.vehicleId, 'vehicle')
+          : form.vehicleId || null;
       const amount = Number.parseFloat(form.amount);
       if (!Number.isFinite(amount) || amount < 0) throw new Error('Enter a valid amount');
       if (!form.date) throw new Error('Choose the expense date');
+
+      const odometerKm = isFuel ? optionalNumber(form.odometerKm) : null;
+      const litres = isFuel ? optionalNumber(form.litres) : null;
+      const pricePerLitre = isFuel ? optionalNumber(form.pricePerLitre) : null;
+      const newFuelRecord = isFuel && (!editing || editing.category !== 'fuel');
+      if (newFuelRecord && odometerKm === null) throw new Error('Odometer km is required for fuel');
+      if (newFuelRecord && (litres === null || litres <= 0)) throw new Error('Enter litres greater than zero');
+      if (newFuelRecord && (pricePerLitre === null || pricePerLitre <= 0)) throw new Error('Enter a price per litre greater than zero');
+      if (newFuelRecord && amount <= 0) throw new Error('Enter a fuel total greater than zero');
+      if (odometerKm !== null && odometerKm < 0) throw new Error('Odometer km cannot be negative');
+      if (litres !== null && litres < 0) throw new Error('Litres cannot be negative');
+      if (pricePerLitre !== null && pricePerLitre < 0) throw new Error('Price per litre cannot be negative');
+      if (isDriver && isFuel && !pumpPhoto) throw new Error('Take a photo of the pump before saving fuel');
+
+      let pumpPhotoPath: string | null = null;
+      if (isFuel && pumpPhoto && selectedVehicleId) {
+        pumpPhotoPath = fuelPumpPhotoPath(tenantId, selectedVehicleId);
+        const { error: uploadError } = await supabase.storage
+          .from(PHOTO_BUCKET)
+          .upload(pumpPhotoPath, pumpPhoto, {
+            contentType: 'image/jpeg',
+            upsert: false,
+          });
+        if (uploadError) throw new Error(`Could not upload the pump photo: ${uploadError.message}`);
+      }
 
       const payload = {
         tenant_id: tenantId,
@@ -192,8 +344,14 @@ function ExpensesView() {
         amount,
         date: form.date,
         description: form.description.trim() || null,
+        odometer_km: odometerKm,
+        litres,
+        price_per_litre: pricePerLitre,
+        ...(editing ? {} : { pump_photo_path: pumpPhotoPath }),
       };
 
+      // pump_photo_expires_at is set by the database from the tenant's
+      // retention setting, so clients cannot extend their own photo retention.
       const result = editing
         ? await supabase.from('expenses').update(payload).eq('id', editing.id).select('id')
         : await supabase.from('expenses').insert([withRecordedBy(payload, userId)]).select('id');
@@ -201,6 +359,7 @@ function ExpensesView() {
       assertMutationRow(result, editing ? 'Could not update the expense' : 'Could not record the expense');
       toastSuccess(editing ? 'Expense updated.' : 'Expense recorded.', 'Saved');
       setDialogOpen(false);
+      clearPhoto();
       await fetchData();
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Could not save the expense';
@@ -227,6 +386,14 @@ function ExpensesView() {
   const totalExpenses = expenses.reduce((sum, expense) => sum + expense.amount, 0);
   const averageExpense = expenses.length > 0 ? Math.round(totalExpenses / expenses.length) : 0;
   const isLoading = loading || accessLoading;
+  const ownFuelEntries = expenses
+    .filter((expense) => expense.category === 'fuel' && expense.recorded_by === userId)
+    .slice(0, 5);
+  const detailPhotoExpired = Boolean(detailExpense?.pump_photo_deleted_at) || Boolean(
+    detailExpense?.pump_photo_expires_at &&
+    new Date(detailExpense.pump_photo_expires_at).getTime() <= Date.now()
+  );
+  const formDisabled = submitting || photoPreparing;
 
   return (
     <PageShell
@@ -258,6 +425,39 @@ function ExpensesView() {
         <StatCard loading={isLoading} title="Average expense" value={`KES ${averageExpense.toLocaleString()}`} description="Per transaction" Icon={Receipt} />
       </div>
 
+      {isDriver && (
+        <Card>
+          <CardHeader>
+            <CardTitle>My fuel log</CardTitle>
+            <CardDescription>Your five most recent fuel entries.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {isLoading ? (
+              <div className="space-y-3" role="status" aria-label="Loading your fuel log">
+                {[0, 1, 2].map((row) => <Skeleton key={row} className="h-12 w-full" />)}
+              </div>
+            ) : ownFuelEntries.length === 0 ? (
+              <p className="py-4 text-sm text-muted-foreground">Fuel you enter will appear here.</p>
+            ) : (
+              <ul className="divide-y">
+                {ownFuelEntries.map((expense) => (
+                  <li key={expense.id} className="py-3 first:pt-0 last:pb-0">
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="font-medium">{formatDateOnly(expense.date)}</p>
+                      <p className="font-semibold">KES {expense.amount.toLocaleString()}</p>
+                    </div>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {expense.litres ?? '—'} L · {expense.odometer_km ?? '—'} km
+                      {expense.price_per_litre !== null ? ` · KES ${expense.price_per_litre}/L` : ''}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle>Expense log</CardTitle>
@@ -267,9 +467,9 @@ function ExpensesView() {
         </CardHeader>
         <CardContent>
           {isLoading ? (
-            <div className="flex justify-center py-8" role="status" aria-label="Loading expenses">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <div className="space-y-3" role="status" aria-label="Loading expenses">
               <span className="sr-only">Loading expenses…</span>
+              {[0, 1, 2, 3].map((row) => <Skeleton key={row} className="h-12 w-full" />)}
             </div>
           ) : loadError ? (
             <LoadFailure label="expenses" message={loadError} onRetry={fetchData} />
@@ -301,22 +501,31 @@ function ExpensesView() {
                     {expense.description && (
                       <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">{expense.description}</p>
                     )}
-                    {!isDriver && (
-                      <div className="mt-3 flex gap-2">
-                        <Button type="button" variant="outline" className="min-h-11 flex-1" onClick={() => openEdit(expense)}>
-                          <Edit className="mr-2 h-4 w-4" /> Edit
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="min-h-11 text-destructive"
-                          onClick={() => handleDelete(expense)}
-                          aria-label="Delete expense"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                    {(canViewPumpPhotos && expense.category === 'fuel') || !isDriver ? (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {canViewPumpPhotos && expense.category === 'fuel' && (
+                          <Button type="button" variant="outline" className="min-h-11 flex-1" onClick={() => setDetailExpense(expense)}>
+                            <Receipt className="mr-2 h-4 w-4" /> Details
+                          </Button>
+                        )}
+                        {!isDriver && (
+                          <>
+                            <Button type="button" variant="outline" className="min-h-11 flex-1" onClick={() => openEdit(expense)}>
+                              <Edit className="mr-2 h-4 w-4" /> Edit
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              className="min-h-11 text-destructive"
+                              onClick={() => handleDelete(expense)}
+                              aria-label="Delete expense"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </>
+                        )}
                       </div>
-                    )}
+                    ) : null}
                   </article>
                 ))}
               </div>
@@ -346,6 +555,12 @@ function ExpensesView() {
                         {!isDriver && (
                           <TableCell>
                             <div className="flex justify-end gap-1">
+                              {canViewPumpPhotos && expense.category === 'fuel' && (
+                                <Button type="button" variant="ghost" size="sm" className="min-h-11" onClick={() => setDetailExpense(expense)}>
+                                  <Receipt className="h-4 w-4" />
+                                  <span className="sr-only">View fuel record details</span>
+                                </Button>
+                              )}
                               <Button type="button" variant="ghost" size="sm" className="min-h-11" onClick={() => openEdit(expense)}>
                                 <Edit className="h-4 w-4" />
                                 <span className="sr-only">Edit expense</span>
@@ -370,7 +585,7 @@ function ExpensesView() {
       <FormDialog
         open={dialogOpen}
         onOpenChange={setDialogOpen}
-        title={editing ? 'Edit expense' : 'Add expense'}
+        title={editing ? 'Edit expense' : form.category === 'fuel' ? 'Log fuel' : 'Add expense'}
         description={isDriver ? `Log ${form.category === 'fuel' ? 'fuel' : 'an expense'} for your assigned vehicle.` : 'Vehicle is optional for costs that are not tied to one vehicle.'}
       >
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -378,14 +593,15 @@ function ExpensesView() {
             <LockedValue id="expense_vehicle_locked" label="Vehicle" value={vehicleLabel || 'No vehicle assigned'} hint="Fuel is always logged against your current vehicle." />
           ) : (
             <div className="space-y-2">
-              <Label htmlFor="expense_vehicle">Vehicle</Label>
+              <Label htmlFor="expense_vehicle">Vehicle{form.category === 'fuel' ? ' *' : ''}</Label>
               <NativeSelect
                 id="expense_vehicle"
                 value={form.vehicleId}
                 onChange={(event) => setForm({ ...form, vehicleId: event.target.value })}
-                disabled={submitting}
+                disabled={formDisabled}
+                required={form.category === 'fuel'}
               >
-                <option value="">General expense</option>
+                <option value="">{form.category === 'fuel' ? 'Select vehicle' : 'General expense'}</option>
                 {vehicles.map((vehicle) => (
                   <option key={vehicle.id} value={vehicle.id}>{vehicle.label}</option>
                 ))}
@@ -400,7 +616,7 @@ function ExpensesView() {
               value={form.category}
               onChange={(event) => setForm({ ...form, category: event.target.value as ExpenseCategory })}
               required
-              disabled={submitting}
+              disabled={formDisabled}
             >
               {Object.entries(CATEGORY_LABELS).map(([value, label]) => (
                 <option key={value} value={value}>{label}</option>
@@ -408,9 +624,65 @@ function ExpensesView() {
             </NativeSelect>
           </div>
 
+          {form.category === 'fuel' && (
+            <>
+              <div className="space-y-2">
+                <Label htmlFor="fuel_odometer">Odometer (km) *</Label>
+                <Input
+                  id="fuel_odometer"
+                  type="number"
+                  inputMode="decimal"
+                  min="0"
+                  step="0.01"
+                  className="h-12 text-base"
+                  value={form.odometerKm}
+                  onChange={(event) => setForm({ ...form, odometerKm: event.target.value })}
+                  placeholder="e.g. 125430"
+                  required={!editing}
+                  disabled={formDisabled}
+                />
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="fuel_litres">Litres *</Label>
+                  <Input
+                    id="fuel_litres"
+                    type="number"
+                    inputMode="decimal"
+                    min="0.001"
+                    step="0.001"
+                    className="h-12 text-base"
+                    value={form.litres}
+                    onChange={(event) => updateFuelNumber('litres', event.target.value)}
+                    placeholder="0.000"
+                    required={!editing}
+                    disabled={formDisabled}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="fuel_price">Price per litre (KES) *</Label>
+                  <Input
+                    id="fuel_price"
+                    type="number"
+                    inputMode="decimal"
+                    min="0.01"
+                    step="0.01"
+                    className="h-12 text-base"
+                    value={form.pricePerLitre}
+                    onChange={(event) => updateFuelNumber('pricePerLitre', event.target.value)}
+                    placeholder="0.00"
+                    required={!editing}
+                    disabled={formDisabled}
+                  />
+                </div>
+              </div>
+              <p className="text-sm text-muted-foreground">Litres and price calculate the total. Editing the total calculates the price per litre.</p>
+            </>
+          )}
+
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="expense_amount">Amount (KES) *</Label>
+              <Label htmlFor="expense_amount">{form.category === 'fuel' ? 'Total (KES)' : 'Amount (KES)'} *</Label>
               <Input
                 id="expense_amount"
                 type="number"
@@ -418,10 +690,10 @@ function ExpensesView() {
                 step="0.01"
                 min="0"
                 value={form.amount}
-                onChange={(event) => setForm({ ...form, amount: event.target.value })}
+                onChange={(event) => updateFuelNumber('amount', event.target.value)}
                 placeholder="0.00"
                 required
-                disabled={submitting}
+                disabled={formDisabled}
               />
             </div>
             <div className="space-y-2">
@@ -432,10 +704,44 @@ function ExpensesView() {
                 value={form.date}
                 onChange={(event) => setForm({ ...form, date: event.target.value })}
                 required
-                disabled={submitting}
+                disabled={formDisabled}
               />
             </div>
           </div>
+
+          {form.category === 'fuel' && !editing && (
+            <div className="space-y-2">
+              <Label htmlFor="pump_photo">Pump photo{isDriver ? ' *' : ' (optional for owner)'}</Label>
+              <input
+                ref={photoInputRef}
+                id="pump_photo"
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="sr-only"
+                onChange={handlePhotoSelected}
+                disabled={formDisabled}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                className="min-h-11 w-full"
+                onClick={() => photoInputRef.current?.click()}
+                disabled={formDisabled}
+              >
+                {photoPreparing ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Preparing photo…</> : pumpPhoto ? 'Retake photo of pump' : 'Take photo of pump'}
+              </Button>
+              <p className="text-sm text-muted-foreground">Compressed before upload (about 200 KB, maximum 1280 px). {isDriver ? 'A photo is required for driver fuel entries.' : 'Owners can save fuel without a photo.'}</p>
+              {pumpPhotoPreview && pumpPhoto && (
+                <div className="space-y-2">
+                  {/* Blob previews cannot use next/image optimization. */}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={pumpPhotoPreview} alt="Selected pump preview" className="max-h-64 w-full rounded-lg border object-contain" />
+                  <p className="text-sm text-muted-foreground">Ready to upload · {Math.round(pumpPhoto.size / 1024)} KB</p>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="space-y-2">
             <Label htmlFor="expense_description">Description</Label>
@@ -445,7 +751,7 @@ function ExpensesView() {
               onChange={(event) => setForm({ ...form, description: event.target.value })}
               placeholder="Optional notes…"
               rows={3}
-              disabled={submitting}
+              disabled={formDisabled}
               className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50"
             />
           </div>
@@ -457,10 +763,10 @@ function ExpensesView() {
           )}
 
           <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
-            <Button type="button" variant="outline" className="min-h-11" onClick={() => setDialogOpen(false)} disabled={submitting}>
+            <Button type="button" variant="outline" className="min-h-11" onClick={() => setDialogOpen(false)} disabled={formDisabled}>
               Cancel
             </Button>
-            <Button type="submit" className="min-h-11" disabled={submitting}>
+            <Button type="submit" className="min-h-11" disabled={formDisabled}>
               {submitting ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -468,12 +774,59 @@ function ExpensesView() {
                 </>
               ) : editing ? (
                 'Update expense'
+              ) : form.category === 'fuel' ? (
+                'Log fuel'
               ) : (
                 'Add expense'
               )}
             </Button>
           </div>
         </form>
+      </FormDialog>
+
+      <FormDialog
+        open={Boolean(detailExpense)}
+        onOpenChange={(open) => {
+          if (!open) setDetailExpense(null);
+        }}
+        title="Fuel record details"
+        description="Pump photos use a private, two-minute signed link. The fuel record remains after the photo expires."
+      >
+        {detailExpense && (
+          <div className="space-y-4">
+            <dl className="grid grid-cols-2 gap-3 text-sm">
+              <div><dt className="text-muted-foreground">Date</dt><dd className="mt-1 font-medium">{formatDateOnly(detailExpense.date)}</dd></div>
+              <div><dt className="text-muted-foreground">Vehicle</dt><dd className="mt-1 font-medium">{detailExpense.vehicles?.registration_number || '—'}</dd></div>
+              <div><dt className="text-muted-foreground">Litres</dt><dd className="mt-1 font-medium">{detailExpense.litres ?? '—'}</dd></div>
+              <div><dt className="text-muted-foreground">Price / litre</dt><dd className="mt-1 font-medium">{detailExpense.price_per_litre === null ? '—' : `KES ${detailExpense.price_per_litre}`}</dd></div>
+              <div><dt className="text-muted-foreground">Odometer</dt><dd className="mt-1 font-medium">{detailExpense.odometer_km === null ? '—' : `${detailExpense.odometer_km} km`}</dd></div>
+              <div><dt className="text-muted-foreground">Total</dt><dd className="mt-1 font-medium">KES {detailExpense.amount.toLocaleString()}</dd></div>
+            </dl>
+            <div className="space-y-2">
+              <h3 className="font-medium">Pump photo</h3>
+              {detailPhotoExpired ? (
+                <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">Photo expired</p>
+              ) : !detailExpense.pump_photo_path ? (
+                <p className="text-sm text-muted-foreground">No pump photo was recorded for this fuel entry.</p>
+              ) : detailPhotoLoading ? (
+                <Skeleton className="h-64 w-full" aria-label="Loading pump photo" />
+              ) : detailPhotoError ? (
+                <Alert variant="destructive"><AlertDescription>Photo unavailable: {detailPhotoError}</AlertDescription></Alert>
+              ) : detailPhotoUrl ? (
+                <>
+                  <a href={detailPhotoUrl} target="_blank" rel="noreferrer" className="block">
+                    {/* Signed blob URLs are short-lived and must not be optimized/cached by next/image. */}
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={detailPhotoUrl} alt="Fuel pump for this expense" className="max-h-96 w-full rounded-lg border object-contain" />
+                  </a>
+                  <Button type="button" variant="outline" className="min-h-11 w-full" asChild>
+                    <a href={detailPhotoUrl} target="_blank" rel="noreferrer">Open full-size photo</a>
+                  </Button>
+                </>
+              ) : null}
+            </div>
+          </div>
+        )}
       </FormDialog>
     </PageShell>
   );
