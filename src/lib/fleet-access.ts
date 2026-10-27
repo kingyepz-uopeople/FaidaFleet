@@ -5,6 +5,8 @@
  * fleet and an owner in another). Never use .single()/.maybeSingle() on
  * memberships: pick a deterministic primary membership instead.
  */
+import type { User } from '@supabase/supabase-js'
+import { needsPinChange } from './pin'
 
 export type MembershipLike = { tenant_id: string; role: string | null }
 
@@ -32,6 +34,82 @@ export function isDriverOnly(rows: MembershipLike[] | null | undefined): boolean
 
 export function isDriverRole(role: string | null | undefined): boolean {
   return (role || '').toLowerCase() === 'driver'
+}
+
+/** Roles that are allowed to see the full fleet-owner menu. */
+export function isFleetManagerRole(role: string | null | undefined): boolean {
+  return ['owner', 'admin', 'accountant'].includes((role || '').toLowerCase())
+}
+
+/** The essential access facts shared by the server layout and the provider. */
+export type MembershipAccess = {
+  role: string | null
+  isDriver: boolean
+  tenantId: string | null
+}
+
+export function membershipAccess(rows: MembershipLike[] | null | undefined): MembershipAccess {
+  const primary = primaryMembership(rows)
+  return {
+    role: primary?.role || null,
+    isDriver: isDriverOnly(rows),
+    tenantId: primary?.tenant_id || null,
+  }
+}
+
+/**
+ * Serializable result of the server layout's session + membership lookup.
+ * `ready` is false when the server could not resolve access (no session, no
+ * Supabase env, or a failed query), so the client falls back to its own load.
+ */
+export type FleetAccessSnapshot = MembershipAccess & {
+  ready: boolean
+  user: User | null
+  mustChangePin: boolean
+}
+
+export const EMPTY_FLEET_ACCESS_SNAPSHOT: FleetAccessSnapshot = {
+  ready: false,
+  user: null,
+  role: null,
+  isDriver: false,
+  mustChangePin: false,
+  tenantId: null,
+}
+
+export function accessFromMemberships(
+  rows: MembershipLike[] | null | undefined,
+  user: User | null,
+): FleetAccessSnapshot {
+  // An account with no active membership is not ready for the fleet menu:
+  // keep the neutral skeleton rather than guessing "Member" / owner links.
+  return {
+    ready: Boolean(user) && Boolean(rows && rows.length > 0),
+    user,
+    ...membershipAccess(rows),
+    mustChangePin: needsPinChange(user),
+  }
+}
+
+/**
+ * Loading phases for the shell. A ready server snapshot means the role is
+ * known on first paint (no skeleton), while a driver's scope lookup can still
+ * be running in the background. `loading` gates data-dependent counts.
+ */
+export type FleetAccessPhases = {
+  loading: boolean
+  roleLoading: boolean
+  scopeLoading: boolean
+}
+
+export function fleetAccessPhases(
+  snapshot: Pick<FleetAccessSnapshot, 'ready' | 'isDriver'>,
+): FleetAccessPhases {
+  return {
+    loading: !snapshot.ready || snapshot.isDriver,
+    roleLoading: !snapshot.ready,
+    scopeLoading: snapshot.ready && snapshot.isDriver,
+  }
 }
 
 export function homePathForRole(role: string | null | undefined): string {

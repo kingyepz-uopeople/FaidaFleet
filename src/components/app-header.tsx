@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   DropdownMenu,
@@ -14,46 +14,26 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { LogOut, Menu, Settings, User as UserIcon } from '@/components/icons';
 import { PlaceHolderImages } from '@/lib/placeholder-images';
 import { accountContact, accountInitials, accountLabel } from '@/lib/phone';
-import { createClient } from '@/lib/supabase/client';
 import { useSignOut } from '@/hooks/use-sign-out';
-import type { User } from '@supabase/supabase-js';
-
-function getTitleFromPathname(pathname: string): string {
-  const segment = pathname.split('/').pop() || 'dashboard';
-  if (segment === 'dashboard') return 'Dashboard';
-  if (segment === 'driver-analytics') return 'Driver stats';
-  return segment.charAt(0).toUpperCase() + segment.slice(1);
-}
+import { Skeleton } from '@/components/ui/skeleton';
+import { useFleetAccess } from '@/components/fleet-access-provider';
+import { appHeaderTitle } from '@/lib/nav';
 
 export function AppHeader({ onMenuClick }: { onMenuClick?: () => void }) {
   const pathname = usePathname();
   const router = useRouter();
-  const title = getTitleFromPathname(pathname);
-  const supabase = createClient();
+  // The layout already resolved the session on the server. Don't fire a second
+  // auth.getUser() (and create a second Supabase client) on every render.
+  const { user, isDriver, roleLoading } = useFleetAccess();
+  const title = appHeaderTitle(pathname, isDriver);
   const { signOut } = useSignOut();
-  const [user, setUser] = useState<User | null>(null);
-
-  useEffect(() => {
-    const getUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      setUser(user);
-    };
-
-    getUser();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-    });
-
-    return () => subscription.unsubscribe();
-  }, [supabase.auth]);
 
   const handleLogout = async () => {
     await signOut();
   };
 
   return (
-    <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b bg-background/90 px-3 backdrop-blur sm:h-16 sm:px-6 pt-[env(safe-area-inset-top)]">
+    <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-3 border-b bg-background/90 px-3 backdrop-blur sm:h-16 sm:px-6 pt-[env(safe-area-inset-top)]">
       {onMenuClick && (
         <button
           type="button"
@@ -64,7 +44,14 @@ export function AppHeader({ onMenuClick }: { onMenuClick?: () => void }) {
           <Menu className="h-5 w-5" />
         </button>
       )}
-      <h1 className="truncate text-lg font-semibold tracking-tight sm:text-xl">{title}</h1>
+      {roleLoading ? (
+        <div role="status" aria-label="Loading page title">
+          <Skeleton className="h-6 w-28" />
+          <span className="sr-only">Loading…</span>
+        </div>
+      ) : (
+        <h1 className="truncate text-lg font-semibold tracking-tight sm:text-xl">{title}</h1>
+      )}
       <div className="ml-auto">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
