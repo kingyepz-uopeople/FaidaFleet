@@ -43,6 +43,15 @@ test('a later fill uses the previous odometer for the same vehicle only', () => 
   assert.equal(result[2].distance_km, null)
 })
 
+test('nullable creation timestamps sort last within the same date', () => {
+  const result = computeFuelFills([
+    fill('2', { date: '2026-10-01', created_at: null, odometer_km: 1200 }),
+    fill('1', { date: '2026-10-01', odometer_km: 1000 }),
+  ])
+  assert.deepEqual(result.map((entry) => entry.id), ['1', '2'])
+  assert.equal(result[1].distance_km, 200)
+})
+
 test('a backwards odometer does not produce negative efficiency', () => {
   const result = computeFuelFills([
     fill('1', { odometer_km: 1200 }),

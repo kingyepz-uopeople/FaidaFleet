@@ -18,6 +18,7 @@ import {
   type FleetAccessSnapshot,
 } from '@/lib/fleet-access'
 import { createClient } from '@/lib/supabase/client'
+import { needsPinChange } from '@/lib/pin'
 
 export type FleetAccess = {
   /** Full access (role + tenant + driver scope) is still resolving. */
@@ -89,6 +90,7 @@ export function FleetAccessProvider({
   const [state, setState] = useState<FleetAccess>(() => stateFromSnapshot(initialAccess))
   // Freeze the server snapshot: a client-side sign-in must not keep reusing it.
   const initialRef = useRef(initialAccess)
+  const initialSignedInSkipped = useRef(false)
   const requestId = useRef(0)
   const supabase = useMemo(() => createClient(), [])
 
@@ -264,8 +266,17 @@ export function FleetAccessProvider({
     } = supabase.auth.onAuthStateChange((event, session) => {
       // The server snapshot already describes this session; re-querying on the
       // initial SIGNED_IN would only duplicate the mount work.
-      if (event === 'SIGNED_IN' && session?.user?.id === initialRef.current.user?.id) return
+      if (
+        event === 'SIGNED_IN' &&
+        !initialSignedInSkipped.current &&
+        session?.user?.id === initialRef.current.user?.id &&
+        needsPinChange(session?.user) === initialRef.current.mustChangePin
+      ) {
+        initialSignedInSkipped.current = true
+        return
+      }
       if (event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'USER_UPDATED') {
+        initialSignedInSkipped.current = true
         void load()
       }
     })

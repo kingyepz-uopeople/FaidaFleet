@@ -1,18 +1,20 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { NativeSelect } from '@/components/ui/native-select';
+import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TrendingUp, TrendingDown, DollarSign, Percent } from '@/components/icons';
 import { createClient } from '@/lib/supabase/client';
 import { useFleetAccess } from '@/components/fleet-access-provider';
-import { lastNDateKeys, formatDateOnly } from '@/lib/dates';
-import { groupFinancials, profitBreakdown, type MoneyRow } from '@/lib/fleet-metrics';
+import { formatDateOnly } from '@/lib/dates';
+import { groupFinancials, type MoneyRow } from '@/lib/fleet-metrics';
 import { vehicleFuelEfficiency, type FuelFill } from '@/lib/fuel';
-import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { fetchReportPages, trailingDateRange, validReportRange } from '@/lib/report-range';
 
 type FuelRow = FuelFill & {
   vehicles: { registration_number: string } | null;
@@ -71,10 +73,22 @@ function ChartSkeleton({ title }: { title: string }) {
   );
 }
 
+const FinancialCharts = dynamic(() => import('./financial-charts'), {
+  ssr: false,
+  loading: () => <ChartSkeleton title="Revenue vs Expenses Trend" />,
+});
+
 export default function AnalyticsPage() {
-  const [dataLoading, setDataLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [reportLoading, setReportLoading] = useState(true);
+  const [fuelLoading, setFuelLoading] = useState(true);
+  const [reportKeyLoaded, setReportKeyLoaded] = useState('');
+  const [fuelKeyLoaded, setFuelKeyLoaded] = useState('');
+  const [reportError, setReportError] = useState<string | null>(null);
+  const [fuelError, setFuelError] = useState<string | null>(null);
   const [dateRange, setDateRange] = useState('30');
+  const [reportToday, setReportToday] = useState<Date | null>(null);
+  const [fuelDays, setFuelDays] = useState('365');
+  const [customFuelRange, setCustomFuelRange] = useState({ start: '', end: '' });
   const [report, setReport] = useState<FinancialReport | null>(null);
   const [fuelRows, setFuelRows] = useState<FuelRow[]>([]);
   const supabase = useMemo(() => createClient(), []);
@@ -83,63 +97,104 @@ export default function AnalyticsPage() {
     tenantId,
     loadError: accessError,
   } = useFleetAccess();
-  const loading = dataLoading || accessLoading;
+  // Keep the financial report's existing inclusive start and future-date
+  // semantics; the explicit label below describes exactly what it includes.
+  const financialStart = reportToday ? trailingDateRange(Number.parseInt(dateRange, 10) + 1, reportToday).start : '';
+  const fuelRange = reportToday
+    ? fuelDays === 'custom' ? customFuelRange : trailingDateRange(Number.parseInt(fuelDays, 10), reportToday)
+    : { start: '', end: '' };
+  const reportReady = Boolean(reportToday);
+  const validFuelRange = reportReady && validReportRange(fuelRange);
+  const reportKey = `${tenantId || ''}:${financialStart}`;
+  const fuelKey = `${tenantId || ''}:${fuelRange.start}:${fuelRange.end}`;
+  const loading = reportLoading || accessLoading || (Boolean(financialStart) && reportKeyLoaded !== reportKey);
+  const loadingFuel = fuelLoading || accessLoading || (validFuelRange && fuelKeyLoaded !== fuelKey);
+
+  // Server and browser may be on different calendar days. Resolve the local
+  // reporting date after hydration so labels and queries use the browser's day.
+  useEffect(() => {
+    const today = new Date();
+    setReportToday(today);
+    setCustomFuelRange(trailingDateRange(365, today));
+  }, []);
 
   useEffect(() => {
-    if (!accessLoading) fetchData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accessLoading, tenantId, dateRange]);
+    if (accessLoading || !financialStart) return;
+    const controller = new AbortController();
+    const fetchFinancials = async () => {
+      try {
+        setReportLoading(true);
+        setReportError(null);
+        if (!tenantId) throw new Error(accessError || 'No tenant found');
 
-  const fetchData = async () => {
-    try {
-      setDataLoading(true);
-      setError(null);
-      if (!tenantId) throw new Error(accessError || 'No tenant found');
+        const [collections, expenses] = await Promise.all([
+          fetchReportPages((from, to) => supabase.from('collections')
+            .select('id, date, amount', { count: from === 0 ? 'exact' : undefined }).eq('tenant_id', tenantId).gte('date', financialStart)
+            .order('date').order('id').range(from, to).abortSignal(controller.signal)),
+          fetchReportPages((from, to) => supabase.from('expenses')
+            .select('id, date, amount', { count: from === 0 ? 'exact' : undefined }).eq('tenant_id', tenantId).gte('date', financialStart)
+            .order('date').order('id').range(from, to).abortSignal(controller.signal)),
+        ]);
+        if (!controller.signal.aborted) {
+          setReport(groupFinancials(collections as MoneyRow[], expenses as MoneyRow[]));
+          setReportKeyLoaded(reportKey);
+        }
+      } catch (err: unknown) {
+        if (controller.signal.aborted) return;
+        setReport(null);
+        setReportKeyLoaded(reportKey);
+        setReportError(err instanceof Error ? err.message : 'Could not load the report');
+      } finally {
+        if (!controller.signal.aborted) setReportLoading(false);
+      }
+    };
+    void fetchFinancials();
+    return () => controller.abort();
+  }, [accessLoading, accessError, tenantId, financialStart, reportKey, supabase]);
 
-      const rangeDays = Number.parseInt(dateRange, 10);
-      const startDate = lastNDateKeys(rangeDays + 1)[0];
-      const [collectionsRes, expensesRes, fuelRes] = await Promise.all([
-        supabase
-          .from('collections')
-          .select('date, amount')
-          .eq('tenant_id', tenantId)
-          .gte('date', startDate),
-        supabase
-          .from('expenses')
-          .select('date, amount')
-          .eq('tenant_id', tenantId)
-          .gte('date', startDate),
-        supabase
-          .from('expenses')
-          .select('id, vehicle_id, date, created_at, odometer_km, litres, amount, vehicles(registration_number)')
-          .eq('tenant_id', tenantId)
-          .eq('category', 'fuel')
-          .not('vehicle_id', 'is', null),
-      ]);
-
-      if (collectionsRes.error) throw collectionsRes.error;
-      if (expensesRes.error) throw expensesRes.error;
-      if (fuelRes.error) throw fuelRes.error;
-
-      setReport(groupFinancials(
-        (collectionsRes.data || []) as MoneyRow[],
-        (expensesRes.data || []) as MoneyRow[],
-      ));
-      setFuelRows((fuelRes.data || []) as FuelRow[]);
-    } catch (err: unknown) {
-      setReport(null);
+  useEffect(() => {
+    if (accessLoading || !reportReady) return;
+    if (!validFuelRange) {
       setFuelRows([]);
-      setError(err instanceof Error ? err.message : 'Could not load the report');
-    } finally {
-      setDataLoading(false);
+      setFuelKeyLoaded('');
+      setFuelError('Choose valid start and end dates in chronological order.');
+      setFuelLoading(false);
+      return;
     }
-  };
+    const controller = new AbortController();
+    const fetchFuel = async () => {
+      try {
+        setFuelLoading(true);
+        setFuelError(null);
+        if (!tenantId) throw new Error(accessError || 'No tenant found');
+
+        const rows = await fetchReportPages((from, to) => supabase.from('expenses')
+          .select('id, vehicle_id, date, created_at, odometer_km, litres, amount, vehicles(registration_number)', { count: from === 0 ? 'exact' : undefined })
+          .eq('tenant_id', tenantId).eq('category', 'fuel').not('vehicle_id', 'is', null)
+          .gte('date', fuelRange.start).lte('date', fuelRange.end)
+          .order('date').order('created_at').order('id')
+          .range(from, to).abortSignal(controller.signal));
+        if (!controller.signal.aborted) {
+          setFuelRows(rows as FuelRow[]);
+          setFuelKeyLoaded(fuelKey);
+        }
+      } catch (err: unknown) {
+        if (controller.signal.aborted) return;
+        setFuelRows([]);
+        setFuelKeyLoaded(fuelKey);
+        setFuelError(err instanceof Error ? err.message : 'Could not load fuel efficiency');
+      } finally {
+        if (!controller.signal.aborted) setFuelLoading(false);
+      }
+    };
+    void fetchFuel();
+    return () => controller.abort();
+  }, [accessLoading, accessError, tenantId, reportReady, validFuelRange, fuelRange.start, fuelRange.end, fuelKey, supabase]);
 
   const efficiency = vehicleFuelEfficiency(fuelRows);
   const registrations = new Map(
     fuelRows.map((row) => [row.vehicle_id, row.vehicles?.registration_number || 'Vehicle removed']),
   );
-  const slices = report ? profitBreakdown(report.totalProfit, report.totalExpenses) : [];
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 py-5 sm:px-6 sm:py-6">
@@ -148,16 +203,17 @@ export default function AnalyticsPage() {
         <p className="mt-1 text-sm text-muted-foreground">Revenue, expenses, and profitability reports.</p>
       </div>
 
-      {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
+      {reportError && <Alert variant="destructive"><AlertDescription>{reportError}</AlertDescription></Alert>}
 
       <Card>
         <CardHeader><CardTitle>Date Range</CardTitle></CardHeader>
         <CardContent>
-          <NativeSelect id="date_range" className="min-h-11 sm:w-56" value={dateRange} onChange={(event) => setDateRange(event.target.value)} disabled={loading}>
+          <NativeSelect id="date_range" className="min-h-11 sm:w-56" value={dateRange} onChange={(event) => { setReportToday(new Date()); setDateRange(event.target.value); }} disabled={loading}>
             <option value="7">Last 7 days</option>
             <option value="30">Last 30 days</option>
             <option value="90">Last 90 days</option>
           </NativeSelect>
+          <p className="mt-2 text-sm text-muted-foreground">{financialStart ? `Financial totals include entries from ${formatDateOnly(financialStart)} onward, including future-dated entries.` : 'Financial totals include entries from the selected start date onward.'}</p>
         </CardContent>
       </Card>
 
@@ -170,81 +226,80 @@ export default function AnalyticsPage() {
         </div>
       )}
 
-      {loading ? (
-        <>
-          <ChartSkeleton title="Revenue vs Expenses Trend" />
-          <ChartSkeleton title="Fuel efficiency" />
-        </>
-      ) : report && (
-        <>
-          <Card>
-            <CardHeader><CardTitle>Revenue vs Expenses Trend</CardTitle></CardHeader>
-            <CardContent><ResponsiveContainer width="100%" height={300}><LineChart data={report.series}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="date" /><YAxis /><Tooltip formatter={(value) => `KES ${Number(value).toLocaleString()}`} /><Legend /><Line type="monotone" dataKey="revenue" stroke="#10b981" name="Revenue" /><Line type="monotone" dataKey="expenses" stroke="#ef4444" name="Expenses" /></LineChart></ResponsiveContainer></CardContent>
-          </Card>
+      {(loading || report) && <FinancialCharts report={loading ? null : report} />}
 
-          <Card>
-            <CardHeader><CardTitle>Daily Profit Analysis</CardTitle></CardHeader>
-            <CardContent><ResponsiveContainer width="100%" height={300}><BarChart data={report.series}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="date" /><YAxis /><Tooltip formatter={(value) => `KES ${Number(value).toLocaleString()}`} /><Legend /><Bar dataKey="profit" fill="#3b82f6" name="Daily Profit" /></BarChart></ResponsiveContainer></CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader><CardTitle>Revenue Breakdown</CardTitle></CardHeader>
-            <CardContent>{slices.length === 0 ? <p className="py-12 text-center text-gray-500">No revenue or expenses in this range.</p> : <ResponsiveContainer width="100%" height={300}><PieChart><Pie data={slices} cx="50%" cy="50%" labelLine={false} label={({ name, value }) => `${name}: KES ${Number(value).toLocaleString()}`} outerRadius={100} dataKey="value">{slices.map((slice) => <Cell key={slice.name} fill={slice.name === 'Profit' ? '#10b981' : '#ef4444'} />)}</Pie></PieChart></ResponsiveContainer>}</CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Fuel efficiency</CardTitle>
-              <CardDescription>
-                km/L uses the current fill&apos;s litres and the change from the previous recorded fuel odometer for that vehicle. Full-tank-to-full-tank fills are not assumed or tracked.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {efficiency.length === 0 ? (
-                <p className="py-8 text-center text-sm text-muted-foreground">No fuel entries with a vehicle have been recorded yet.</p>
-              ) : (
-                <ul className="divide-y">
-                  {efficiency.map((summary) => (
-                    <li key={summary.vehicleId} className="py-4 first:pt-0 last:pb-0">
-                      <p className="font-semibold">{registrations.get(summary.vehicleId) || 'Vehicle removed'}</p>
-                      <dl className="mt-3 grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
-                        <div>
-                          <dt className="text-muted-foreground">Average km/L</dt>
-                          <dd className="mt-1 font-medium">{numberOrDash(summary.averageKmPerLitre)}</dd>
-                        </div>
-                        <div>
-                          <dt className="text-muted-foreground">Cost per km</dt>
-                          <dd className="mt-1 font-medium">{summary.averageCostPerKm === null ? '—' : `KES ${numberOrDash(summary.averageCostPerKm)}`}</dd>
-                        </div>
-                        <div>
-                          <dt className="text-muted-foreground">Last fill</dt>
-                          <dd className="mt-1 font-medium">
-                            {formatDateOnly(summary.lastFill.date)} · KES {summary.lastFill.amount.toLocaleString()}
-                          </dd>
-                        </div>
-                      </dl>
-                      {summary.flaggedFills.length > 0 && (
-                        <div className="mt-3">
-                          <p className="text-sm font-medium">Needs attention</p>
-                          <ul className="mt-2 flex flex-wrap gap-2" aria-label="Fills more than 30 percent below average efficiency">
-                            {summary.flaggedFills.map((fill) => (
-                              <li key={fill.id}>
-                                <Badge variant="destructive">
-                                  {formatDateOnly(fill.date)} · {numberOrDash(fill.km_per_litre)} km/L
-                                </Badge>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </CardContent>
-          </Card>
-        </>
-      )}
+      <Card>
+        <CardHeader>
+          <CardTitle>Fuel efficiency</CardTitle>
+          <CardDescription>
+            km/L uses the current fill&apos;s litres and the change from the previous recorded fuel odometer for that vehicle. Full-tank-to-full-tank fills are not assumed or tracked.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <label htmlFor="fuel_range" className="text-sm text-muted-foreground">Fuel reporting range</label>
+          <NativeSelect id="fuel_range" className="mt-2 min-h-11 sm:w-56" value={fuelDays} onChange={(event) => { setReportToday(new Date()); setFuelDays(event.target.value); }} disabled={accessLoading}>
+            <option value="90">Last 90 days</option>
+            <option value="365">Last 365 days</option>
+            <option value="730">Last 730 days</option>
+            <option value="1825">Last 1,825 days</option>
+            <option value="custom">Custom dates</option>
+          </NativeSelect>
+          {fuelDays === 'custom' && (
+            <div className="mt-3 grid max-w-md grid-cols-2 gap-3">
+              <div><label htmlFor="fuel_start" className="text-sm text-muted-foreground">From</label><Input id="fuel_start" type="date" value={customFuelRange.start} onChange={(event) => setCustomFuelRange((current) => ({ ...current, start: event.target.value }))} /></div>
+              <div><label htmlFor="fuel_end" className="text-sm text-muted-foreground">Through</label><Input id="fuel_end" type="date" value={customFuelRange.end} onChange={(event) => setCustomFuelRange((current) => ({ ...current, end: event.target.value }))} /></div>
+            </div>
+          )}
+          <p className="mt-2 text-sm text-muted-foreground">{!reportToday ? 'Loading fuel reporting range…' : validFuelRange ? `Fills from ${formatDateOnly(fuelRange.start)} through ${formatDateOnly(fuelRange.end)}. A vehicle's first fill in this range has no earlier reading for comparison.` : 'Choose a valid date range to calculate fuel efficiency.'}</p>
+          {loadingFuel ? (
+            <Skeleton className="mt-4 h-[120px] w-full" aria-label="Loading fuel efficiency" />
+          ) : !validFuelRange ? (
+            <p className="py-8 text-center text-sm text-muted-foreground">Choose a valid date range to calculate fuel efficiency.</p>
+          ) : fuelError ? (
+            <Alert variant="destructive" className="mt-4"><AlertDescription>{fuelError}</AlertDescription></Alert>
+          ) : efficiency.length === 0 ? (
+            <p className="py-8 text-center text-sm text-muted-foreground">No fuel entries with a vehicle were recorded in this range.</p>
+          ) : (
+            <ul className="divide-y">
+              {efficiency.map((summary) => (
+                <li key={summary.vehicleId} className="py-4 first:pt-0 last:pb-0">
+                  <p className="font-semibold">{registrations.get(summary.vehicleId) || 'Vehicle removed'}</p>
+                  <dl className="mt-3 grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
+                    <div>
+                      <dt className="text-muted-foreground">Average km/L</dt>
+                      <dd className="mt-1 font-medium">{numberOrDash(summary.averageKmPerLitre)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted-foreground">Cost per km</dt>
+                      <dd className="mt-1 font-medium">{summary.averageCostPerKm === null ? '—' : `KES ${numberOrDash(summary.averageCostPerKm)}`}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted-foreground">Last fill</dt>
+                      <dd className="mt-1 font-medium">
+                        {formatDateOnly(summary.lastFill.date)} · KES {summary.lastFill.amount.toLocaleString()}
+                      </dd>
+                    </div>
+                  </dl>
+                  {summary.flaggedFills.length > 0 && (
+                    <div className="mt-3">
+                      <p className="text-sm font-medium">Needs attention</p>
+                      <ul className="mt-2 flex flex-wrap gap-2" aria-label="Fills more than 30 percent below average efficiency">
+                        {summary.flaggedFills.map((fill) => (
+                          <li key={fill.id}>
+                            <Badge variant="destructive">
+                              {formatDateOnly(fill.date)} · {numberOrDash(fill.km_per_litre)} km/L
+                            </Badge>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

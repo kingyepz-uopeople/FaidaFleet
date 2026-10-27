@@ -2,7 +2,7 @@ export type FuelFill = {
   id: string
   vehicle_id: string | null
   date: string
-  created_at: string
+  created_at: string | null
   odometer_km: number | null
   litres: number | null
   amount: number
@@ -38,11 +38,12 @@ function average(values: number[]): number | null {
 }
 
 function chronological(a: FuelFill, b: FuelFill): number {
-  return (
-    a.date.localeCompare(b.date) ||
-    a.created_at.localeCompare(b.created_at) ||
-    a.id.localeCompare(b.id)
-  )
+  // created_at is nullable in the schema. Match the report's ascending SQL
+  // order (NULLS LAST) instead of crashing on an older fill without a timestamp.
+  const byCreatedAt = a.created_at === null
+    ? (b.created_at === null ? 0 : 1)
+    : (b.created_at === null ? -1 : a.created_at.localeCompare(b.created_at))
+  return a.date.localeCompare(b.date) || byCreatedAt || a.id.localeCompare(b.id)
 }
 
 /**

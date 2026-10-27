@@ -12,6 +12,7 @@ import {
 } from '@/lib/fleet-metrics'
 import { accountLabel } from '@/lib/phone'
 import { isDriverOnly, primaryMembership } from '@/lib/fleet-access'
+import { requestFleetAccess } from '@/lib/supabase/request-fleet-access'
 import { FleetHome, type RecentCollection } from './dashboard-view'
 
 export const dynamic = 'force-dynamic'
@@ -39,22 +40,17 @@ function registrationOf(vehicles: RecentRow['vehicles']) {
 }
 
 export default async function DashboardPage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const { user, memberships: membershipRows } = await requestFleetAccess()
   if (!user) redirect('/login')
 
-  // Read all memberships: .single() fails for someone in two fleets.
-  const { data: membershipRows } = await supabase
-    .from('memberships')
-    .select('tenant_id, role')
-    .eq('user_id', user.id)
-    .eq('is_active', true)
-
+  // Preserve the dashboard's own redirects even when a layout is reused during
+  // client navigation. The middleware-verified result contains all memberships.
   if (isDriverOnly(membershipRows)) redirect('/trips')
   const membership = primaryMembership(membershipRows)
   if (!membership) redirect('/onboarding')
 
   const tenantId = membership.tenant_id
+  const supabase = await createClient()
   const [vehiclesRes, driversRes, collectionsRes, expensesRes, recentRes, tenantRes, profileRes] = await Promise.all([
     supabase.from('vehicles').select('id, registration_number, insurance_expiry, mot_expiry').eq('tenant_id', tenantId),
     supabase.from('drivers').select('id').eq('tenant_id', tenantId).eq('is_active', true),

@@ -1,12 +1,27 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { createClient } from '@/lib/supabase/client';
 import { Building2, Car, DollarSign, Users } from '@/components/icons';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { Skeleton } from '@/components/ui/skeleton';
 import { AdminKpi, AdminLoading, AdminPageHeader, formatKes } from '@/components/admin-ui';
 import { isAdminUiPreview } from '@/lib/admin-preview';
+
+const AnalyticsCharts = dynamic(() => import('./analytics-charts'), {
+  ssr: false,
+  loading: () => (
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2" role="status" aria-label="Loading analytics charts">
+      {[['Weekly collections', 'Last 4 weeks, in thousands of KES'], ['Plan mix', 'Fleet owners by plan']].map(([title, description]) => (
+        <Card key={title}>
+          <CardHeader><CardTitle>{title}</CardTitle><CardDescription>{description}</CardDescription></CardHeader>
+          <CardContent><Skeleton className="h-[280px] w-full" /></CardContent>
+        </Card>
+      ))}
+    </div>
+  ),
+});
 
 export default function AnalyticsPage() {
   const preview = isAdminUiPreview();
@@ -123,8 +138,6 @@ export default function AnalyticsPage() {
     return weeks;
   };
 
-  const COLORS = ['hsl(231 48% 48%)', 'hsl(174 44% 40%)', 'hsl(43 74% 46%)'];
-
   if (loading) {
     return (
       <>
@@ -146,48 +159,7 @@ export default function AnalyticsPage() {
         <AdminKpi title="Collections" value={formatKes(stats.totalCollections)} hint="All time" Icon={DollarSign} />
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Weekly collections</CardTitle>
-            <CardDescription>Last 4 weeks, in thousands of KES</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[280px] w-full min-w-0">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(240 5.9% 90%)" />
-                  <XAxis dataKey="name" fontSize={12} />
-                  <YAxis fontSize={12} />
-                  <Tooltip />
-                  <Bar dataKey="collections" fill="hsl(231 48% 48%)" name="Collections (KES 000s)" radius={[8, 8, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Plan mix</CardTitle>
-            <CardDescription>Fleet owners by plan</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[280px] w-full min-w-0">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={planDistribution} cx="50%" cy="50%" labelLine={false} label={({ name, value }) => `${name} ${value}%`} outerRadius={80} dataKey="value">
-                    {planDistribution.map((entry, index) => (
-                      <Cell key={entry.name} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      <AnalyticsCharts chartData={chartData} planDistribution={planDistribution} />
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <AdminKpi title="Total collections" value={formatKes(stats.totalCollections)} />

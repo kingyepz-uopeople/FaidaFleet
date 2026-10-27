@@ -31,15 +31,19 @@ import { useFleetAccess } from '@/components/fleet-access-provider';
 import { DriverScopeNotice, LockedValue } from '@/components/driver-scope';
 import { compressPumpPhoto, fuelPumpPhotoPath } from '@/lib/fuel-photo';
 import { fuelPriceFromTotal, fuelTotalFromPrice } from '@/lib/fuel';
+import { appendUniqueExpenses, expenseCursorFilter, splitExpensePage, type ExpenseCursor } from '@/lib/expense-pagination';
 
 const NO_MATCH_UUID = '00000000-0000-0000-0000-000000000000';
 const PHOTO_BUCKET = 'fuel-pump-photos';
 const SIGNED_PHOTO_SECONDS = 120;
+const EXPENSE_PAGE_SIZE = 100;
+const EXPENSE_FIELDS = 'id, created_at, vehicle_id, category, amount, date, description, recorded_by, odometer_km, litres, price_per_litre, pump_photo_path, pump_photo_expires_at, pump_photo_deleted_at, vehicles(registration_number)';
 
 type ExpenseCategory = 'fuel' | 'maintenance' | 'insurance' | 'license' | 'parking' | 'fine' | 'other';
 
 type Expense = {
   id: string;
+  created_at: string | null;
   vehicle_id: string | null;
   category: ExpenseCategory;
   amount: number;
@@ -56,6 +60,7 @@ type Expense = {
 };
 
 type Option = { id: string; label: string };
+type FuelLogEntry = Pick<Expense, 'id' | 'date' | 'amount' | 'litres' | 'odometer_km' | 'price_per_litre'>;
 
 const CATEGORY_LABELS: Record<ExpenseCategory, string> = {
   fuel: 'Fuel',
@@ -86,8 +91,14 @@ function optionalNumber(value: string): number | null {
 
 function ExpensesView() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [ownFuelEntries, setOwnFuelEntries] = useState<FuelLogEntry[]>([]);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const loadGeneration = useRef(0);
+  const nextExpenseCursor = useRef<ExpenseCursor | null>(null);
   const [vehicles, setVehicles] = useState<Option[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadedScopeKey, setLoadedScopeKey] = useState('');
   const [loadError, setLoadError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Expense | null>(null);
@@ -113,15 +124,24 @@ function ExpensesView() {
     vehicleLabel,
     loadError: accessError,
   } = useFleetAccess();
+  const scopeKey = `${tenantId || ''}:${isDriver}:${vehicleId || ''}:${userId || ''}`;
   const canRecord = !isDriver || Boolean(vehicleId);
   const canViewPumpPhotos = role === 'owner' || role === 'admin';
   const searchParams = useSearchParams();
   const quickFuel = searchParams.get('new') === 'fuel';
 
   useEffect(() => {
-    if (!accessLoading) fetchData();
+    if (!accessLoading) void fetchData();
+    return () => { loadGeneration.current += 1; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accessLoading, tenantId, isDriver, vehicleId]);
+  }, [accessLoading, tenantId, isDriver, vehicleId, userId]);
+
+  useEffect(() => {
+    // A dialog opened in an earlier fleet/user scope must not survive a switch.
+    setDialogOpen(false);
+    setDetailExpense(null);
+    setEditing(null);
+  }, [scopeKey]);
 
   // Quick "Log fuel" entry from the driver menu: /expenses?new=fuel
   useEffect(() => {
@@ -177,43 +197,89 @@ function ExpensesView() {
     };
   }, [canViewPumpPhotos, detailExpense, supabase]);
 
+  const fetchExpensePage = async (cursor: ExpenseCursor | null) => {
+    if (!tenantId) throw new Error('No fleet found for this account.');
+    let query = supabase.from('expenses').select(EXPENSE_FIELDS, { count: 'exact' }).eq('tenant_id', tenantId);
+    if (isDriver) query = query.eq('vehicle_id', vehicleId || NO_MATCH_UUID);
+    if (cursor) query = query.or(expenseCursorFilter(cursor));
+    // Fetch one extra row to tell the user whether more are available. The id
+    // is a tie-breaker for stable pages when timestamps and dates are equal.
+    const result = await query.order('created_at', { ascending: false, nullsFirst: true })
+      .order('date', { ascending: false }).order('id', { ascending: false })
+      .limit(EXPENSE_PAGE_SIZE + 1);
+    if (result.error) throw new Error(result.error.message);
+    const rows = (result.data || []) as Expense[];
+    if (result.count === null || (result.count > 0 && rows.length === 0)) {
+      throw new Error('Could not determine whether more expenses are available. Please try again.');
+    }
+    return splitExpensePage(rows, EXPENSE_PAGE_SIZE, result.count);
+  };
+
   const fetchData = async () => {
+    const generation = ++loadGeneration.current;
     try {
       setLoading(true);
+      setLoadingMore(false);
       setLoadError(null);
-      if (!tenantId) {
-        setLoadError(accessError || 'No fleet is linked to this account yet. Finish onboarding to record expenses.');
-        return;
-      }
+      if (!tenantId) throw new Error(accessError || 'No fleet is linked to this account yet. Finish onboarding to record expenses.');
 
-      const [expensesRes, vehiclesRes] = await Promise.all([
-        (isDriver
-          ? supabase
-              .from('expenses')
-              .select('*, vehicles(registration_number)')
-              .eq('tenant_id', tenantId)
-              .eq('vehicle_id', vehicleId || NO_MATCH_UUID)
-          : supabase
-              .from('expenses')
-              .select('*, vehicles(registration_number)')
-              .eq('tenant_id', tenantId)
-        ).order('created_at', { ascending: false }).order('date', { ascending: false }),
+      const [page, vehiclesRes, fuelRes] = await Promise.all([
+        fetchExpensePage(null),
         isDriver
           ? supabase.from('vehicles').select('id, registration_number').eq('id', vehicleId || NO_MATCH_UUID).limit(1)
           : supabase.from('vehicles').select('id, registration_number').eq('tenant_id', tenantId).eq('is_active', true).order('registration_number'),
+        // The driver's five latest fuel entries must remain correct even when
+        // they fall outside the first page of the general expense log.
+        isDriver && userId
+          ? supabase.from('expenses').select('id, date, amount, litres, odometer_km, price_per_litre')
+              .eq('tenant_id', tenantId).eq('vehicle_id', vehicleId || NO_MATCH_UUID)
+              .eq('recorded_by', userId).eq('category', 'fuel')
+              .order('created_at', { ascending: false }).order('date', { ascending: false })
+              .order('id', { ascending: false }).limit(5)
+          : Promise.resolve({ data: [], error: null }),
       ]);
 
-      if (expensesRes.error) throw expensesRes.error;
-      if (vehiclesRes.error) throw vehiclesRes.error;
-
-      setExpenses((expensesRes.data || []) as Expense[]);
+      if (vehiclesRes.error) throw new Error(vehiclesRes.error.message);
+      if (fuelRes.error) throw new Error(fuelRes.error.message);
+      if (generation !== loadGeneration.current) return;
+      setExpenses(page.rows);
+      nextExpenseCursor.current = page.rows.at(-1) || null;
+      setHasMore(page.hasMore);
+      setOwnFuelEntries((fuelRes.data || []) as FuelLogEntry[]);
       setVehicles((vehiclesRes.data || []).map((row) => ({ id: row.id, label: row.registration_number })));
+      setLoadedScopeKey(scopeKey);
     } catch (err) {
+      if (generation !== loadGeneration.current) return;
+      // Never show a previous fleet's totals or fuel log as the current data
+      // after an access change or a failed refresh.
+      setExpenses([]);
+      setOwnFuelEntries([]);
+      setVehicles([]);
+      nextExpenseCursor.current = null;
+      setHasMore(false);
+      setLoadedScopeKey(scopeKey);
       const message = err instanceof Error ? err.message : 'Could not load expenses';
       setLoadError(message);
       toastError(message, 'Could not load expenses');
     } finally {
-      setLoading(false);
+      if (generation === loadGeneration.current) setLoading(false);
+    }
+  };
+
+  const loadMore = async () => {
+    if (loadingMore || !hasMore || !nextExpenseCursor.current) return;
+    const generation = loadGeneration.current;
+    setLoadingMore(true);
+    try {
+      const page = await fetchExpensePage(nextExpenseCursor.current);
+      if (generation !== loadGeneration.current) return;
+      nextExpenseCursor.current = page.rows.at(-1) || nextExpenseCursor.current;
+      setExpenses((current) => appendUniqueExpenses(current, page.rows));
+      setHasMore(page.hasMore);
+    } catch (error) {
+      if (generation === loadGeneration.current) toastError(error, 'Could not load more expenses');
+    } finally {
+      if (generation === loadGeneration.current) setLoadingMore(false);
     }
   };
 
@@ -385,10 +451,7 @@ function ExpensesView() {
 
   const totalExpenses = expenses.reduce((sum, expense) => sum + expense.amount, 0);
   const averageExpense = expenses.length > 0 ? Math.round(totalExpenses / expenses.length) : 0;
-  const isLoading = loading || accessLoading;
-  const ownFuelEntries = expenses
-    .filter((expense) => expense.category === 'fuel' && expense.recorded_by === userId)
-    .slice(0, 5);
+  const isLoading = loading || accessLoading || loadedScopeKey !== scopeKey;
   const detailPhotoExpired = Boolean(detailExpense?.pump_photo_deleted_at) || Boolean(
     detailExpense?.pump_photo_expires_at &&
     new Date(detailExpense.pump_photo_expires_at).getTime() <= Date.now()
@@ -418,11 +481,11 @@ function ExpensesView() {
         <StatCard
           loading={isLoading}
           title="Total expenses"
-          value={`KES ${totalExpenses.toLocaleString()}`}
-          description={`${expenses.length} records`}
+          value={loadError ? '—' : `KES ${totalExpenses.toLocaleString()}`}
+          description={loadError ? 'Totals unavailable' : `${expenses.length} loaded records`}
           Icon={TrendingDown}
         />
-        <StatCard loading={isLoading} title="Average expense" value={`KES ${averageExpense.toLocaleString()}`} description="Per transaction" Icon={Receipt} />
+        <StatCard loading={isLoading} title="Average expense" value={loadError ? '—' : `KES ${averageExpense.toLocaleString()}`} description={loadError ? 'Totals unavailable' : 'Per loaded transaction'} Icon={Receipt} />
       </div>
 
       {isDriver && (
@@ -436,6 +499,8 @@ function ExpensesView() {
               <div className="space-y-3" role="status" aria-label="Loading your fuel log">
                 {[0, 1, 2].map((row) => <Skeleton key={row} className="h-12 w-full" />)}
               </div>
+            ) : loadError ? (
+              <p className="py-4 text-sm text-muted-foreground">Your fuel log could not be loaded.</p>
             ) : ownFuelEntries.length === 0 ? (
               <p className="py-4 text-sm text-muted-foreground">Fuel you enter will appear here.</p>
             ) : (
@@ -462,7 +527,7 @@ function ExpensesView() {
         <CardHeader>
           <CardTitle>Expense log</CardTitle>
           <CardDescription>
-            {isLoading ? <Skeleton className="h-4 w-32" /> : `${expenses.length} expenses recorded`}
+            {isLoading ? <Skeleton className="h-4 w-32" /> : loadError ? 'Expenses could not be loaded.' : `Showing the latest ${expenses.length} expenses${hasMore ? ' · more available' : ''}. Totals above reflect the expenses shown.`}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -577,6 +642,11 @@ function ExpensesView() {
                   </TableBody>
                 </Table>
               </TableScroll>
+              {hasMore && (
+                <Button type="button" variant="outline" className="mt-4 min-h-11" onClick={loadMore} disabled={loadingMore}>
+                  {loadingMore ? 'Loading…' : 'Load more expenses'}
+                </Button>
+              )}
             </>
           )}
         </CardContent>

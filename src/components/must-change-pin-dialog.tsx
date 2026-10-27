@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
@@ -24,26 +24,12 @@ type PinPayload = { error?: string; ok?: boolean; mustChangePin?: boolean }
 
 export function MustChangePinDialog() {
   const router = useRouter()
-  const { refresh } = useFleetAccess()
-  const [open, setOpen] = useState(false)
+  const { refresh, mustChangePin } = useFleetAccess()
   const [currentPin, setCurrentPin] = useState('')
   const [pin, setPin] = useState('')
   const [confirm, setConfirm] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
-
-  useEffect(() => {
-    const supabase = createClient()
-    const check = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      setOpen(needsPinChange(user))
-    }
-    check()
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setOpen(needsPinChange(session?.user))
-    })
-    return () => subscription.unsubscribe()
-  }, [])
 
   const clearForm = useCallback(() => {
     setCurrentPin('')
@@ -87,9 +73,9 @@ export function MustChangePinDialog() {
         setError('Your PIN was saved, but the prompt did not clear. Sign out and sign in again.')
         return
       }
-      setOpen(false)
       clearForm()
-      // Keep the layout guard in sync: it must stop redirecting to /settings.
+      // Refreshing the shared access state closes the dialog and keeps the
+      // layout guard in sync; no separate auth check is needed on every mount.
       await refresh()
       router.refresh()
     } catch {
@@ -102,7 +88,7 @@ export function MustChangePinDialog() {
   const digitsOnly = (value: string) => value.replace(/\D/g, '').slice(0, 6)
 
   return (
-    <Dialog open={open} onOpenChange={() => undefined}>
+    <Dialog open={mustChangePin} onOpenChange={() => undefined}>
       <DialogContent
         className="max-h-[min(90dvh,calc(100dvh-env(safe-area-inset-top)-env(safe-area-inset-bottom)))] w-[min(calc(100vw-1.5rem),28rem)] overflow-y-auto p-4 [&>button]:hidden sm:p-6"
         onInteractOutside={(event) => event.preventDefault()}
