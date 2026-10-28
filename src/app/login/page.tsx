@@ -2,8 +2,15 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { AuthMobileScreen, AuthField, AuthFooterLink } from '@/components/auth-mobile-screen'
-import { Phone, Lock } from '@/components/icons'
+import {
+  AuthMobileScreen,
+  AuthField,
+  AuthSecondaryLink,
+  AuthQuietLink,
+  AuthDisclosure,
+  AuthPrefixChip,
+} from '@/components/auth-mobile-screen'
+import { Phone, Lock, Plus, Shield } from '@/components/icons'
 import { normalizeKenyanPhone, validatePin } from '@/lib/phone'
 
 export default function LoginPage() {
@@ -54,22 +61,24 @@ export default function LoginPage() {
   return (
     <AuthMobileScreen
       heroTitle="Fleet money, on every phone."
-      heroDescription="Collections, trips, and drivers for matatu and logistics operators in Kenya."
+      heroDescription="Collections, trips and drivers for Kenyan fleets."
+      eyebrow="Sign in"
       title="Welcome back"
-      description="Fleet owners and drivers sign in with a phone number and PIN."
+      description="Sign in with your phone number and PIN."
       onSubmit={handleLogin}
       error={error}
       submitting={loading}
       submitLabel="Sign in"
       pendingLabel="Signing in..."
+      note="Secure sign in · phone and PIN"
       footer={
         <>
-          <AuthFooterLink prompt="Don't have an account?" href="/signup">
-            Sign up
-          </AuthFooterLink>
-          <AuthFooterLink prompt="System administrator?" href="/admin-login">
-            Sign in with email
-          </AuthFooterLink>
+          <AuthSecondaryLink href="/signup" icon={Plus}>
+            Create an account
+          </AuthSecondaryLink>
+          <AuthQuietLink href="/admin-login" icon={Shield}>
+            System administrator? Sign in with email
+          </AuthQuietLink>
         </>
       }
     >
@@ -80,9 +89,11 @@ export default function LoginPage() {
         type="tel"
         inputMode="tel"
         autoComplete="tel"
-        placeholder="0712345678"
+        autoCapitalize="none"
+        placeholder="0712 345 678"
         value={phone}
         onChange={(e) => setPhone(e.target.value)}
+        labelAction={<AuthPrefixChip>+254 · Kenya</AuthPrefixChip>}
         required
         disabled={loading}
       />
@@ -92,15 +103,22 @@ export default function LoginPage() {
         icon={Lock}
         type="password"
         inputMode="numeric"
+        pattern="[0-9]*"
         autoComplete="current-password"
         placeholder="4 to 6 digits"
         maxLength={6}
-        hint="Forgot your PIN? Ask a system administrator to reset it. Fleet owners can also reset a driver PIN from the driver record. Signed-in users can change their own PIN in Settings."
+        inputClassName="tracking-[0.25em] placeholder:tracking-normal"
+        revealable
+        hint="4 to 6 digits. Tap the eye to check what you typed."
         value={pin}
         onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
         required
         disabled={loading}
       />
+      <AuthDisclosure summary="Forgot PIN? Get help">
+        A system administrator can reset your PIN. Fleet owners can also reset a driver&apos;s PIN
+        from the driver record, and anyone already signed in can change their own PIN in Settings.
+      </AuthDisclosure>
     </AuthMobileScreen>
   )
 }

@@ -6,10 +6,10 @@ import { createClient } from '@/lib/supabase/client'
 import {
   AuthMobileScreen,
   AuthField,
-  AuthFooterLink,
+  AuthSecondaryLink,
   AuthLink,
 } from '@/components/auth-mobile-screen'
-import { Mail, Lock } from '@/components/icons'
+import { Mail, Lock, Phone } from '@/components/icons'
 import { friendlyAuthError, isPhoneAuthEmail } from '@/lib/phone'
 
 export default function AdminLoginPage() {
@@ -71,19 +71,22 @@ export default function AdminLoginPage() {
 
   return (
     <AuthMobileScreen
+      variant="admin"
       heroTitle="System administration"
-      heroDescription="Email and password only. Fleet owners and drivers use phone + PIN."
+      heroDescription="Email and password for system administrators only."
+      eyebrow="Restricted access"
       title="System admin"
-      description="Sign in with the administrator email and password."
+      description="Sign in with your administrator email and password."
       onSubmit={handleLogin}
       error={error}
       submitting={loading}
       submitLabel="Sign in"
       pendingLabel="Signing in..."
+      note="Admin activity is audited"
       footer={
-        <AuthFooterLink prompt="Fleet owner or driver?" href="/login">
-          Sign in with phone and PIN
-        </AuthFooterLink>
+        <AuthSecondaryLink href="/login" icon={Phone}>
+          Fleet owner or driver? Sign in with phone and PIN
+        </AuthSecondaryLink>
       }
     >
       <AuthField
@@ -93,6 +96,8 @@ export default function AdminLoginPage() {
         type="email"
         inputMode="email"
         autoComplete="username"
+        autoCapitalize="none"
+        spellCheck={false}
         placeholder="admin@example.com"
         value={email}
         onChange={(e) => setEmail(e.target.value)}
@@ -105,12 +110,14 @@ export default function AdminLoginPage() {
         icon={Lock}
         type="password"
         autoComplete="current-password"
+        placeholder="Your password"
+        revealable
         value={password}
         onChange={(e) => setPassword(e.target.value)}
         required
         disabled={loading}
         labelAction={
-          <AuthLink href="/reset-password" className="text-sm">
+          <AuthLink href="/reset-password" className="text-[13px] font-semibold">
             Forgot password?
           </AuthLink>
         }
