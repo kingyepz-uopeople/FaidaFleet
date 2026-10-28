@@ -445,6 +445,7 @@ export interface Database {
           odometer_km: number | null
           litres: number | null
           price_per_litre: number | null
+          full_tank: boolean
           pump_photo_path: string | null
           pump_photo_expires_at: string | null
           pump_photo_deleted_at: string | null
@@ -464,6 +465,7 @@ export interface Database {
           odometer_km?: number | null
           litres?: number | null
           price_per_litre?: number | null
+          full_tank?: boolean
           pump_photo_path?: string | null
           pump_photo_expires_at?: string | null
           pump_photo_deleted_at?: string | null
@@ -483,6 +485,7 @@ export interface Database {
           odometer_km?: number | null
           litres?: number | null
           price_per_litre?: number | null
+          full_tank?: boolean
           pump_photo_path?: string | null
           pump_photo_expires_at?: string | null
           pump_photo_deleted_at?: string | null

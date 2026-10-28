@@ -26,6 +26,7 @@ import { formatDateOnly } from '@/lib/dates';
 import { EmptyState, LoadFailure, PageShell, TableScroll } from '@/components/page-shell';
 import { FormDialog } from '@/components/form-dialog';
 import { NativeSelect } from '@/components/ui/native-select';
+import { Checkbox } from '@/components/ui/checkbox';
 import { StatCard } from '@/components/stat-card';
 import { useFleetAccess } from '@/components/fleet-access-provider';
 import { DriverScopeNotice, LockedValue } from '@/components/driver-scope';
@@ -37,7 +38,7 @@ const NO_MATCH_UUID = '00000000-0000-0000-0000-000000000000';
 const PHOTO_BUCKET = 'fuel-pump-photos';
 const SIGNED_PHOTO_SECONDS = 120;
 const EXPENSE_PAGE_SIZE = 100;
-const EXPENSE_FIELDS = 'id, created_at, vehicle_id, category, amount, date, description, recorded_by, odometer_km, litres, price_per_litre, pump_photo_path, pump_photo_expires_at, pump_photo_deleted_at, vehicles(registration_number)';
+const EXPENSE_FIELDS = 'id, created_at, vehicle_id, category, amount, date, description, recorded_by, odometer_km, litres, price_per_litre, full_tank, pump_photo_path, pump_photo_expires_at, pump_photo_deleted_at, vehicles(registration_number)';
 
 type ExpenseCategory = 'fuel' | 'maintenance' | 'insurance' | 'license' | 'parking' | 'fine' | 'other';
 
@@ -53,6 +54,7 @@ type Expense = {
   odometer_km: number | null;
   litres: number | null;
   price_per_litre: number | null;
+  full_tank: boolean;
   pump_photo_path: string | null;
   pump_photo_expires_at: string | null;
   pump_photo_deleted_at: string | null;
@@ -75,6 +77,7 @@ const CATEGORY_LABELS: Record<ExpenseCategory, string> = {
 const EMPTY_FORM = {
   vehicleId: '',
   category: 'fuel' as ExpenseCategory,
+  fullTank: true,
   amount: '',
   litres: '',
   pricePerLitre: '',
@@ -307,6 +310,7 @@ function ExpensesView() {
     setForm({
       vehicleId: expense.vehicle_id || '',
       category: expense.category,
+      fullTank: expense.full_tank,
       amount: expense.amount.toString(),
       litres: expense.litres?.toString() || '',
       pricePerLitre: expense.price_per_litre?.toString() || '',
@@ -413,6 +417,7 @@ function ExpensesView() {
         odometer_km: odometerKm,
         litres,
         price_per_litre: pricePerLitre,
+        full_tank: isFuel ? form.fullTank : false,
         ...(editing ? {} : { pump_photo_path: pumpPhotoPath }),
       };
 
@@ -684,7 +689,7 @@ function ExpensesView() {
             <NativeSelect
               id="expense_category"
               value={form.category}
-              onChange={(event) => setForm({ ...form, category: event.target.value as ExpenseCategory })}
+              onChange={(event) => setForm({ ...form, category: event.target.value as ExpenseCategory, ...(event.target.value === 'fuel' ? { fullTank: true } : {}) })}
               required
               disabled={formDisabled}
             >
@@ -696,6 +701,15 @@ function ExpensesView() {
 
           {form.category === 'fuel' && (
             <>
+              <div className="flex items-center gap-3 py-1">
+                <Checkbox
+                  id="fuel_full_tank"
+                  checked={form.fullTank}
+                  onCheckedChange={(checked) => setForm({ ...form, fullTank: checked === true })}
+                  disabled={formDisabled}
+                />
+                <Label htmlFor="fuel_full_tank" className="cursor-pointer">Full tank</Label>
+              </div>
               <div className="space-y-2">
                 <Label htmlFor="fuel_odometer">Odometer (km) *</Label>
                 <Input
