@@ -23,6 +23,8 @@ import { useFleetAccess } from '@/components/fleet-access-provider';
 import { DriverScopeNotice, LockedValue } from '@/components/driver-scope';
 import { RecordOriginBadge } from '@/components/record-origin-badge';
 
+import { TripRoute, routeLabel, routeFields, rememberedRoute, routeStorageKey, missingTripRoutes } from '@/lib/trip-routes';
+
 const NO_MATCH_UUID = '00000000-0000-0000-0000-000000000000';
 
 type Trip = {
@@ -56,6 +58,8 @@ const EMPTY_FORM = {
 };
 
 export default function TripsPage() {
+  const [routes, setRoutes] = useState<TripRoute[]>([]);
+  const [routeId, setRouteId] = useState('');
   const [trips, setTrips] = useState<Trip[]>([]);
   const [vehicles, setVehicles] = useState<Option[]>([]);
   const [drivers, setDrivers] = useState<Option[]>([]);
@@ -94,7 +98,7 @@ export default function TripsPage() {
         return;
       }
 
-      const [tripsRes, vehiclesRes, driversRes] = await Promise.all([
+      const [tripsRes, vehiclesRes, driversRes, routesRes] = await Promise.all([
         (isDriver
           ? supabase
               .from('trips')
@@ -112,12 +116,15 @@ export default function TripsPage() {
         isDriver
           ? supabase.from('drivers').select('id, full_name').eq('id', driverId || NO_MATCH_UUID).limit(1)
           : supabase.from('drivers').select('id, full_name').eq('tenant_id', tenantId).eq('is_active', true).order('full_name'),
+        supabase.from('trip_routes').select('*').eq('tenant_id', tenantId).eq('is_active', true).order('sort_order').order('origin').order('destination'),
       ]);
 
       if (tripsRes.error) throw tripsRes.error;
       if (vehiclesRes.error) throw vehiclesRes.error;
       if (driversRes.error) throw driversRes.error;
 
+      setRoutes(routesRes.error ? [] : (routesRes.data || []) as TripRoute[]);
+      if (routesRes.error && !missingTripRoutes(routesRes.error)) toastError(routesRes.error, 'Could not load preset routes; enter your route manually.');
       setTrips((tripsRes.data || []) as Trip[]);
       setVehicles((vehiclesRes.data || []).map((row) => ({ id: row.id, label: row.registration_number })));
       setDrivers((driversRes.data || []).map((row) => ({ id: row.id, label: row.full_name })));
@@ -133,8 +140,14 @@ export default function TripsPage() {
   const openCreate = () => {
     if (!canRecord) return;
     setEditing(null);
+    let preset: TripRoute | undefined;
+    try {
+      preset = rememberedRoute(routes, localStorage.getItem(routeStorageKey(tenantId || '', userId || '')));
+    } catch { /* Storage may be blocked. */ }
+    setRouteId(preset?.id || '');
     setForm({
       ...EMPTY_FORM,
+      ...routeFields(preset),
       vehicleId: isDriver ? vehicleId || '' : '',
       driverId: isDriver ? driverId || '' : '',
     });
@@ -145,6 +158,7 @@ export default function TripsPage() {
   const openEdit = (trip: Trip) => {
     if (isDriver) return;
     setEditing(trip);
+    setRouteId('');
     setForm({
       vehicleId: trip.vehicle_id,
       driverId: trip.driver_id,
@@ -190,6 +204,9 @@ export default function TripsPage() {
         : await supabase.from('trips').insert([withRecordedBy(payload, userId)]).select('id');
 
       assertMutationRow(result, editing ? 'Could not update the trip' : 'Could not record the trip');
+      if (!editing) {
+        try { localStorage.setItem(routeStorageKey(tenantId, userId || ''), routeId); } catch { /* Optional convenience only. */ }
+      }
       toastSuccess(editing ? 'Trip updated.' : 'Trip recorded.', 'Saved');
       setDialogOpen(false);
       await fetchData();
@@ -293,7 +310,7 @@ export default function TripsPage() {
                     <dl className="mt-3 grid grid-cols-3 gap-2 text-sm">
                       <div>
                         <dt className="text-xs text-muted-foreground">Distance</dt>
-                        <dd>{trip.distance_km != null ? `${trip.distance_km} km` : '—'}</dd>
+                        <dd className="font-semibold">{trip.distance_km != null ? `${trip.distance_km} km` : '—'}</dd>
                       </div>
                       <div>
                         <dt className="text-xs text-muted-foreground">Earnings</dt>
@@ -345,7 +362,7 @@ export default function TripsPage() {
                         <TableCell>{formatDateOnly(trip.trip_date)}</TableCell>
                         <TableCell className="font-medium">{trip.vehicles?.registration_number || '—'}</TableCell>
                         <TableCell>{trip.drivers?.full_name || '—'}</TableCell>
-                        <TableCell>{trip.distance_km != null ? `${trip.distance_km} km` : '—'}</TableCell>
+                        <TableCell className="font-semibold whitespace-nowrap">{trip.distance_km != null ? `${trip.distance_km} km` : '—'}</TableCell>
                         <TableCell className="font-medium text-emerald-700">KES {(trip.earnings || 0).toLocaleString()}</TableCell>
                         <TableCell className="font-medium text-rose-700">KES {(trip.expenses || 0).toLocaleString()}</TableCell>
                         <TableCell className="font-medium">KES {((trip.earnings || 0) - (trip.expenses || 0)).toLocaleString()}</TableCell>
@@ -381,6 +398,21 @@ export default function TripsPage() {
         description={isDriver ? 'Your name and current vehicle are filled in for you.' : 'Trips feed the dashboard profit figures and driver analytics.'}
       >
         <form onSubmit={handleSubmit} className="space-y-4">
+          {routes.length > 0 && (
+            <div className="space-y-2">
+              <Label htmlFor="trip_route">Route</Label>
+              <NativeSelect id="trip_route" className="h-12 text-base text-foreground" value={routeId} disabled={submitting}
+                onChange={(event) => {
+                  const id = event.target.value;
+                  setRouteId(id);
+                  setForm({ ...form, ...routeFields(rememberedRoute(routes, id)) });
+                }}>
+                <option value="">Other route</option>
+                {routes.map((route) => <option key={route.id} value={route.id}>{routeLabel(route)}</option>)}
+              </NativeSelect>
+              <p className="text-sm text-muted-foreground">Preset distances are estimates. Choose Other route for a different journey.</p>
+            </div>
+          )}
           {isDriver ? (
             <>
               <LockedValue id="trip_vehicle_locked" label="Vehicle" value={vehicleLabel || 'No vehicle assigned'} hint="Set by your fleet owner." />
@@ -440,6 +472,7 @@ export default function TripsPage() {
               <Label htmlFor="distance">Distance (km)</Label>
               <Input
                 id="distance"
+                readOnly={isDriver && Boolean(routeId)}
                 type="number"
                 inputMode="decimal"
                 step="0.01"
@@ -489,6 +522,7 @@ export default function TripsPage() {
               <Label htmlFor="start_location">From</Label>
               <Input
                 id="start_location"
+                readOnly={isDriver && Boolean(routeId)}
                 value={form.startLocation}
                 onChange={(event) => setForm({ ...form, startLocation: event.target.value })}
                 placeholder="e.g., CBD"
@@ -499,6 +533,7 @@ export default function TripsPage() {
               <Label htmlFor="end_location">To</Label>
               <Input
                 id="end_location"
+                readOnly={isDriver && Boolean(routeId)}
                 value={form.endLocation}
                 onChange={(event) => setForm({ ...form, endLocation: event.target.value })}
                 placeholder="e.g., Westlands"

@@ -654,6 +654,42 @@ export interface Database {
           },
         ]
       }
+      trip_routes: {
+        Row: {
+          id: string
+          tenant_id: string
+          origin: string
+          destination: string
+          distance_km: number
+          is_active: boolean
+          sort_order: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          tenant_id: string
+          origin: string
+          destination: string
+          distance_km: number
+          is_active?: boolean
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          tenant_id?: string
+          origin?: string
+          destination?: string
+          distance_km?: number
+          is_active?: boolean
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       trips: {
         Row: {
           id: string
