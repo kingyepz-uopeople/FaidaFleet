@@ -14,7 +14,7 @@ import { createClient } from '@/lib/supabase/client';
 import { assertMutation, assertMutationRow, requireUuid } from '@/lib/db';
 import { optionalNotes, withRecordedBy } from '@/lib/record-payload';
 import { toastError, toastSuccess } from '@/lib/toast';
-import { formatDateOnly } from '@/lib/dates';
+import { formatDateOnly, parseDateOnly } from '@/lib/dates';
 import { EmptyState, LoadFailure, PageShell, TableScroll } from '@/components/page-shell';
 import { FormDialog } from '@/components/form-dialog';
 import { NativeSelect } from '@/components/ui/native-select';
@@ -70,6 +70,9 @@ export default function TripsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
+  const [lastFuel, setLastFuel] = useState<{ date: string; litres: number | null } | null>(null);
+  const [lastFuelLoading, setLastFuelLoading] = useState(false);
+  const [lastFuelError, setLastFuelError] = useState(false);
   const supabase = useMemo(() => createClient(), []);
   const {
     loading: accessLoading,
@@ -83,6 +86,45 @@ export default function TripsPage() {
     loadError: accessError,
   } = useFleetAccess();
   const canRecord = !isDriver || Boolean(driverId && vehicleId);
+  const selectedFuelVehicleId = isDriver ? vehicleId : form.vehicleId;
+
+  useEffect(() => {
+    if (!dialogOpen || !tenantId || !selectedFuelVehicleId) {
+      setLastFuel(null);
+      setLastFuelError(false);
+      return;
+    }
+    let active = true;
+    setLastFuelLoading(true);
+    setLastFuelError(false);
+    Promise.resolve(supabase.from('expenses')
+      .select('date, litres')
+      .eq('tenant_id', tenantId)
+      .eq('vehicle_id', selectedFuelVehicleId)
+      .eq('category', 'fuel')
+      .order('date', { ascending: false })
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle())
+      .then(({ data, error }) => {
+        if (!active) return;
+        if (error) {
+          setLastFuel(null);
+          setLastFuelError(true);
+        } else {
+          setLastFuel(data ? { date: data.date, litres: data.litres } : null);
+          setLastFuelError(false);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setLastFuel(null);
+          setLastFuelError(true);
+        }
+      })
+      .finally(() => { if (active) setLastFuelLoading(false); });
+    return () => { active = false; };
+  }, [dialogOpen, tenantId, selectedFuelVehicleId, supabase]);
 
   useEffect(() => {
     if (!accessLoading) fetchData();
@@ -452,6 +494,16 @@ export default function TripsPage() {
                 </NativeSelect>
               </div>
             </>
+          )}
+          {(isDriver || form.vehicleId) && (
+            <p className="text-sm text-muted-foreground" aria-live="polite">
+              {lastFuelLoading ? 'Checking fuel history…' : lastFuelError ? 'Fuel history is temporarily unavailable.' : lastFuel ? (
+                <>Last fuel: {(() => {
+                  const daysAgo = Math.round((new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()).getTime() - parseDateOnly(lastFuel.date).getTime()) / 86_400_000);
+                  return daysAgo === 0 ? 'today' : daysAgo === 1 ? 'yesterday' : daysAgo > 1 ? `${daysAgo} days ago` : `${Math.abs(daysAgo)} days from now`;
+                })()}, {lastFuel.litres == null ? 'litres not recorded' : `${Number(lastFuel.litres).toLocaleString('en-KE', { maximumFractionDigits: 2 })} L`}</>
+              ) : 'No fuel logged yet'}
+            </p>
           )}
 
           <div className="space-y-2">
