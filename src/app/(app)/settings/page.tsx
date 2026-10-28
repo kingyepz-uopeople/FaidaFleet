@@ -28,6 +28,7 @@ import { SignOutButton } from '@/components/sign-out-button';
 import { assertMutationRow } from '@/lib/db';
 import { toastError, toastSuccess } from '@/lib/toast';
 import { cn } from '@/lib/utils';
+import { TripRouteSettings } from '@/components/trip-route-settings';
 import { validFuelPhotoRetentionDays } from '@/lib/fuel';
 
 type TeamMember = {
@@ -355,6 +356,7 @@ export default function SettingsPage() {
               </CardFooter>
             </form>
           </Card>
+          {!loading && role === 'owner' && tenantId && <TripRouteSettings key={tenantId} tenantId={tenantId} />}
         </TabsContent>}
       </Tabs>
     </div>
