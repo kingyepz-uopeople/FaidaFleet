@@ -69,7 +69,7 @@ export function TripRouteSettings({ tenantId }: { tenantId: string }) {
           <div className="space-y-2"><Label htmlFor="route-distance">Distance (km)</Label><Input id="route-distance" className="h-12 text-base" type="number" inputMode="decimal" min="0.01" max="999999.99" step="0.01" required value={draft.distance} disabled={busy} onChange={(e) => setDraft({ ...draft, distance: e.target.value })} /></div>
           <Button className="min-h-12" disabled={busy}>Add route</Button>
         </form>
-        {!routes.length && <p className="text-sm text-muted-foreground">No routes yet. Add your first route above.</p>}
+        {!routes.length && <p className="text-sm text-muted-foreground">No routes yet. Add the routes your vehicles run most often so drivers can pick them in one tap. Use Add route above to save your first route.</p>}
         <ul className="divide-y">{routes.map((route) => <li key={route.id} className="space-y-3 py-4">
           <p className="font-medium">{route.origin} to {route.destination}{!route.is_active && <span className="text-muted-foreground"> · Inactive</span>}</p>
           <form className="flex flex-wrap items-end gap-2" onSubmit={(event) => {

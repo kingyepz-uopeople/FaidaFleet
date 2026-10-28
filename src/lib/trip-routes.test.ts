@@ -26,7 +26,7 @@ test('only missing relation/schema cache errors trigger missing-table fallback',
   assert.equal(missingTripRoutes(null), false);
 });
 
-test('migration is rerunnable, tenant-scoped, owner-write-only and seeds without overwriting edits', async () => {
+test('migration is rerunnable, tenant-scoped, owner-write-only and seeds only Mdimi without overwriting edits', async () => {
   const { readFileSync } = await import('node:fs');
   const sql = readFileSync('supabase/migrations/013_trip_routes.sql', 'utf8');
   assert.match(sql, /create table if not exists public\.trip_routes/i);
@@ -34,9 +34,17 @@ test('migration is rerunnable, tenant-scoped, owner-write-only and seeds without
   assert.equal((sql.match(/public\.has_tenant_role\(tenant_id, 'owner'\)/g) || []).length, 4);
   assert.equal((sql.match(/drop policy if exists/g) || []).length, 4);
   assert.match(sql, /on conflict \(tenant_id, origin, destination\) do nothing/i);
-  assert.match(sql, /security definer set search_path = public/i);
-  assert.match(sql, /revoke all on function public\.seed_default_trip_routes\(uuid\) from public, anon, authenticated/i);
-  assert.match(sql, /after insert on public\.tenants/i);
-  assert.match(sql, /select public\.seed_default_trip_routes\(id\) from public\.tenants/i);
-  assert.equal((sql.match(/\(tenant, '/g) || []).length, 6);
+  assert.match(sql, /mdimi_tenant constant uuid := 'a462c49a-d81f-42c9-9f20-ed74a6e9b8e4'/i);
+  assert.match(sql, /if exists \(select 1 from public\.tenants where id = mdimi_tenant\) then\s+insert into public\.trip_routes/i);
+  assert.equal((sql.match(/\(mdimi_tenant, '/g) || []).length, 6);
+  assert.doesNotMatch(sql, /create (?:or replace )?function public\.seed_/i);
+  assert.doesNotMatch(sql, /create trigger[^;]*on public\.tenants/i);
+  assert.doesNotMatch(sql, /select public\.seed_default_trip_routes/i);
+  assert.match(sql, /drop trigger if exists seed_trip_routes on public\.tenants/i);
+  assert.match(sql, /drop function if exists public\.seed_default_trip_routes\(uuid\)/i);
+  for (const [origin, destination, distance, order] of [
+    ['Nairobi', "Murang''a", 85, 0], ["Murang''a", 'Nairobi', 85, 1],
+    ["Murang''a", 'Kangema', 26, 2], ['Kangema', "Murang''a", 26, 3],
+    ['Kangema', 'Nairobi', 107, 4], ['Nairobi', 'Kangema', 107, 5],
+  ]) assert.ok(sql.includes(`(mdimi_tenant, '${origin}', '${destination}', ${distance}, ${order})`));
 });

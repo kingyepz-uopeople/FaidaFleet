@@ -398,7 +398,7 @@ export default function TripsPage() {
         description={isDriver ? 'Your name and current vehicle are filled in for you.' : 'Trips feed the dashboard profit figures and driver analytics.'}
       >
         <form onSubmit={handleSubmit} className="space-y-4">
-          {routes.length > 0 && (
+          {(
             <div className="space-y-2">
               <Label htmlFor="trip_route">Route</Label>
               <NativeSelect id="trip_route" className="h-12 text-base text-foreground" value={routeId} disabled={submitting}
@@ -410,7 +410,7 @@ export default function TripsPage() {
                 <option value="">Other route</option>
                 {routes.map((route) => <option key={route.id} value={route.id}>{routeLabel(route)}</option>)}
               </NativeSelect>
-              <p className="text-sm text-muted-foreground">Preset distances are estimates. Choose Other route for a different journey.</p>
+              <p className="text-sm text-muted-foreground">{routes.length ? 'Preset distances are estimates. Choose Other route for a different journey.' : 'Enter your journey using the From, To and distance fields below.'}</p>
             </div>
           )}
           {isDriver ? (
