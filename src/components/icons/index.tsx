@@ -262,3 +262,47 @@ export function AdministratorDeveloper(props: IconProps) {
     />
   )
 }
+
+/**
+ * Line icons for the password / PIN reveal toggles. Stroke-based so the
+ * "hidden" variant can carry a slash without the eye fill swallowing it.
+ */
+function StrokeIcon({
+  markup,
+  className,
+  ...props
+}: IconProps & { markup: string }) {
+  return (
+    <svg
+      {...props}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+      className={cn('inline-block shrink-0', className)}
+      dangerouslySetInnerHTML={{ __html: markup }}
+    />
+  )
+}
+
+export function Eye(props: IconProps) {
+  return (
+    <StrokeIcon
+      markup={'<path d="M2.2 12S5.7 5.6 12 5.6 21.8 12 21.8 12 18.3 18.4 12 18.4 2.2 12 2.2 12Z"/><circle cx="12" cy="12" r="3.1"/>'}
+      {...props}
+    />
+  )
+}
+
+export function EyeOff(props: IconProps) {
+  return (
+    <StrokeIcon
+      markup={'<path d="M10.6 6.1A9.7 9.7 0 0 1 12 6c6.3 0 9.8 6 9.8 6a15.6 15.6 0 0 1-2.9 3.6M6.4 7.9A15.8 15.8 0 0 0 2.2 12s3.5 6 9.8 6a9.9 9.9 0 0 0 4-.8"/><path d="M3.6 3.6 20.4 20.4"/>'}
+      {...props}
+    />
+  )
+}
