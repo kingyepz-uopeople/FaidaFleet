@@ -100,6 +100,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     fullName: driver.full_name,
     phone,
     accountType: 'driver',
+    tenantId: driver.tenant_id,
   })
 
   if (!applied.ok) {
@@ -107,46 +108,12 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   }
 
   if (!driver.user_id || driver.user_id !== applied.userId) {
-    const { error: linkError } = await supabase.rpc('provision_driver_login', {
+    const { error: linkError } = await admin.rpc('provision_driver_login', {
       p_driver_id: driver.id,
       p_user_id: applied.userId,
     })
     if (linkError) {
-      const { error: fallbackError } = await admin
-        .from('drivers')
-        .update({ user_id: applied.userId })
-        .eq('id', driver.id)
-        .select('id')
-
-      if (fallbackError) {
-        return NextResponse.json(
-          { error: `PIN set, but the driver record could not be linked: ${fallbackError.message}` },
-          { status: 500 },
-        )
-      }
-
-      // The RPC also creates the driver membership. When it is missing, the
-      // fallback has to do both the link AND the membership, otherwise the
-      // driver signs in to an empty app.
-      const { error: membershipError } = await admin
-        .from('memberships')
-        .upsert(
-          {
-            user_id: applied.userId,
-            tenant_id: driver.tenant_id,
-            role: 'driver',
-            is_active: true,
-          },
-          { onConflict: 'user_id,tenant_id' },
-        )
-        .select('id')
-
-      if (membershipError) {
-        return NextResponse.json(
-          { error: `PIN set, but the fleet membership could not be created: ${membershipError.message}` },
-          { status: 500 },
-        )
-      }
+      return NextResponse.json({ error: `PIN set, but the driver record could not be linked: ${linkError.message}` }, { status: 500 })
     }
   }
 

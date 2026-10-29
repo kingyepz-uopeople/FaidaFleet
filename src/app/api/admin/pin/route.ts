@@ -91,40 +91,19 @@ export async function POST(request: Request) {
       fullName: driver.full_name,
       phone,
       accountType: 'driver',
+      tenantId: driver.tenant_id,
     })
     if (!applied.ok) {
       return NextResponse.json({ error: applied.error }, { status: applied.status })
     }
 
     if (!driver.user_id || driver.user_id !== applied.userId) {
-      const { error: linkError } = await admin
-        .from('drivers')
-        .update({ user_id: applied.userId })
-        .eq('id', driver.id)
-        .select('id')
-
+      const { error: linkError } = await admin.rpc('provision_driver_login', {
+        p_driver_id: driver.id,
+        p_user_id: applied.userId,
+      })
       if (linkError) {
-        return NextResponse.json(
-          { error: `PIN set, but the driver record could not be linked: ${linkError.message}` },
-          { status: 500 },
-        )
-      }
-
-      const { error: membershipError } = await admin
-        .from('memberships')
-        .upsert({
-          user_id: applied.userId,
-          tenant_id: driver.tenant_id,
-          role: 'driver',
-          is_active: true,
-        }, { onConflict: 'user_id,tenant_id' })
-        .select('id')
-
-      if (membershipError) {
-        return NextResponse.json(
-          { error: `PIN set, but the fleet membership could not be created: ${membershipError.message}` },
-          { status: 500 },
-        )
+        return NextResponse.json({ error: `PIN set, but the driver record could not be linked: ${linkError.message}` }, { status: 500 })
       }
     }
 
@@ -198,6 +177,7 @@ export async function POST(request: Request) {
     fullName,
     phone,
     accountType: 'fleet_owner',
+    tenantId,
   })
   if (!applied.ok) {
     return NextResponse.json({ error: applied.error }, { status: applied.status })
