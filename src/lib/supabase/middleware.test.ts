@@ -28,7 +28,7 @@ async function withMockSupabase(options: MockOptions, run: (input: { cookie: str
     id: userId,
     aud: 'authenticated',
     created_at: '2020-01-01T00:00:00Z',
-    app_metadata: {},
+    app_metadata: { must_change_pin: Boolean(options.mustChangePin) },
     user_metadata: { full_name: options.oversized ? 'x'.repeat(5000) : 'Mumbi 🚗', must_change_pin: Boolean(options.mustChangePin) },
   }
   const now = Math.floor(Date.now() / 1000)

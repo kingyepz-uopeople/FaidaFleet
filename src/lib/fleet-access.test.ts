@@ -16,6 +16,7 @@ import {
 
 const driverUser = {
   id: 'auth-driver-1',
+  app_metadata: { must_change_pin: true },
   user_metadata: { account_type: 'driver', must_change_pin: true },
 } as unknown as FleetAccessSnapshot['user']
 

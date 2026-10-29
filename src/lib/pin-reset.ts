@@ -47,6 +47,21 @@ export async function findAuthUserByEmail(admin: AuthAdmin, email: string): Prom
   return null
 }
 
+export function permitsPinTarget(rows: { tenant_id: string; role: string }[], tenantId: string, driver: boolean): boolean {
+  if (!driver) return rows.some(row => row.tenant_id === tenantId && row.role === 'owner')
+  return rows.length > 0 && rows.every(row => row.tenant_id === tenantId && row.role === 'driver')
+}
+
+// Fail closed on query errors; include inactive memberships and admin rows.
+export async function isSafePinTarget(admin: AuthAdmin, userId: string, tenantId: string, driver: boolean): Promise<boolean> {
+  const [memberships, admins] = await Promise.all([
+    admin.from('memberships').select('tenant_id, role').eq('user_id', userId),
+    admin.from('admin_users').select('user_id').eq('user_id', userId).limit(1),
+  ])
+  if (memberships.error || admins.error || admins.data.length) return false
+  return permitsPinTarget(memberships.data, tenantId, driver)
+}
+
 export async function setAuthUserPin(input: {
   admin: AuthAdmin
   userId?: string | null
@@ -55,21 +70,24 @@ export async function setAuthUserPin(input: {
   fullName: string
   phone: string
   accountType: 'driver' | 'fleet_owner'
+  tenantId: string
 }): Promise<ApplyPinResult> {
   const metadata = {
     full_name: input.fullName,
     phone: input.phone,
     account_type: input.accountType,
-    [MUST_CHANGE_PIN_KEY]: true,
   }
   // Every create / update / verify path uses the same server-only transform.
   const password = authPasswordFromPin(input.pin)
 
   if (input.userId) {
+    const safe = await isSafePinTarget(input.admin, input.userId, input.tenantId, input.accountType === 'driver')
+    if (!safe) return { ok: false, error: 'This account cannot be reset for this fleet', status: 403 }
     const { error } = await input.admin.auth.admin.updateUserById(input.userId, {
       password,
       email_confirm: true,
       user_metadata: metadata,
+      app_metadata: { [MUST_CHANGE_PIN_KEY]: true },
     })
     if (error) return { ok: false, error: error.message, status: 400 }
     return { ok: true, userId: input.userId, created: false }
@@ -80,6 +98,7 @@ export async function setAuthUserPin(input: {
     password,
     email_confirm: true,
     user_metadata: metadata,
+    app_metadata: { [MUST_CHANGE_PIN_KEY]: true },
   })
 
   if (!created.error && created.data.user) {
@@ -91,21 +110,8 @@ export async function setAuthUserPin(input: {
     return { ok: false, error: created.error?.message || 'Could not create a login', status: 400 }
   }
 
-  try {
-    const existing = await findAuthUserByEmail(input.admin, input.email)
-    if (!existing) {
-      return { ok: false, error: 'That phone number already has a login, but it could not be updated', status: 400 }
-    }
-    const { error } = await input.admin.auth.admin.updateUserById(existing.id, {
-      password,
-      email_confirm: true,
-      user_metadata: metadata,
-    })
-    if (error) return { ok: false, error: error.message, status: 400 }
-    return { ok: true, userId: existing.id, created: false }
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : 'Could not update the login', status: 400 }
-  }
+  // Never claim an existing account by its phone-derived email.
+  return { ok: false, error: 'That phone number already has a login. Link it securely before resetting its PIN.', status: 409 }
 }
 
 export async function recordPinReset(admin: AuthAdmin, input: PinResetLogInput): Promise<void> {

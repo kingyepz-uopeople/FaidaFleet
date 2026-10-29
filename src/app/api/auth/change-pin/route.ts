@@ -13,6 +13,7 @@ import {
   retryAfterSeconds,
 } from '@/lib/rate-limit'
 import { createClient } from '@/lib/supabase/server'
+import { requireAdminClient } from '@/lib/pin-reset'
 
 /**
  * Browser code never calls supabase.auth.updateUser with a raw PIN. PINs are
@@ -88,9 +89,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: message }, { status: 401 })
     }
 
-    const { error: updateError } = await supabase.auth.updateUser({
+    const admin = requireAdminClient()
+    if ('error' in admin) return NextResponse.json({ error: admin.error }, { status: 500 })
+
+    const { error: updateError } = await admin.auth.admin.updateUserById(user.id, {
       password: authPasswordFromPin(newPin),
-      data: { [MUST_CHANGE_PIN_KEY]: false },
+      app_metadata: { [MUST_CHANGE_PIN_KEY]: false },
+      user_metadata: { [MUST_CHANGE_PIN_KEY]: false },
     })
     if (updateError) {
       return NextResponse.json({ error: friendlyPinError(updateError.message) }, { status: 400 })
