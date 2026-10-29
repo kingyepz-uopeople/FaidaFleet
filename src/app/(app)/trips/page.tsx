@@ -24,7 +24,8 @@ import { DriverScopeNotice, LockedValue } from '@/components/driver-scope';
 import { RecordOriginBadge } from '@/components/record-origin-badge';
 
 import { TripRoute, TRIP_ROUTE_COLUMNS, routeLabel, routeFields, rememberedRoute, routeStorageKey, missingTripRoutes } from '@/lib/trip-routes';
-import { appendUniqueTrips, splitTripPage, tripCursorFilter, TRIP_LIST_COLUMNS, TRIP_PAGE_SIZE, type TripCursor } from '@/lib/trip-pagination';
+import { appendUniqueTrips, splitTripPage, sumTripTotals, tripCursorFilter, TRIP_LIST_COLUMNS, TRIP_PAGE_SIZE, TRIP_TOTALS_COLUMNS, type TripCursor, type TripTotals } from '@/lib/trip-pagination';
+import { fetchReportPages } from '@/lib/report-range';
 
 const NO_MATCH_UUID = '00000000-0000-0000-0000-000000000000';
 
@@ -82,6 +83,7 @@ export default function TripsPage() {
   const [routes, setRoutes] = useState<TripRoute[]>([]);
   const [routeId, setRouteId] = useState('');
   const [trips, setTrips] = useState<Trip[]>([]);
+  const [totals, setTotals] = useState<TripTotals>({ earnings: 0, expenses: 0, profit: 0, count: 0 });
   const [vehicles, setVehicles] = useState<Option[]>([]);
   const [drivers, setDrivers] = useState<Option[]>([]);
   const [loading, setLoading] = useState(true);
@@ -143,6 +145,17 @@ export default function TripsPage() {
     return splitTripPage((result.data || []) as Trip[]);
   };
 
+  /** All-scope totals: numeric columns only, paged past the 1,000-row server cap. */
+  const fetchTripTotals = async (): Promise<TripTotals> => {
+    if (!tenantId) throw new Error('No fleet found for this account.');
+    const rows = await fetchReportPages((from, to, withCount) => {
+      let query = supabase.from('trips').select(TRIP_TOTALS_COLUMNS, { count: withCount ? 'exact' : undefined }).eq('tenant_id', tenantId);
+      if (isDriver) query = query.eq('driver_id', driverId || NO_MATCH_UUID);
+      return query.order('id').range(from, to);
+    }, 500);
+    return sumTripTotals(rows);
+  };
+
   const fetchData = async () => {
     const generation = ++loadGeneration.current;
     try {
@@ -164,8 +177,9 @@ export default function TripsPage() {
         .order('id', { referencedTable: 'last_fuel', ascending: false })
         .limit(1, { referencedTable: 'last_fuel' });
 
-      const [page, vehiclesRes, driversRes, routesRes] = await Promise.all([
+      const [page, totalsResult, vehiclesRes, driversRes, routesRes] = await Promise.all([
         fetchTripPage(null),
+        fetchTripTotals(),
         vehicleQuery,
         isDriver
           ? supabase.from('drivers').select('id, full_name').eq('id', driverId || NO_MATCH_UUID).limit(1)
@@ -181,6 +195,7 @@ export default function TripsPage() {
       if (routesRes.error && !missingTripRoutes(routesRes.error)) toastError(routesRes.error, 'Could not load preset routes; enter your route manually.');
       const vehicleRows = (vehiclesRes.data || []) as VehicleRow[];
       setTrips(page.rows);
+      setTotals(totalsResult);
       nextTripCursor.current = page.rows.at(-1) || null;
       setHasMore(page.hasMore);
       // Keep inactive vehicles in the fuel snapshot so editing an old trip still
@@ -192,6 +207,7 @@ export default function TripsPage() {
       if (generation !== loadGeneration.current) return;
       const message = err instanceof Error ? err.message : 'Could not load trips';
       setTrips([]);
+      setTotals({ earnings: 0, expenses: 0, profit: 0, count: 0 });
       setVehicles([]);
       setDrivers([]);
       setLastFuelByVehicle({});
@@ -317,10 +333,8 @@ export default function TripsPage() {
     }
   };
 
-  const totalEarnings = trips.reduce((sum, trip) => sum + (trip.earnings || 0), 0);
-  const totalExpenses = trips.reduce((sum, trip) => sum + (trip.expenses || 0), 0);
-  const totalProfit = totalEarnings - totalExpenses;
   const isLoading = loading || accessLoading;
+  const scopeLabel = isDriver ? 'your trips' : 'all trips';
 
   return (
     <PageShell
@@ -342,16 +356,16 @@ export default function TripsPage() {
       {isDriver && accessError && <DriverScopeNotice message={accessError} />}
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <StatCard loading={isLoading} title="Total earnings" value={`KES ${totalEarnings.toLocaleString()}`} description={`${trips.length} loaded trips`} Icon={Wallet} />
-        <StatCard loading={isLoading} title="Total expenses" value={`KES ${totalExpenses.toLocaleString()}`} description="Fuel and running costs · loaded trips" Icon={Zap} />
-        <StatCard loading={isLoading} title="Net profit" value={`KES ${totalProfit.toLocaleString()}`} description="Earnings minus expenses · loaded trips" Icon={TrendingUp} />
+        <StatCard loading={isLoading} title="Total earnings" value={`KES ${totals.earnings.toLocaleString()}`} description={`${totals.count.toLocaleString()} trips · ${scopeLabel}`} Icon={Wallet} />
+        <StatCard loading={isLoading} title="Total expenses" value={`KES ${totals.expenses.toLocaleString()}`} description={`Fuel and running costs · ${scopeLabel}`} Icon={Zap} />
+        <StatCard loading={isLoading} title="Net profit" value={`KES ${totals.profit.toLocaleString()}`} description={`Earnings minus expenses · ${scopeLabel}`} Icon={TrendingUp} />
       </div>
 
       <Card>
         <CardHeader>
           <CardTitle>Trip records</CardTitle>
           <CardDescription>
-            {isLoading ? <Skeleton className="h-4 w-28" /> : `${trips.length} trips loaded`}
+            {isLoading ? <Skeleton className="h-4 w-28" /> : `${trips.length.toLocaleString()} of ${totals.count.toLocaleString()} trips loaded`}
           </CardDescription>
         </CardHeader>
         <CardContent>
