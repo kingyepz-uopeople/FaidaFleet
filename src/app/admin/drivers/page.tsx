@@ -11,6 +11,7 @@ import { FormDialog } from '@/components/form-dialog';
 import { NativeSelect } from '@/components/ui/native-select';
 import { createClient } from '@/lib/supabase/client';
 import { assertMutation, assertMutationRow } from '@/lib/db';
+import { driverPhoneEditError } from '@/lib/driver-phone-edit';
 import { toastError, toastSuccess } from '@/lib/toast';
 import {
   DropdownMenu,
@@ -163,6 +164,9 @@ export default function AllDriversPage() {
             .insert([{ ...payload, tenant_id: formData.tenant_id, is_active: true }])
             .select('id');
 
+      const originalPhone = drivers.find((driver) => driver.id === editingId)?.phone;
+      const phoneError = driverPhoneEditError(result.error?.message, originalPhone, payload.phone);
+      if (phoneError) throw new Error(phoneError);
       assertMutationRow(result, editingId ? 'Could not update the driver' : 'Could not create the driver');
       setSuccess(editingId ? 'Driver updated.' : 'Driver created.');
       toastSuccess(editingId ? 'Driver updated.' : 'Driver created.', 'Saved');

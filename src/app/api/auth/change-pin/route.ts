@@ -60,11 +60,19 @@ export async function POST(request: Request) {
     )
   }
 
+  // Check configuration before verifying or changing anything. The client
+  // displays this error in both the forced-PIN dialog and Settings.
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()) {
+    return NextResponse.json({ error: 'PIN changes are temporarily unavailable because the server is missing SUPABASE_SERVICE_ROLE_KEY. Please contact an administrator.' }, { status: 503 })
+  }
+
   const url = getSupabaseUrl()
   const key = getSupabaseKey()
   if (!url || !key) {
     return NextResponse.json({ error: 'Supabase is not configured' }, { status: 500 })
   }
+  const admin = requireAdminClient()
+  if ('error' in admin) return NextResponse.json({ error: admin.error }, { status: 503 })
 
   try {
     // Verify the current PIN with a throwaway client so the signed-in session
@@ -88,9 +96,6 @@ export async function POST(request: Request) {
       const message = lower.includes('invalid') ? 'Current PIN is incorrect' : friendlyAuthError(verifyError.message)
       return NextResponse.json({ error: message }, { status: 401 })
     }
-
-    const admin = requireAdminClient()
-    if ('error' in admin) return NextResponse.json({ error: admin.error }, { status: 500 })
 
     const { error: updateError } = await admin.auth.admin.updateUserById(user.id, {
       password: authPasswordFromPin(newPin),
