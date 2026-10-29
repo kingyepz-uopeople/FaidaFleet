@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { TripRoute, missingTripRoutes, validRouteDistance } from '@/lib/trip-routes';
+import { TripRoute, TRIP_ROUTE_COLUMNS, missingTripRoutes, validRouteDistance } from '@/lib/trip-routes';
 import { assertMutationRow } from '@/lib/db';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -21,7 +21,7 @@ export function TripRouteSettings({ tenantId }: { tenantId: string }) {
 
   useEffect(() => {
     let cancelled = false;
-    supabase.from('trip_routes').select('*').eq('tenant_id', tenantId).order('sort_order').order('origin').then(({ data, error }) => {
+    supabase.from('trip_routes').select(TRIP_ROUTE_COLUMNS).eq('tenant_id', tenantId).order('sort_order').order('origin').then(({ data, error }) => {
       if (cancelled) return;
       setUnavailable(missingTripRoutes(error));
       setError(error && !missingTripRoutes(error) ? 'Could not load trip routes. Reopen Settings to retry.' : null);
@@ -58,7 +58,7 @@ export function TripRouteSettings({ tenantId }: { tenantId: string }) {
           event.preventDefault();
           void mutate(async () => {
             if (!draft.origin.trim() || !draft.destination.trim() || !validRouteDistance(draft.distance)) throw new Error('Enter From, To, and a positive distance with at most two decimals (maximum 999999.99 km).');
-            const result = await supabase.from('trip_routes').insert({ tenant_id: tenantId, origin: draft.origin.trim(), destination: draft.destination.trim(), distance_km: Number(draft.distance) }).select('*');
+            const result = await supabase.from('trip_routes').insert({ tenant_id: tenantId, origin: draft.origin.trim(), destination: draft.destination.trim(), distance_km: Number(draft.distance) }).select(TRIP_ROUTE_COLUMNS);
             assertMutationRow(result, 'Could not add route. This route may already exist.');
             setRoutes((rows) => [...rows, ...(result.data as TripRoute[])]);
             setDraft({ origin: '', destination: '', distance: '' });

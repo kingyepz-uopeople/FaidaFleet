@@ -13,6 +13,16 @@ export function trailingDateRange(days: number, today = new Date()): { start: st
   }
 }
 
+/** Start of a bounded lookback window, using calendar days in UTC. */
+export function reportLookbackStart(start: string, lookbackDays = 60): string {
+  if (!validReportRange({ start, end: start }) || !Number.isInteger(lookbackDays) || lookbackDays < 0) {
+    throw new Error('Invalid report lookback')
+  }
+  const date = new Date(`${start}T00:00:00Z`)
+  date.setUTCDate(date.getUTCDate() - lookbackDays)
+  return date.toISOString().slice(0, 10)
+}
+
 export function validReportRange(range: { start: string; end: string }): boolean {
   const validDate = (value: string) => {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
@@ -25,14 +35,15 @@ export function validReportRange(range: { start: string; end: string }): boolean
 }
 
 /**
- * PostgREST caps response sizes. Read every row in the selected date range in
- * small pages so a report never presents a truncated page as a complete total.
- * The caller must provide a stable, unique ordering, select each row's id,
- * bound report dates, and request an exact count on the first page. Obvious
- * overlap or count growth while paging is surfaced instead of double-counted.
+ * Read every row in a stable, uniquely ordered report range. The first page is
+ * fetched without an exact count: a short page is already complete. Only when
+ * the first page is full do we ask for an exact count (on the second page), then
+ * fetch all remaining pages in parallel. Callers must select each row's id and
+ * use a page size no larger than the server's response cap. Overlap or count
+ * changes while paging are surfaced instead of silently skewing totals.
  */
 export async function fetchReportPages<T>(
-  fetchPage: (from: number, to: number) => PromiseLike<{
+  fetchPage: (from: number, to: number, withCount: boolean) => PromiseLike<{
     data: T[] | null
     error: { message: string } | null
     count?: number | null
@@ -40,28 +51,22 @@ export async function fetchReportPages<T>(
   pageSize = 500,
 ): Promise<T[]> {
   if (!Number.isInteger(pageSize) || pageSize < 1) throw new Error('Invalid report page size')
-  const rows: T[] = []
+
+  const first = await fetchPage(0, pageSize - 1, false)
+  if (first.error) throw new Error(first.error.message)
+  const rows: T[] = first.data || []
+  if (rows.length < pageSize) return rows
+
+  const second = await fetchPage(pageSize, pageSize * 2 - 1, true)
+  if (second.error) throw new Error(second.error.message)
+  if (typeof second.count !== 'number' || !Number.isSafeInteger(second.count) || second.count < 0) {
+    throw new Error('Could not verify that the report is complete. Please try again.')
+  }
+  const expectedCount = second.count
+  if (expectedCount < rows.length) throw new Error('The report changed while loading. Please try again.')
   const seenIds = new Set<string>()
-  let expectedCount: number | null = null
-  for (let from = 0; ;) {
-    const { data, error, count } = await fetchPage(from, from + pageSize - 1)
-    if (error) throw new Error(error.message)
-    if (expectedCount === null) {
-      if (typeof count !== 'number' || !Number.isSafeInteger(count) || count < 0) {
-        throw new Error('Could not verify that the report is complete. Please try again.')
-      }
-      expectedCount = count
-    }
-    const page = data || []
-    if (page.length === 0) {
-      if (expectedCount !== null && from < expectedCount) {
-        throw new Error('The report changed while loading. Please try again.')
-      }
-      return rows
-    }
-    if (from + page.length > expectedCount) {
-      throw new Error('The report changed while loading. Please try again.')
-    }
+  const addPage = (page: T[], from: number) => {
+    if (from + page.length > expectedCount) throw new Error('The report changed while loading. Please try again.')
     for (const row of page) {
       if (row && typeof row === 'object' && 'id' in row && typeof row.id === 'string') {
         if (seenIds.has(row.id)) throw new Error('The report changed while loading. Please try again.')
@@ -69,10 +74,30 @@ export async function fetchReportPages<T>(
       }
     }
     rows.push(...page)
-    // A project can cap PostgREST responses below our requested page size.
-    // Advance by what was actually received and use the first exact count to
-    // avoid silently mistaking that cap for the end of the report.
-    from += page.length
-    if (from === expectedCount) return rows
   }
+  for (const row of rows) {
+    if (row && typeof row === 'object' && 'id' in row && typeof row.id === 'string') seenIds.add(row.id)
+  }
+  addPage(second.data || [], pageSize)
+  if (rows.length === expectedCount) return rows
+  if (rows.length > expectedCount || (second.data || []).length < pageSize) {
+    throw new Error('The report changed while loading. Please try again.')
+  }
+
+  const offsets: number[] = []
+  for (let from = rows.length; from < expectedCount; from += pageSize) offsets.push(from)
+  const pages = await Promise.all(offsets.map(async (from) => {
+    const to = Math.min(from + pageSize - 1, expectedCount - 1)
+    const result = await fetchPage(from, to, false)
+    if (result.error) throw new Error(result.error.message)
+    return { from, to, data: result.data || [] }
+  }))
+  for (const page of pages) {
+    if (page.data.length !== page.to - page.from + 1) {
+      throw new Error('The report changed while loading. Please try again.')
+    }
+    addPage(page.data, page.from)
+  }
+  if (rows.length !== expectedCount) throw new Error('The report changed while loading. Please try again.')
+  return rows
 }

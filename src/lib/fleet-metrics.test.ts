@@ -11,9 +11,12 @@ import {
   buildWeeklySeries,
   collectionStatus,
   complianceIssues,
+  dashboardTotalsFromRows,
   driverLeaderboard,
   groupFinancials,
+  missingDashboardTotals,
   profitBreakdown,
+  reconciliationFromCounts,
   reconciliationStats,
   sumAmounts,
   vehicleComplianceStatus,
@@ -142,4 +145,26 @@ test('driver profit subtracts trip costs instead of leaving expenses at zero', (
       { name: 'Brian', collections: 3000, expenses: 100, profit: 2900, trips: 1 },
     ]
   )
+})
+
+test('dashboard lifetime totals and reconciliation keep the existing card semantics', () => {
+  const collections = [
+    { date: '2020-01-01', amount: '100.25', payment_method: 'mpesa', reconciled: true },
+    { date: '2026-10-29', amount: 50, payment_method: 'pochi', reconciled: false },
+    { date: null, amount: 10, payment_method: 'cash', reconciled: false },
+  ]
+  const expenses = [{ date: '2019-01-01', amount: '40.25' }, { date: null, amount: null }]
+  assert.deepEqual(dashboardTotalsFromRows(collections, expenses), {
+    totalCollections: 160.25,
+    totalExpenses: 40.25,
+    collectionCount: 3,
+    expenseCount: 2,
+    reconciliation: { electronicCount: 2, reconciled: 1, pending: 1, rate: 50 },
+  })
+  assert.deepEqual(reconciliationFromCounts(3, 2), { electronicCount: 3, reconciled: 2, pending: 1, rate: 67 })
+  assert.deepEqual(reconciliationFromCounts(0, 0), { electronicCount: 0, reconciled: 0, pending: 0, rate: 0 })
+  assert.equal(missingDashboardTotals({ code: 'PGRST202' }), true)
+  assert.equal(missingDashboardTotals({ code: '42883' }), true)
+  assert.equal(missingDashboardTotals({ code: '42501' }), false)
+  assert.equal(missingDashboardTotals(null), false)
 })

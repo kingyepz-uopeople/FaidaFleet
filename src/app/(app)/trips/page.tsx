@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -23,7 +23,8 @@ import { useFleetAccess } from '@/components/fleet-access-provider';
 import { DriverScopeNotice, LockedValue } from '@/components/driver-scope';
 import { RecordOriginBadge } from '@/components/record-origin-badge';
 
-import { TripRoute, routeLabel, routeFields, rememberedRoute, routeStorageKey, missingTripRoutes } from '@/lib/trip-routes';
+import { TripRoute, TRIP_ROUTE_COLUMNS, routeLabel, routeFields, rememberedRoute, routeStorageKey, missingTripRoutes } from '@/lib/trip-routes';
+import { appendUniqueTrips, splitTripPage, tripCursorFilter, TRIP_LIST_COLUMNS, TRIP_PAGE_SIZE, type TripCursor } from '@/lib/trip-pagination';
 
 const NO_MATCH_UUID = '00000000-0000-0000-0000-000000000000';
 
@@ -32,6 +33,7 @@ type Trip = {
   vehicle_id: string;
   driver_id: string;
   trip_date: string;
+  created_at: string | null;
   distance_km: number | null;
   earnings: number | null;
   expenses: number | null;
@@ -44,6 +46,25 @@ type Trip = {
 };
 
 type Option = { id: string; label: string };
+type LastFuel = { date: string; litres: number | null };
+type VehicleRow = {
+  id: string;
+  registration_number: string;
+  is_active: boolean;
+  last_fuel: LastFuel[] | null;
+};
+
+const VEHICLE_FUEL_COLUMNS = 'id, registration_number, is_active, last_fuel:expenses!expenses_vehicle_id_fkey(date, litres)';
+
+/** One embedded, per-vehicle row avoids a fan-out of dialog-time fuel queries. */
+function latestFuelByVehicle(rows: VehicleRow[]): Record<string, LastFuel> {
+  const result: Record<string, LastFuel> = {};
+  for (const row of rows) {
+    const fuel = row.last_fuel?.[0];
+    if (fuel) result[row.id] = { date: fuel.date, litres: fuel.litres };
+  }
+  return result;
+}
 
 const EMPTY_FORM = {
   vehicleId: '',
@@ -64,14 +85,17 @@ export default function TripsPage() {
   const [vehicles, setVehicles] = useState<Option[]>([]);
   const [drivers, setDrivers] = useState<Option[]>([]);
   const [loading, setLoading] = useState(true);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const loadGeneration = useRef(0);
+  const nextTripCursor = useRef<TripCursor | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Trip | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
-  const [lastFuel, setLastFuel] = useState<{ date: string; litres: number | null } | null>(null);
-  const [lastFuelLoading, setLastFuelLoading] = useState(false);
+  const [lastFuelByVehicle, setLastFuelByVehicle] = useState<Record<string, LastFuel>>({});
   const [lastFuelError, setLastFuelError] = useState(false);
   const supabase = useMemo(() => createClient(), []);
   const {
@@ -87,95 +111,114 @@ export default function TripsPage() {
   } = useFleetAccess();
   const canRecord = !isDriver || Boolean(driverId && vehicleId);
   const selectedFuelVehicleId = isDriver ? vehicleId : form.vehicleId;
+  const lastFuel = selectedFuelVehicleId ? lastFuelByVehicle[selectedFuelVehicleId] || null : null;
+  const lastFuelLoading = loading || accessLoading;
+  const scopeKey = `${tenantId || ''}:${userId || ''}:${isDriver}:${driverId || ''}:${vehicleId || ''}`;
 
   useEffect(() => {
-    if (!dialogOpen || !tenantId || !selectedFuelVehicleId) {
-      setLastFuel(null);
-      setLastFuelError(false);
-      return;
-    }
-    let active = true;
-    setLastFuelLoading(true);
-    setLastFuelError(false);
-    Promise.resolve(supabase.from('expenses')
-      .select('date, litres')
-      .eq('tenant_id', tenantId)
-      .eq('vehicle_id', selectedFuelVehicleId)
-      .eq('category', 'fuel')
-      .order('date', { ascending: false })
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle())
-      .then(({ data, error }) => {
-        if (!active) return;
-        if (error) {
-          setLastFuel(null);
-          setLastFuelError(true);
-        } else {
-          setLastFuel(data ? { date: data.date, litres: data.litres } : null);
-          setLastFuelError(false);
-        }
-      })
-      .catch(() => {
-        if (active) {
-          setLastFuel(null);
-          setLastFuelError(true);
-        }
-      })
-      .finally(() => { if (active) setLastFuelLoading(false); });
-    return () => { active = false; };
-  }, [dialogOpen, tenantId, selectedFuelVehicleId, supabase]);
+    // A dialog or fuel snapshot from an earlier user/fleet must not survive a switch.
+    setDialogOpen(false);
+    setEditing(null);
+    setLastFuelByVehicle({});
+  }, [scopeKey]);
 
   useEffect(() => {
-    if (!accessLoading) fetchData();
+    if (!accessLoading) void fetchData();
+    return () => { loadGeneration.current += 1; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accessLoading, tenantId, isDriver, driverId, vehicleId]);
+  }, [accessLoading, tenantId, isDriver, driverId, vehicleId, userId]);
+
+  const fetchTripPage = async (cursor: TripCursor | null) => {
+    if (!tenantId) throw new Error('No fleet found for this account.');
+    let query = supabase.from('trips').select(TRIP_LIST_COLUMNS).eq('tenant_id', tenantId);
+    // Preserve the existing driver-only record filter exactly.
+    if (isDriver) query = query.eq('driver_id', driverId || NO_MATCH_UUID);
+    if (cursor) query = query.or(tripCursorFilter(cursor));
+    const result = await query
+      .order('trip_date', { ascending: false })
+      .order('created_at', { ascending: false, nullsFirst: true })
+      .order('id', { ascending: false })
+      .limit(TRIP_PAGE_SIZE + 1);
+    if (result.error) throw new Error(result.error.message);
+    return splitTripPage((result.data || []) as Trip[]);
+  };
 
   const fetchData = async () => {
+    const generation = ++loadGeneration.current;
     try {
       setLoading(true);
+      setLoadingMore(false);
       setLoadError(null);
+      setLastFuelError(false);
       if (!tenantId) {
         setLoadError(accessError || 'No fleet is linked to this account yet. Finish onboarding to record trips.');
         return;
       }
 
-      const [tripsRes, vehiclesRes, driversRes, routesRes] = await Promise.all([
-        (isDriver
-          ? supabase
-              .from('trips')
-              .select('*, vehicles(registration_number), drivers(full_name, user_id)')
-              .eq('tenant_id', tenantId)
-              .eq('driver_id', driverId || NO_MATCH_UUID)
-          : supabase
-              .from('trips')
-              .select('*, vehicles(registration_number), drivers(full_name, user_id)')
-              .eq('tenant_id', tenantId)
-        ).order('created_at', { ascending: false }).order('trip_date', { ascending: false }),
-        isDriver
-          ? supabase.from('vehicles').select('id, registration_number').eq('id', vehicleId || NO_MATCH_UUID).limit(1)
-          : supabase.from('vehicles').select('id, registration_number').eq('tenant_id', tenantId).eq('is_active', true).order('registration_number'),
+      const vehicleQuery = (isDriver
+        ? supabase.from('vehicles').select(VEHICLE_FUEL_COLUMNS).eq('id', vehicleId || NO_MATCH_UUID).limit(1)
+        : supabase.from('vehicles').select(VEHICLE_FUEL_COLUMNS).eq('tenant_id', tenantId).order('registration_number'))
+        .eq('last_fuel.category', 'fuel')
+        .order('date', { referencedTable: 'last_fuel', ascending: false })
+        .order('created_at', { referencedTable: 'last_fuel', ascending: false })
+        .order('id', { referencedTable: 'last_fuel', ascending: false })
+        .limit(1, { referencedTable: 'last_fuel' });
+
+      const [page, vehiclesRes, driversRes, routesRes] = await Promise.all([
+        fetchTripPage(null),
+        vehicleQuery,
         isDriver
           ? supabase.from('drivers').select('id, full_name').eq('id', driverId || NO_MATCH_UUID).limit(1)
           : supabase.from('drivers').select('id, full_name').eq('tenant_id', tenantId).eq('is_active', true).order('full_name'),
-        supabase.from('trip_routes').select('*').eq('tenant_id', tenantId).eq('is_active', true).order('sort_order').order('origin').order('destination'),
+        supabase.from('trip_routes').select(TRIP_ROUTE_COLUMNS).eq('tenant_id', tenantId).eq('is_active', true).order('sort_order').order('origin').order('destination'),
       ]);
 
-      if (tripsRes.error) throw tripsRes.error;
       if (vehiclesRes.error) throw vehiclesRes.error;
       if (driversRes.error) throw driversRes.error;
+      if (generation !== loadGeneration.current) return;
 
       setRoutes(routesRes.error ? [] : (routesRes.data || []) as TripRoute[]);
       if (routesRes.error && !missingTripRoutes(routesRes.error)) toastError(routesRes.error, 'Could not load preset routes; enter your route manually.');
-      setTrips((tripsRes.data || []) as Trip[]);
-      setVehicles((vehiclesRes.data || []).map((row) => ({ id: row.id, label: row.registration_number })));
+      const vehicleRows = (vehiclesRes.data || []) as VehicleRow[];
+      setTrips(page.rows);
+      nextTripCursor.current = page.rows.at(-1) || null;
+      setHasMore(page.hasMore);
+      // Keep inactive vehicles in the fuel snapshot so editing an old trip still
+      // shows its last fuel; the selectable vehicle list remains active-only.
+      setVehicles(vehicleRows.filter((row) => row.is_active).map((row) => ({ id: row.id, label: row.registration_number })));
       setDrivers((driversRes.data || []).map((row) => ({ id: row.id, label: row.full_name })));
+      setLastFuelByVehicle(latestFuelByVehicle(vehicleRows));
     } catch (err) {
+      if (generation !== loadGeneration.current) return;
       const message = err instanceof Error ? err.message : 'Could not load trips';
+      setTrips([]);
+      setVehicles([]);
+      setDrivers([]);
+      setLastFuelByVehicle({});
+      nextTripCursor.current = null;
+      setHasMore(false);
+      setLastFuelError(true);
       setLoadError(message);
       toastError(message, 'Could not load trips');
     } finally {
-      setLoading(false);
+      if (generation === loadGeneration.current) setLoading(false);
+    }
+  };
+
+  const loadMore = async () => {
+    if (loadingMore || !hasMore || !nextTripCursor.current) return;
+    const generation = loadGeneration.current;
+    setLoadingMore(true);
+    try {
+      const page = await fetchTripPage(nextTripCursor.current);
+      if (generation !== loadGeneration.current) return;
+      nextTripCursor.current = page.rows.at(-1) || nextTripCursor.current;
+      setTrips((current) => appendUniqueTrips(current, page.rows));
+      setHasMore(page.hasMore);
+    } catch (err) {
+      if (generation === loadGeneration.current) toastError(err, 'Could not load more trips');
+    } finally {
+      if (generation === loadGeneration.current) setLoadingMore(false);
     }
   };
 
@@ -299,16 +342,16 @@ export default function TripsPage() {
       {isDriver && accessError && <DriverScopeNotice message={accessError} />}
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <StatCard loading={isLoading} title="Total earnings" value={`KES ${totalEarnings.toLocaleString()}`} description={`${trips.length} trips`} Icon={Wallet} />
-        <StatCard loading={isLoading} title="Total expenses" value={`KES ${totalExpenses.toLocaleString()}`} description="Fuel and running costs" Icon={Zap} />
-        <StatCard loading={isLoading} title="Net profit" value={`KES ${totalProfit.toLocaleString()}`} description="Earnings minus expenses" Icon={TrendingUp} />
+        <StatCard loading={isLoading} title="Total earnings" value={`KES ${totalEarnings.toLocaleString()}`} description={`${trips.length} loaded trips`} Icon={Wallet} />
+        <StatCard loading={isLoading} title="Total expenses" value={`KES ${totalExpenses.toLocaleString()}`} description="Fuel and running costs · loaded trips" Icon={Zap} />
+        <StatCard loading={isLoading} title="Net profit" value={`KES ${totalProfit.toLocaleString()}`} description="Earnings minus expenses · loaded trips" Icon={TrendingUp} />
       </div>
 
       <Card>
         <CardHeader>
           <CardTitle>Trip records</CardTitle>
           <CardDescription>
-            {isLoading ? <Skeleton className="h-4 w-28" /> : `${trips.length} trips recorded`}
+            {isLoading ? <Skeleton className="h-4 w-28" /> : `${trips.length} trips loaded`}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -429,6 +472,13 @@ export default function TripsPage() {
                 </Table>
               </TableScroll>
             </>
+          )}
+          {!isLoading && !loadError && hasMore && (
+            <div className="mt-4">
+              <Button type="button" variant="outline" className="min-h-11 w-full sm:w-auto" onClick={loadMore} disabled={loadingMore}>
+                {loadingMore ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Loading…</> : 'Load more'}
+              </Button>
+            </div>
           )}
         </CardContent>
       </Card>

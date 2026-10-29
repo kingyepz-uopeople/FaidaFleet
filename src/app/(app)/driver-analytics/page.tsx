@@ -77,13 +77,13 @@ export default function DriverAnalyticsPage() {
         // Separate ordered pages avoid PostgREST's response cap silently
         // truncating the totals, while all three queries start in parallel.
         const [driverRows, collections, trips] = await Promise.all([
-          fetchReportPages((from, to) => supabase.from('drivers').select('id, full_name', { count: from === 0 ? 'exact' : undefined })
+          fetchReportPages((from, to, withCount) => supabase.from('drivers').select('id, full_name', { count: withCount ? 'exact' : undefined })
             .eq('tenant_id', tenantId).eq('is_active', true).order('id')
             .range(from, to).abortSignal(controller.signal)),
-          fetchReportPages((from, to) => supabase.from('collections').select('id, driver_id, amount', { count: from === 0 ? 'exact' : undefined })
+          fetchReportPages((from, to, withCount) => supabase.from('collections').select('id, driver_id, amount', { count: withCount ? 'exact' : undefined })
             .eq('tenant_id', tenantId).gte('date', range.start).lte('date', range.end)
             .order('date').order('id').range(from, to).abortSignal(controller.signal)),
-          fetchReportPages((from, to) => supabase.from('trips').select('id, driver_id, expenses', { count: from === 0 ? 'exact' : undefined })
+          fetchReportPages((from, to, withCount) => supabase.from('trips').select('id, driver_id, expenses', { count: withCount ? 'exact' : undefined })
             .eq('tenant_id', tenantId).gte('trip_date', range.start).lte('trip_date', range.end)
             .order('trip_date').order('id').range(from, to).abortSignal(controller.signal)),
         ]);

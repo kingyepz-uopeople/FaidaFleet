@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { calculateDailyFuelMetrics, type FullTankFill } from './fuel-daily'
+import { calculateDailyFuelMetrics, mergeFuelFills, type FullTankFill } from './fuel-daily'
 
 function fill(id: string, date: string, litres: number, amount = litres * 180, vehicle_id = 'van-1'): FullTankFill {
   return { id, vehicle_id, date, created_at: `${date}T18:00:00.000Z`, litres, amount, full_tank: true }
@@ -64,4 +64,15 @@ test('anomalies are measured against the vehicle median only after five valid po
 
   const short = calculateDailyFuelMetrics(fills.slice(0, 5), trips.slice(0, 3), { start: '2026-10-02', end: '2026-10-05' })
   assert.equal(short.some((point) => point.anomaly), false)
+})
+
+test('an older preceding anchor preserves the first interval when the recent lookback is bounded', () => {
+  const anchor = fill('old', '2026-01-01', 99)
+  const recent = [fill('a', '2026-09-01', 20), fill('b', '2026-10-04', 30, 6000)]
+  const trips = [{ vehicle_id: 'van-1', trip_date: '2026-10-02', distance_km: 100 }]
+  const range = { start: '2026-10-02', end: '2026-10-04' }
+  const full = calculateDailyFuelMetrics([anchor, ...recent], trips, range)
+  const bounded = calculateDailyFuelMetrics(mergeFuelFills(recent, [anchor]), trips, range)
+  assert.deepEqual(bounded, full)
+  assert.equal(mergeFuelFills(recent, [anchor, recent[0]]).length, 3)
 })

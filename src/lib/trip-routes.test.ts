@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { routeFields, routeLabel, rememberedRoute, routeStorageKey, validRouteDistance, missingTripRoutes, type TripRoute } from './trip-routes';
 
-const route: TripRoute = { id: 'route-1', tenant_id: 'tenant-1', origin: 'Nairobi', destination: "Murang'a", distance_km: 85, is_active: true, sort_order: 0 };
+const route: TripRoute = { id: 'route-1', origin: 'Nairobi', destination: "Murang'a", distance_km: 85, is_active: true };
 test('preset label and editable trip fields use the route distance', () => {
   assert.equal(routeLabel(route), "Nairobi to Murang'a (85 km)");
   assert.deepEqual(routeFields(route), { startLocation: 'Nairobi', endLocation: "Murang'a", distanceKm: '85' });
