@@ -88,3 +88,18 @@ test('foreign-key indexes are individually rerunnable and the duplicate drop is 
   assert.match(performanceMigration, /not exists \(select 1 from pg_catalog\.pg_constraint where conindid = redundant\.indexrelid\)/i)
   assert.match(performanceMigration, /drop index if exists public\.idx_mpesa_trans_id/i)
 })
+
+test('016 dashboard totals are read-only, invoker-RLS, manager-scoped and unapplied by the app', () => {
+  const sql = readFileSync(join(migrationDir, '016_dashboard_totals.sql'), 'utf8')
+  assert.match(sql, /create or replace function public\.fleet_dashboard_totals\(p_tenant_id uuid\)/i)
+  assert.match(sql, /security invoker/i)
+  assert.doesNotMatch(sql, /security definer/i)
+  assert.match(sql, /set search_path = public/i)
+  assert.equal((sql.match(/public\.has_any_tenant_role\(tenant_id, array\['owner','admin','accountant'\]\)/g) || []).length, 2)
+  assert.match(sql, /from public\.collections[\s\S]*where tenant_id = p_tenant_id/i)
+  assert.match(sql, /from public\.expenses[\s\S]*where tenant_id = p_tenant_id/i)
+  assert.doesNotMatch(sql, /\b(insert|update|delete|alter policy|create policy|drop policy)\b/i)
+  assert.match(sql, /revoke all on function public\.fleet_dashboard_totals\(uuid\) from public, anon/i)
+  assert.match(sql, /grant execute on function public\.fleet_dashboard_totals\(uuid\) to authenticated/i)
+  assert.match(sql, /NOT applied by the app/i)
+})

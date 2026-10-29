@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -22,7 +22,6 @@ import { createClient } from '@/lib/supabase/client';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { formatDateOnly } from '@/lib/dates';
 import { accountPhone, isPhoneAccount, validatePin } from '@/lib/phone';
-import { primaryMembership } from '@/lib/fleet-access';
 import { useFleetAccess } from '@/components/fleet-access-provider';
 import { SignOutButton } from '@/components/sign-out-button';
 import { assertMutationRow } from '@/lib/db';
@@ -43,76 +42,69 @@ export default function SettingsPage() {
   const [savingFleet, setSavingFleet] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const [userId, setUserId] = useState<string | null>(null);
-  const [tenantId, setTenantId] = useState<string | null>(null);
-  const [role, setRole] = useState<string | null>(null);
   const [fleetName, setFleetName] = useState('');
   const [fuelPhotoRetentionDays, setFuelPhotoRetentionDays] = useState('90');
   const [members, setMembers] = useState<TeamMember[]>([]);
-  const [phoneAccount, setPhoneAccount] = useState(true);
-  const [phone, setPhone] = useState('');
   const [form, setForm] = useState({ name: '', currentPin: '', newPin: '', confirmPin: '' });
-  const { isDriver, loading: accessLoading, refresh } = useFleetAccess();
+  const { user, userId, tenantId, role, isDriver, roleLoading, loadError: accessError, refresh } = useFleetAccess();
+  const supabase = useMemo(() => createClient(), []);
+  const phoneAccount = isPhoneAccount(user);
+  const phone = accountPhone(user) || '';
+  const metadataName = user?.user_metadata?.full_name || '';
 
   useEffect(() => {
-    if (accessLoading) return;
+    if (roleLoading) return;
+    let cancelled = false;
     const fetchProfile = async () => {
       setLoading(true);
       setError(null);
+      // Never leave a previous account's fleet/team values visible while the
+      // verified scope changes, even for the moment before the new reads finish.
+      setFleetName('');
+      setFuelPhotoRetentionDays('90');
+      setMembers([]);
+      setForm((prev) => ({ ...prev, name: '', currentPin: '', newPin: '', confirmPin: '' }));
       try {
-        const supabase = createClient();
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) throw new Error('Not authenticated');
-        setUserId(user.id);
+        if (!userId || !tenantId) throw new Error(accessError || 'No fleet is linked to this account yet.');
 
-        const profileResp = await supabase.from('profiles').select('full_name').eq('id', user.id).single();
+        // The provider already verified this session and primary membership.
+        // Profile, fleet and team reads are independent; route presets start
+        // alongside them in TripRouteSettings below.
+        const [profileResp, tenantResp, teamResp] = await Promise.all([
+          supabase.from('profiles').select('full_name').eq('id', userId).single(),
+          isDriver
+            ? Promise.resolve({ data: null, error: null })
+            : supabase.from('tenants').select('name, fuel_photo_retention_days').eq('id', tenantId).limit(1),
+          isDriver
+            ? Promise.resolve({ data: [], error: null })
+            : supabase
+                .from('memberships')
+                .select('id, role, joined_at, user_id')
+                .eq('tenant_id', tenantId)
+                .eq('is_active', true)
+                .order('joined_at', { ascending: true }),
+        ]);
+        if (cancelled) return;
         if (profileResp.error && profileResp.error.code !== 'PGRST116') throw profileResp.error;
-
-        // Multiple active memberships are legal: read them all and pick one.
-        const membershipResp = await supabase
-          .from('memberships')
-          .select('tenant_id, role')
-          .eq('user_id', user.id)
-          .eq('is_active', true);
-        if (membershipResp.error) throw membershipResp.error;
-
-        const membership = primaryMembership(membershipResp.data || []);
-        if (!membership) throw new Error('No fleet is linked to this account yet.');
-        setTenantId(membership.tenant_id);
-        setRole(membership.role);
+        if (tenantResp.error) throw tenantResp.error;
+        if (teamResp.error) throw teamResp.error;
 
         if (!isDriver) {
-          const [tenantResp, teamResp] = await Promise.all([
-            supabase.from('tenants').select('name, fuel_photo_retention_days').eq('id', membership.tenant_id).limit(1),
-            supabase
-              .from('memberships')
-              .select('id, role, joined_at, user_id')
-              .eq('tenant_id', membership.tenant_id)
-              .eq('is_active', true)
-              .order('joined_at', { ascending: true }),
-          ]);
-          if (tenantResp.error) throw tenantResp.error;
-          if (teamResp.error) throw teamResp.error;
-
           const tenant = tenantResp.data?.[0] as { name: string; fuel_photo_retention_days: number | null } | undefined;
           setFleetName(tenant?.name || '');
           setFuelPhotoRetentionDays(String(tenant?.fuel_photo_retention_days ?? 90));
           setMembers((teamResp.data || []) as TeamMember[]);
         }
-        setPhoneAccount(isPhoneAccount(user));
-        setPhone(accountPhone(user) || '');
-        setForm((prev) => ({
-          ...prev,
-          name: profileResp.data?.full_name || user.user_metadata?.full_name || '',
-        }));
+        setForm((prev) => ({ ...prev, name: profileResp.data?.full_name || metadataName }));
       } catch (err: unknown) {
-        setError(err instanceof Error ? err.message : 'Could not load settings');
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Could not load settings');
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
-    fetchProfile();
-  }, [accessLoading, isDriver]);
+    void fetchProfile();
+    return () => { cancelled = true; };
+  }, [roleLoading, userId, tenantId, isDriver, accessError, metadataName, supabase]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => setForm({ ...form, [e.target.name]: e.target.value });
 
@@ -121,13 +113,10 @@ export default function SettingsPage() {
     setError(null);
     setMessage(null);
     try {
-      const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Not authenticated');
-
+      if (!userId) throw new Error('Not authenticated');
       const upsertResp = await supabase
         .from('profiles')
-        .upsert({ id: user.id, full_name: form.name, phone: phone || null })
+        .upsert({ id: userId, full_name: form.name, phone: phone || null })
         .select('id');
       assertMutationRow(upsertResp, 'Could not save your profile');
 
@@ -192,7 +181,6 @@ export default function SettingsPage() {
         throw new Error('Keep fuel photos for a whole number of days from 30 to 365');
       }
 
-      const supabase = createClient();
       const updateResult = await supabase
         .from('tenants')
         .update({ name, fuel_photo_retention_days: retentionDays })
@@ -356,7 +344,7 @@ export default function SettingsPage() {
               </CardFooter>
             </form>
           </Card>
-          {!loading && role === 'owner' && tenantId && <TripRouteSettings key={tenantId} tenantId={tenantId} />}
+          {role === 'owner' && tenantId && <TripRouteSettings key={`${tenantId}:${userId}`} tenantId={tenantId} />}
         </TabsContent>}
       </Tabs>
     </div>
