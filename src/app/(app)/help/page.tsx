@@ -10,7 +10,7 @@ const topics = [
   {
     href: '/collections',
     title: 'Daily collections',
-    body: 'Record cash, M-Pesa, and Pochi takings against a vehicle and driver. Cash is stored as recorded. M-Pesa and Pochi stay pending until they are reconciled.',
+    body: 'Record cash, M-Pesa, and Pochi takings against a vehicle and driver. Cash is stored as recorded and needs no reconciliation. FaidaFleet does not collect money on your behalf—owners and admins compare each M-Pesa or Pochi receipt code with their own M-Pesa statement, then mark rows reconciled individually or in bulk. Editing the amount or receipt code resets a reconciled row to pending, and mistakes can be unreconciled.',
   },
   {
     href: '/expenses',

@@ -62,8 +62,11 @@ test('cash collections are recorded, and only M-Pesa or Pochi stay pending', () 
 
   assert.deepEqual(stats, { electronicCount: 2, reconciled: 1, pending: 1, rate: 50 })
   assert.equal(collectionStatus({ payment_method: 'cash', reconciled: false }), 'Recorded')
+  assert.equal(collectionStatus({ payment_method: 'cash', reconciled: true }), 'Recorded')
   assert.equal(collectionStatus({ payment_method: 'mpesa', reconciled: false }), 'Pending')
   assert.equal(collectionStatus({ payment_method: 'mpesa', reconciled: true }), 'Reconciled')
+  assert.equal(collectionStatus({ payment_method: 'pochi', reconciled: false }), 'Pending')
+  assert.equal(collectionStatus({ payment_method: 'pochi', reconciled: true }), 'Reconciled')
 })
 
 test('compliance treats today as valid and yesterday as expired', () => {
