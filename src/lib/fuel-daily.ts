@@ -132,3 +132,10 @@ export function calculateDailyFuelMetrics(
 
   return points.sort((a, b) => b.date.localeCompare(a.date) || a.vehicleId.localeCompare(b.vehicleId))
 }
+
+/** Merge bounded recent fills with one older anchor per vehicle, without double-counting duplicates. */
+export function mergeFuelFills<T extends { id: string }>(...lists: T[][]): T[] {
+  const byId = new Map<string, T>()
+  for (const list of lists) for (const fill of list) if (!byId.has(fill.id)) byId.set(fill.id, fill)
+  return Array.from(byId.values())
+}

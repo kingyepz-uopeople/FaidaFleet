@@ -1004,6 +1004,19 @@ export interface Database {
         }
         Returns: boolean
       }
+      fleet_dashboard_totals: {
+        Args: {
+          p_tenant_id: string
+        }
+        Returns: {
+          total_collections: number
+          total_expenses: number
+          collection_count: number
+          expense_count: number
+          electronic_count: number
+          reconciled_count: number
+        }[]
+      }
       refresh_kpi_daily: {
         Args: Record<string, never>
         Returns: void

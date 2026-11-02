@@ -1,11 +1,12 @@
+/** Only the preset fields rendered by Settings and the trip dialog. */
+export const TRIP_ROUTE_COLUMNS = 'id, origin, destination, distance_km, is_active';
+
 export type TripRoute = {
   id: string;
-  tenant_id: string;
   origin: string;
   destination: string;
   distance_km: number;
   is_active: boolean;
-  sort_order: number;
 };
 
 export function routeLabel(route: Pick<TripRoute, 'origin' | 'destination' | 'distance_km'>) {

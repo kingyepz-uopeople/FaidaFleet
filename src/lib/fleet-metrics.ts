@@ -45,6 +45,39 @@ export function reconciliationStats(collections: CollectionRow[]) {
   }
 }
 
+export type DashboardTotals = {
+  totalCollections: number
+  totalExpenses: number
+  collectionCount: number
+  expenseCount: number
+  reconciliation: ReturnType<typeof reconciliationStats>
+}
+
+/** Exact lifetime card values; the weekly chart uses a separate bounded read. */
+export function dashboardTotalsFromRows(collections: CollectionRow[], expenses: MoneyRow[]): DashboardTotals {
+  return {
+    totalCollections: sumAmounts(collections),
+    totalExpenses: sumAmounts(expenses),
+    collectionCount: collections.length,
+    expenseCount: expenses.length,
+    reconciliation: reconciliationStats(collections),
+  }
+}
+
+export function reconciliationFromCounts(electronicCount: number, reconciled: number) {
+  return {
+    electronicCount,
+    reconciled,
+    pending: electronicCount - reconciled,
+    rate: electronicCount > 0 ? Math.round((reconciled / electronicCount) * 100) : 0,
+  }
+}
+
+/** Only a missing, not-yet-installed 016 helper uses the legacy read fallback. */
+export function missingDashboardTotals(error: { code?: string } | null | undefined): boolean {
+  return error?.code === 'PGRST202' || error?.code === '42883'
+}
+
 export function collectionStatus(row: {
   payment_method: string | null
   reconciled: boolean | null

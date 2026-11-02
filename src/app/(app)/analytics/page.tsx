@@ -13,8 +13,8 @@ import { createClient } from '@/lib/supabase/client';
 import { useFleetAccess } from '@/components/fleet-access-provider';
 import { formatDateOnly } from '@/lib/dates';
 import { groupFinancials, type MoneyRow } from '@/lib/fleet-metrics';
-import { calculateDailyFuelMetrics, type DailyFuelMetric, type DailyTripDistance, type FullTankFill } from '@/lib/fuel-daily';
-import { fetchReportPages, trailingDateRange, validReportRange } from '@/lib/report-range';
+import { calculateDailyFuelMetrics, mergeFuelFills, type DailyFuelMetric, type DailyTripDistance, type FullTankFill } from '@/lib/fuel-daily';
+import { fetchReportPages, reportLookbackStart, trailingDateRange, validReportRange } from '@/lib/report-range';
 
 type FuelRow = FullTankFill & { vehicles: { registration_number: string } | null };
 type TripDistanceRow = DailyTripDistance & { id: string };
@@ -93,7 +93,7 @@ export default function AnalyticsPage() {
   const [fuelMetrics, setFuelMetrics] = useState<DailyFuelMetric[]>([]);
   const supabase = useMemo(() => createClient(), []);
   const {
-    loading: accessLoading,
+    roleLoading: accessLoading,
     tenantId,
     loadError: accessError,
   } = useFleetAccess();
@@ -128,11 +128,11 @@ export default function AnalyticsPage() {
         if (!tenantId) throw new Error(accessError || 'No tenant found');
 
         const [collections, expenses] = await Promise.all([
-          fetchReportPages((from, to) => supabase.from('collections')
-            .select('id, date, amount', { count: from === 0 ? 'exact' : undefined }).eq('tenant_id', tenantId).gte('date', financialStart)
+          fetchReportPages((from, to, withCount) => supabase.from('collections')
+            .select('id, date, amount', { count: withCount ? 'exact' : undefined }).eq('tenant_id', tenantId).gte('date', financialStart)
             .order('date').order('id').range(from, to).abortSignal(controller.signal)),
-          fetchReportPages((from, to) => supabase.from('expenses')
-            .select('id, date, amount', { count: from === 0 ? 'exact' : undefined }).eq('tenant_id', tenantId).gte('date', financialStart)
+          fetchReportPages((from, to, withCount) => supabase.from('expenses')
+            .select('id, date, amount', { count: withCount ? 'exact' : undefined }).eq('tenant_id', tenantId).gte('date', financialStart)
             .order('date').order('id').range(from, to).abortSignal(controller.signal)),
         ]);
         if (!controller.signal.aborted) {
@@ -169,15 +169,34 @@ export default function AnalyticsPage() {
         setFuelError(null);
         if (!tenantId) throw new Error(accessError || 'No tenant found');
 
-        // Full-tank history before the selected window is needed to anchor the
-        // first interval. This lazy, tenant-scoped query fetches only fuel fills.
-        const rows = await fetchReportPages((from, to) => supabase.from('expenses')
-          .select('id, vehicle_id, date, created_at, litres, amount, full_tank, vehicles(registration_number)', { count: from === 0 ? 'exact' : undefined })
-          .eq('tenant_id', tenantId).eq('category', 'fuel').eq('full_tank', true).not('vehicle_id', 'is', null)
-          .lte('date', fuelRange.end)
-          .order('date').order('created_at').order('id')
-          .range(from, to).abortSignal(controller.signal));
-        const fills = rows as FuelRow[];
+        // Recent full-tank history is bounded, while one embedded lookup per
+        // vehicle preserves the immediately preceding anchor even if it is older
+        // than the lookback. Both reads are tenant-scoped and start together.
+        const lookbackStart = reportLookbackStart(fuelRange.start);
+        const [rows, anchorVehicles] = await Promise.all([
+          fetchReportPages((from, to, withCount) => supabase.from('expenses')
+            .select('id, vehicle_id, date, created_at, litres, amount, full_tank, vehicles(registration_number)', { count: withCount ? 'exact' : undefined })
+            .eq('tenant_id', tenantId).eq('category', 'fuel').eq('full_tank', true).not('vehicle_id', 'is', null)
+            .gte('date', lookbackStart).lte('date', fuelRange.end)
+            .order('date').order('created_at').order('id')
+            .range(from, to).abortSignal(controller.signal)),
+          fetchReportPages((from, to, withCount) => supabase.from('vehicles')
+            .select('id, registration_number, previous_fill:expenses!expenses_vehicle_id_fkey(id, vehicle_id, date, created_at, litres, amount, full_tank)', { count: withCount ? 'exact' : undefined })
+            .eq('tenant_id', tenantId)
+            .eq('previous_fill.tenant_id', tenantId).eq('previous_fill.category', 'fuel').eq('previous_fill.full_tank', true).lt('previous_fill.date', fuelRange.start)
+            .order('id')
+            .order('date', { referencedTable: 'previous_fill', ascending: false })
+            .order('created_at', { referencedTable: 'previous_fill', ascending: false })
+            .order('id', { referencedTable: 'previous_fill', ascending: false })
+            .limit(1, { referencedTable: 'previous_fill' })
+            .range(from, to).abortSignal(controller.signal)),
+        ]);
+        const anchors: FuelRow[] = [];
+        for (const vehicle of anchorVehicles as Array<{ registration_number: string; previous_fill: FullTankFill[] | null }>) {
+          const previous = vehicle.previous_fill?.[0];
+          if (previous) anchors.push({ ...previous, vehicles: { registration_number: vehicle.registration_number } });
+        }
+        const fills = mergeFuelFills(rows as FuelRow[], anchors);
         const rangeFills = fills.filter((fill) => fill.date >= fuelRange.start && fill.date <= fuelRange.end);
         const precedingDates = new Map<string, string>();
         const sortedByVehicle = new Map<string, FuelRow[]>();
@@ -199,8 +218,8 @@ export default function AnalyticsPage() {
           }
         }
         const tripStart = Array.from(precedingDates.values()).sort()[0] || fuelRange.start;
-        const trips = rangeFills.length === 0 ? [] : await fetchReportPages((from, to) => supabase.from('trips')
-          .select('id, vehicle_id, trip_date, distance_km', { count: from === 0 ? 'exact' : undefined })
+        const trips = rangeFills.length === 0 ? [] : await fetchReportPages((from, to, withCount) => supabase.from('trips')
+          .select('id, vehicle_id, trip_date, distance_km', { count: withCount ? 'exact' : undefined })
           .eq('tenant_id', tenantId).gte('trip_date', tripStart).lte('trip_date', fuelRange.end)
           .order('trip_date').order('id').range(from, to).abortSignal(controller.signal));
         if (!controller.signal.aborted) {
