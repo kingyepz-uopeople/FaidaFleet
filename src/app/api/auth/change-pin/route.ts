@@ -13,6 +13,7 @@ import {
   retryAfterSeconds,
 } from '@/lib/rate-limit'
 import { createClient } from '@/lib/supabase/server'
+import { requireAdminClient } from '@/lib/pin-reset'
 
 /**
  * Browser code never calls supabase.auth.updateUser with a raw PIN. PINs are
@@ -59,11 +60,19 @@ export async function POST(request: Request) {
     )
   }
 
+  // Check configuration before verifying or changing anything. The client
+  // displays this error in both the forced-PIN dialog and Settings.
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()) {
+    return NextResponse.json({ error: 'PIN changes are temporarily unavailable because the server is missing SUPABASE_SERVICE_ROLE_KEY. Please contact an administrator.' }, { status: 503 })
+  }
+
   const url = getSupabaseUrl()
   const key = getSupabaseKey()
   if (!url || !key) {
     return NextResponse.json({ error: 'Supabase is not configured' }, { status: 500 })
   }
+  const admin = requireAdminClient()
+  if ('error' in admin) return NextResponse.json({ error: admin.error }, { status: 503 })
 
   try {
     // Verify the current PIN with a throwaway client so the signed-in session
@@ -88,9 +97,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: message }, { status: 401 })
     }
 
-    const { error: updateError } = await supabase.auth.updateUser({
+    const { error: updateError } = await admin.auth.admin.updateUserById(user.id, {
       password: authPasswordFromPin(newPin),
-      data: { [MUST_CHANGE_PIN_KEY]: false },
+      app_metadata: { [MUST_CHANGE_PIN_KEY]: false },
+      user_metadata: { [MUST_CHANGE_PIN_KEY]: false },
     })
     if (updateError) {
       return NextResponse.json({ error: friendlyPinError(updateError.message) }, { status: 400 })

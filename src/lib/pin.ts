@@ -78,8 +78,9 @@ export function pinResetDeniedMessage(kind: PinTargetKind): string {
 
 export function needsPinChange(user: {
   user_metadata?: Record<string, unknown> | null
+  app_metadata?: Record<string, unknown> | null
 } | null | undefined): boolean {
-  return user?.user_metadata?.[MUST_CHANGE_PIN_KEY] === true
+  return user?.app_metadata?.[MUST_CHANGE_PIN_KEY] === true
 }
 
 export function actorRoleLabel(input: {

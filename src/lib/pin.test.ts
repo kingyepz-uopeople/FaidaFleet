@@ -88,10 +88,11 @@ test('only system admins can reset fleet owner PINs', () => {
   assert.match(pinResetDeniedMessage('fleet_owner'), /system administrator/)
 })
 
-test('must_change_pin is read from user metadata and never infers an existing PIN', () => {
-  assert.equal(needsPinChange({ user_metadata: { must_change_pin: true } }), true)
+test('must_change_pin trusts only app metadata', () => {
+  assert.equal(needsPinChange({ app_metadata: { must_change_pin: true }, user_metadata: { must_change_pin: false } }), true)
   assert.equal(needsPinChange({ user_metadata: { must_change_pin: false } }), false)
-  assert.equal(needsPinChange({ user_metadata: {} }), false)
+  assert.equal(needsPinChange({ user_metadata: { must_change_pin: true } }), false)
+  assert.equal(needsPinChange({ app_metadata: { must_change_pin: false }, user_metadata: { must_change_pin: true } }), false)
   assert.equal(actorRoleLabel({ isSystemAdmin: true, membershipRole: 'owner' }), 'system_admin')
   assert.equal(actorRoleLabel({ isSystemAdmin: false, membershipRole: 'owner' }), 'owner')
 })
@@ -118,4 +119,16 @@ test('rate limit locks after the configured number of failed PIN attempts', () =
 test('PIN length constants stay aligned with validatePin', () => {
   assert.equal(PIN_MIN_LENGTH, 4)
   assert.equal(PIN_MAX_LENGTH, 6)
+})
+
+
+test('PIN targets cannot cross tenants or include privileged memberships', async () => {
+  const { permitsPinTarget } = await import('./pin-reset')
+  const driver = { tenant_id: 'a', role: 'driver' }
+  assert.equal(permitsPinTarget([driver], 'a', true), true)
+  assert.equal(permitsPinTarget([], 'a', true), false)
+  assert.equal(permitsPinTarget([driver, { tenant_id: 'b', role: 'driver' }], 'a', true), false)
+  assert.equal(permitsPinTarget([driver, { tenant_id: 'a', role: 'owner' }], 'a', true), false)
+  assert.equal(permitsPinTarget([{ tenant_id: 'a', role: 'owner' }], 'a', false), true)
+  assert.equal(permitsPinTarget([{ tenant_id: 'b', role: 'owner' }], 'a', false), false)
 })

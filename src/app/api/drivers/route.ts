@@ -4,6 +4,7 @@ import { needsPinChange } from '@/lib/pin'
 import { normalizeKenyanPhone, phoneAuthEmail, validatePin } from '@/lib/phone'
 import { getSupabaseKey, getSupabaseUrl } from '@/lib/supabase/env'
 import { createClient } from '@/lib/supabase/server'
+import { requireAdminClient } from '@/lib/pin-reset'
 
 export async function POST(request: Request) {
   const supabase = await createClient()
@@ -58,6 +59,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Supabase is not configured' }, { status: 500 })
   }
 
+  const admin = requireAdminClient()
+  if ('error' in admin) return NextResponse.json({ error: admin.error }, { status: 500 })
+
   const created = await createDriverAuthUser({
     url,
     anonKey,
@@ -76,7 +80,6 @@ export async function POST(request: Request) {
     .from('drivers')
     .insert({
       tenant_id: membership.tenant_id,
-      user_id: created.userId,
       full_name: fullName,
       phone,
       license_number: body.license_number ? String(body.license_number) : null,
@@ -91,7 +94,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: driverError?.message || 'Could not save the driver' }, { status: 400 })
   }
 
-  const { error: linkError } = await supabase.rpc('provision_driver_login', {
+  const { error: linkError } = await admin.rpc('provision_driver_login', {
     p_driver_id: driver.id,
     p_user_id: created.userId,
   })
